@@ -1,0 +1,246 @@
+import copy
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+import workflow
+
+
+def issue(number, paths, dependencies=()):
+    return dict(id=number, title=f'Deliver outcome {number}',
+                outcome='User can save and retrieve an observation',
+                acceptance=['Saved observation appears after reload'],
+                tests=['Save through API then fetch and assert the value'],
+                ownership=paths, dependencies=list(dependencies),
+                vertical_check='Save in UI, reload, observe persisted value',
+                non_goals=['Bulk import'], risks=['Concurrent updates'],
+                session_sized=True, status='ready',
+                url=f'https://github.com/example/pilot/issues/{number}')
+
+
+def plan():
+    return {'repository': 'example/pilot', 'issues': [
+        issue(1, ['src/save']), issue(2, ['src/export']),
+        issue(3, ['src/save/controller.py'], [1])]}
+
+
+def charter(root):
+    return dict(repository='example/pilot', issue_ids=[1, 2], concurrency=2,
+                approved_by='human', approval_reference='session:turn-12',
+                expires_at='2099-01-01T00:00:00+00:00',
+                monitoring={'mode': 'local', 'confirmed_by': 'human'},
+                protected_branches=['main', 'master', 'production'],
+                operations=['edit', 'test', 'checkpoint', 'draft_pr', 'issue_update'],
+                worktrees=[{'issue': 1, 'path': str(root),
+                            'branch': 'codex/issue-1', 'ownership': ['src']}],
+                verification_commands=[['python', '-m', 'unittest']],
+                stop_conditions=['New product decision', 'Permission prompt'])
+
+
+class PlanningTests(unittest.TestCase):
+    def test_valid_vertical_plan(self):
+        workflow.validate_plan(plan())
+
+    def test_reject_cycle_missing_dependency_duplicate(self):
+        for mutation in ('cycle', 'missing', 'duplicate'):
+            p = plan()
+            if mutation == 'cycle':
+                p['issues'][0]['dependencies'] = [3]
+            elif mutation == 'missing':
+                p['issues'][0]['dependencies'] = [99]
+            else:
+                p['issues'].append(p['issues'][0])
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                workflow.validate_plan(p)
+
+    def test_horizontal_and_oversized_rejected(self):
+        for field, value in [('vertical_check', ''), ('session_sized', False),
+                             ('ownership', ['../elsewhere']), ('acceptance', [])]:
+            p = plan()
+            p['issues'][0][field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                workflow.validate_plan(p)
+
+    def test_refill_respects_dependencies_and_overlap(self):
+        p = plan()
+        self.assertEqual(workflow.schedule(p, 2), [1, 2])
+        p['issues'][0]['status'] = 'running'
+        self.assertEqual(workflow.schedule(p, 2), [2])
+        p['issues'][0]['status'] = 'verified'
+        self.assertEqual(workflow.schedule(p, 2), [2, 3])
+        p['issues'][1]['status'] = 'blocked'
+        self.assertEqual(workflow.schedule(p, 2), [3])
+
+    def test_parent_case_and_unknown_ownership_conflict(self):
+        for paths in (['SRC'], ['src/save'], ['*']):
+            p = plan()
+            p['issues'][1]['ownership'] = paths
+            self.assertEqual(workflow.schedule(p, 2), [1])
+
+    def test_selects_maximum_safe_ready_set(self):
+        p = plan()
+        p['issues'] = [issue(1, ['src']), issue(2, ['src/a']), issue(3, ['src/b'])]
+        self.assertEqual(workflow.schedule(p, 2), [2, 3])
+
+    def test_running_conflict_is_error(self):
+        p = plan()
+        p['issues'][1]['ownership'] = ['src']
+        for i in p['issues'][:2]:
+            i['status'] = 'running'
+        with self.assertRaises(ValueError):
+            workflow.schedule(p, 2)
+
+    def test_running_dependency_violation_is_error(self):
+        p = plan()
+        p['issues'][2]['status'] = 'running'
+        with self.assertRaisesRegex(ValueError, 'dependency'):
+            workflow.schedule(p, 2)
+
+
+class AuthorizationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / 'src').mkdir()
+        self.c = charter(self.root)
+        self.op = dict(repository='example/pilot', issue=1, kind='edit',
+                       branch='codex/issue-1', worktree=str(self.root),
+                       path=str(self.root / 'src' / 'app.py'))
+
+    def test_positive_local_edit(self):
+        workflow.authorize(self.c, self.op)
+
+    def test_forbidden_operations_repositories_issues_branches(self):
+        changes = [('kind', x) for x in ['merge', 'deploy', 'release', 'delete',
+                   'shell', 'road_ack', 'push', 'issue_close']]
+        changes += [('repository', 'attacker/other'), ('issue', 9),
+                    ('branch', 'main'), ('branch', 'production'),
+                    ('branch', 'codex/unapproved'), ('issue', True)]
+        for key, value in changes:
+            op = dict(self.op, **{key: value})
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                workflow.authorize(self.c, op)
+
+    def test_escape_and_policy_files_denied(self):
+        for path in ['../escape', 'src/../../escape', '.git/config',
+                     '.workflows/authorization.json', 'CLAUDE.md', 'other/file']:
+            op = dict(self.op, path=str(self.root / path))
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                workflow.authorize(self.c, op)
+
+    def test_expired_unapproved_or_unmonitored_denied(self):
+        for field, value in [('expires_at', '2020-01-01T00:00:00+00:00'),
+                             ('approval_reference', ''), ('monitoring', {}),
+                             ('concurrency', 0), ('approved_by', '')]:
+            c = dict(self.c, **{field: value})
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                workflow.authorize(c, self.op)
+
+    def test_exact_argv_no_shell_syntax(self):
+        op = dict(self.op, kind='test', argv=['python', '-m', 'unittest'])
+        workflow.authorize(self.c, op)
+        for argv in [['python', '-c', 'print(1)'], ['python -m unittest; git push'],
+                     ['python', '-m', 'unittest', ';', 'gh', 'pr', 'merge']]:
+            with self.assertRaises(ValueError):
+                workflow.authorize(self.c, dict(op, argv=argv))
+
+    def test_external_writes_always_need_native_permission(self):
+        for kind in ['draft_pr', 'issue_update']:
+            with self.assertRaisesRegex(ValueError, 'external'):
+                workflow.authorize(self.c, dict(self.op, kind=kind))
+
+
+class EvidenceTests(unittest.TestCase):
+    def test_checkpoint_rejects_missing_handoff_and_detects_drift(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            handoff = root / 'handoff.md'
+            snapshot = {'number': 1, 'title': 'Save', 'body': 'Accept A', 'state': 'OPEN',
+                        'html_url': 'https://github.com/example/pilot/issues/1'}
+            evidence = {'head': 'a' * 40, 'branch': 'codex/issue-1',
+                        'diff_sha256': 'a', 'files_sha256': 'b', 'files': {}}
+            with patch.object(workflow, 'git_evidence', return_value=evidence):
+                with self.assertRaises(ValueError):
+                    workflow.checkpoint(root, snapshot, handoff, 'Run focused tests')
+                handoff.write_text('Acceptance: save persists. Next: run focused tests.')
+                checkpoint = workflow.checkpoint(root, snapshot, handoff, 'Run focused tests')
+                self.assertEqual(workflow.resume(root, checkpoint, snapshot, handoff)['state'], 'unchanged')
+                changed = dict(snapshot, body='Accept B')
+                self.assertEqual(workflow.resume(root, checkpoint, changed, handoff)['state'], 'reconcile')
+                handoff.write_text('Changed next action')
+                self.assertEqual(workflow.resume(root, checkpoint, snapshot, handoff)['state'], 'reconcile')
+
+    def test_context_budget_fail_closed_and_reserves(self):
+        self.assertEqual(workflow.context_action(80000, 10000), 'continue')
+        self.assertEqual(workflow.context_action(99000, 1000), 'handoff')
+        self.assertEqual(workflow.context_action(140000, 10000), 'stop')
+        self.assertEqual(workflow.context_action(None, 1000), 'stop')
+        with self.assertRaises(ValueError):
+            workflow.context_action(-1, 100)
+
+    def test_snapshot_drift_includes_acceptance_body_and_status(self):
+        a = {'number': 1, 'title': 'Save', 'body': 'Accept A', 'state': 'OPEN'}
+        self.assertEqual(workflow.drift(a, dict(a)), [])
+        self.assertEqual(workflow.drift(a, dict(a, body='Accept B')), ['body'])
+
+    def test_checkpoint_binds_git_head_and_dirty_content(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            def git(*args):
+                return subprocess.run(['git', '-C', d, *args], check=True,
+                                      capture_output=True, text=True)
+            git('init', '-b', 'codex/fixture')
+            git('config', 'user.email', 'fixture@example.invalid')
+            git('config', 'user.name', 'Fixture')
+            (root / 'app.txt').write_text('one')
+            git('add', '.')
+            git('commit', '-m', 'fixture')
+            a = workflow.git_evidence(root)
+            (root / 'app.txt').write_text('two')
+            b = workflow.git_evidence(root)
+            self.assertEqual(a['head'], b['head'])
+            self.assertNotEqual(a['diff_sha256'], b['diff_sha256'])
+            (root / 'new.txt').write_text('untracked')
+            c = workflow.git_evidence(root)
+            self.assertNotEqual(b['files_sha256'], c['files_sha256'])
+
+    def test_cli_invalid_json_exits_nonzero_without_traceback(self):
+        result = subprocess.run([sys.executable, str(Path(workflow.__file__)),
+                                 'schedule', '--plan', 'missing.json', '--limit', '2'],
+                                capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('Traceback', result.stderr)
+
+
+class IntegrationReadTests(unittest.TestCase):
+    def test_malformed_github_payload_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(workflow, 'run', return_value=b'{"message":"error"}'):
+            result = workflow.inspect({'repository': 'example/pilot'}, root)
+        self.assertEqual(result['sources']['github']['status'], 'unavailable')
+
+    def test_github_pagination_filters_prs_roads_unconfigured(self):
+        raw = json.dumps([[{'number': 1}], [{'number': 2, 'pull_request': {}}],
+                          [{'number': 3}]]).encode()
+        with tempfile.TemporaryDirectory() as root, patch.object(workflow, 'run', return_value=raw) as run:
+            result = workflow.inspect({'repository': 'example/pilot'}, root)
+        self.assertEqual([i['number'] for i in result['sources']['github']['issues']], [1, 3])
+        self.assertIn('--paginate', run.call_args.args[0])
+        self.assertEqual(result['sources']['roads']['status'], 'unconfigured')
+
+    def test_unavailable_integrations_do_not_invent_data_or_echo_tokens(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(workflow, 'run', side_effect=ValueError('private-secret')):
+            result = workflow.inspect({'repository': 'example/pilot', 'roads': {
+                'observations_url': 'http://unsafe.example', 'token_env': 'MISSING_TOKEN'}}, root)
+        self.assertEqual(result['sources']['github']['status'], 'unavailable')
+        self.assertEqual(result['sources']['roads']['status'], 'unavailable')
+        self.assertNotIn('private-secret', json.dumps(result))
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -1,0 +1,16 @@
+{
+  "repository": "OWNER/REPOSITORY",
+  "issue_ids": [1, 2],
+  "concurrency": 2,
+  "approved_by": "",
+  "approval_reference": "",
+  "expires_at": "2000-01-01T00:00:00+00:00",
+  "monitoring": {"mode": "local", "confirmed_by": ""},
+  "protected_branches": ["main", "master"],
+  "operations": ["edit", "test", "checkpoint"],
+  "worktrees": [
+    {"issue": 1, "path": "REPLACE_WITH_ABSOLUTE_WORKTREE_PATH", "branch": "codex/issue-1", "ownership": ["src", "tests", "docs/evidence"]}
+  ],
+  "verification_commands": [["python", "-m", "unittest"]],
+  "stop_conditions": ["New product decision", "Missing credentials or native permission", "External write", "Changed acceptance criteria", "Expired authorization", "Unknown context usage"]
+}

@@ -1,0 +1,368 @@
+"""Workflows pilot: deterministic planning/evidence helpers, never a shell agent.
+
+Only inspect performs network reads. No command here publishes issues, executes
+tests, grants Claude permissions, or changes a product repository.
+"""
+import argparse
+import datetime as dt
+import hashlib
+import itertools
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import subprocess
+import sys
+import urllib.request
+import urllib.parse
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def nonempty(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def strings(value):
+    return isinstance(value, list) and bool(value) and all(nonempty(x) for x in value)
+
+
+def number(value):
+    return type(value) is int and value > 0
+
+
+def repository(value):
+    return isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', value)
+
+
+def relative(value):
+    require(nonempty(value), 'ownership must name a path')
+    value = value.replace('\\', '/')
+    require(not PurePosixPath(value).is_absolute() and ':' not in value and
+            all(p not in ('..', '.', '') for p in value.split('/')),
+            'ownership must be a normalized relative path')
+    require(value == '*' or not any(c in value for c in '*?['),
+            'use concrete ownership paths or * for unknown ownership')
+    return value.casefold().rstrip('/')
+
+
+def overlap(a, b):
+    a, b = relative(a), relative(b)
+    return a == '*' or b == '*' or a == b or a.startswith(b + '/') or b.startswith(a + '/')
+
+
+def conflicts(a, b):
+    return any(overlap(x, y) for x in a['ownership'] for y in b['ownership'])
+
+
+def validate_plan(plan):
+    require(isinstance(plan, dict) and repository(plan.get('repository')), 'repository must be owner/name')
+    issues = plan.get('issues')
+    require(isinstance(issues, list) and 0 < len(issues) <= 24,
+            'plan must contain 1..24 session-sized issues; split larger batches')
+    ids = set()
+    for issue in issues:
+        require(isinstance(issue, dict) and number(issue.get('id')), 'positive integer issue id required')
+        require(issue['id'] not in ids, 'duplicate issue id')
+        ids.add(issue['id'])
+        for field in ('title', 'outcome', 'vertical_check'):
+            require(nonempty(issue.get(field)), f'{issue["id"]}: missing {field}')
+        for field in ('acceptance', 'tests', 'ownership', 'non_goals', 'risks'):
+            require(strings(issue.get(field)), f'{issue["id"]}: missing {field}')
+        for path in issue['ownership']:
+            relative(path)
+        require(issue.get('session_sized') is True, 'oversized issue must be decomposed')
+        deps = issue.get('dependencies')
+        require(isinstance(deps, list) and all(number(x) for x in deps) and len(deps) == len(set(deps)),
+                'dependencies must be unique integer ids')
+        require(issue.get('status') in {'ready', 'running', 'blocked', 'verified', 'proposed'}, 'invalid status')
+        if issue.get('url'):
+            require(issue['url'] == f'https://github.com/{plan["repository"]}/issues/{issue["id"]}',
+                    'issue URL does not match repository/id')
+    graph = {i['id']: i['dependencies'] for i in issues}
+    visited, visiting = set(), set()
+    def visit(node):
+        require(node in graph, f'missing dependency {node}')
+        require(node not in visiting, 'circular dependencies')
+        if node in visited:
+            return
+        visiting.add(node)
+        for dep in graph[node]:
+            visit(dep)
+        visiting.remove(node)
+        visited.add(node)
+    for node in graph:
+        visit(node)
+    return plan
+
+
+def schedule(plan, limit):
+    """Maximum-cardinality non-conflicting ready wave, deterministic tie-breaking."""
+    validate_plan(plan)
+    require(number(limit) and limit <= 24, 'concurrency must be 1..24')
+    issues = plan['issues']
+    active = [i for i in issues if i['status'] == 'running']
+    require(len(active) <= limit, 'running issues exceed authorization')
+    require(not any(conflicts(a, b) for a, b in itertools.combinations(active, 2)),
+            'running issues have overlapping ownership')
+    completed = {i['id'] for i in issues if i['status'] == 'verified'}
+    require(all(set(i['dependencies']) <= completed for i in active),
+            'running issue has an unverified dependency')
+    ready = [i for i in issues if i['status'] == 'ready' and
+             set(i['dependencies']) <= completed and not any(conflicts(i, a) for a in active)]
+    # Bounded at 24 issues. Search larger subsets first so a broad first issue
+    # cannot serialize independent narrow slices. No process launch is implied.
+    for size in range(min(limit - len(active), len(ready)), 0, -1):
+        for group in itertools.combinations(ready, size):
+            if not any(conflicts(a, b) for a, b in itertools.combinations(group, 2)):
+                return [i['id'] for i in group]
+    return []
+
+
+def context_action(used, reserve):
+    if used is None:
+        return 'stop'
+    require(type(used) is int and used >= 0 and number(reserve), 'invalid context accounting')
+    if used + reserve >= 150000:
+        return 'stop'
+    if used + reserve >= 100000:
+        return 'handoff'
+    return 'continue'
+
+
+def authorize(charter, operation):
+    """Check an intended structured operation. This does NOT grant permissions."""
+    require(isinstance(charter, dict) and isinstance(operation, dict), 'objects required')
+    require(repository(charter.get('repository')), 'invalid charter repository')
+    for field in ('approved_by', 'approval_reference'):
+        require(nonempty(charter.get(field)), f'missing human {field}')
+    expiry = dt.datetime.fromisoformat(charter.get('expires_at', ''))
+    require(expiry.tzinfo is not None and expiry > dt.datetime.now(dt.timezone.utc), 'authorization expired')
+    require(number(charter.get('concurrency')), 'invalid concurrency')
+    require(strings(charter.get('stop_conditions')), 'stop conditions required')
+    monitor = charter.get('monitoring', {})
+    require(monitor.get('mode') in {'phone', 'local', 'alternative'} and
+            nonempty(monitor.get('confirmed_by')), 'monitoring arrangement unconfirmed')
+    if monitor['mode'] == 'alternative':
+        require(nonempty(monitor.get('details')), 'alternative monitoring needs details')
+    if monitor['mode'] == 'phone':
+        require(monitor.get('phone_connected') is True, 'physical phone not confirmed')
+    require(operation.get('repository') == charter['repository'], 'unapproved repository')
+    require(number(operation.get('issue')) and operation['issue'] in charter.get('issue_ids', []),
+            'unapproved issue')
+    kind = operation.get('kind')
+    require(kind in {'edit', 'test', 'checkpoint', 'draft_pr', 'issue_update'} and
+            kind in charter.get('operations', []), 'operation outside bounded authorization')
+    if kind in {'draft_pr', 'issue_update'}:
+        raise ValueError('external write requires native permission; this pilot cannot securely scope generic tools')
+    worktree = Path(operation.get('worktree', '')).resolve(strict=True)
+    matches = [w for w in charter.get('worktrees', []) if w.get('issue') == operation['issue'] and
+               Path(w['path']).resolve(strict=True) == worktree]
+    require(len(matches) == 1, 'unapproved or ambiguous worktree')
+    selected = matches[0]
+    branch = operation.get('branch')
+    protected = {'main', 'master'} | set(charter.get('protected_branches', []))
+    require(nonempty(branch) and branch == selected.get('branch') and branch not in protected and
+            branch.startswith('codex/'), 'protected or unapproved branch')
+    if kind == 'test':
+        argv = operation.get('argv')
+        require(strings(argv) and argv in charter.get('verification_commands', []), 'unapproved verification argv')
+    else:
+        require(nonempty(operation.get('path')), 'target path required')
+        target = Path(operation['path'])
+        if not target.is_absolute():
+            target = worktree / target
+        target = target.resolve()
+        require(target.is_relative_to(worktree), 'path escapes worktree')
+        rel = target.relative_to(worktree).as_posix()
+        parts = {p.casefold() for p in target.relative_to(worktree).parts}
+        forbidden = {'.git', '.claude', '.codex', '.agents', '.workflows', 'claude.md', 'agents.md'}
+        require(not (parts & forbidden), 'policy and control files require human review')
+        require(any(relative(p) != '*' and
+                    (relative(rel) == relative(p) or relative(rel).startswith(relative(p) + '/'))
+                    for p in selected.get('ownership', [])), 'path outside owned scope')
+    return {'scope_check': 'pass', 'permission_granted': False,
+            'note': 'Verify actual Git branch/remotes and native permissions before acting.'}
+
+
+def run(argv, cwd=None):
+    result = subprocess.run(argv, cwd=cwd, capture_output=True, timeout=45)
+    require(result.returncode == 0, f'{argv[0]} read failed (exit {result.returncode}); inspect credentials/configuration locally')
+    return result.stdout
+
+
+def git_evidence(root):
+    root = Path(root).resolve(strict=True)
+    def git(*args):
+        return run(['git', '-C', str(root), *args])
+    head = git('rev-parse', 'HEAD').decode().strip()
+    branch = git('branch', '--show-current').decode().strip()
+    diff = git('diff', '--binary', '--no-ext-diff', '--no-textconv', 'HEAD', '--', '.', ':!.workflows')
+    names = git('ls-files', '-z', '--cached', '--others', '--exclude-standard').split(b'\0')
+    files = {}
+    for raw in sorted(set(names)):
+        if not raw:
+            continue
+        name = os.fsdecode(raw)
+        if name.replace('\\', '/').startswith('.workflows/'):
+            continue
+        path = root / name
+        require(path.resolve().is_relative_to(root), 'tracked/untracked path escapes repository')
+        if path.is_symlink():
+            files[name] = hashlib.sha256(os.readlink(path).encode()).hexdigest()
+        elif path.is_file():
+            files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        else:
+            files[name] = 'missing-or-submodule'
+    return {'head': head, 'branch': branch,
+            'diff_sha256': hashlib.sha256(diff).hexdigest(),
+            'files_sha256': hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest(),
+            'files': files}
+
+
+def drift(snapshot, current):
+    return [key for key in ('number', 'title', 'body', 'state', 'labels', 'assignees', 'updated_at')
+            if snapshot.get(key) != current.get(key)]
+
+
+def checkpoint(root, issue, handoff, next_step):
+    root, handoff = Path(root).resolve(strict=True), Path(handoff).resolve()
+    require(handoff.is_file(), 'durable handoff file required')
+    require(number(issue.get('number')) and nonempty(issue.get('body')) and
+            nonempty(issue.get('html_url')), 'current canonical GitHub issue snapshot required')
+    require(nonempty(next_step), 'next concrete step required')
+    return {'version': 1, 'created_at': dt.datetime.now(dt.timezone.utc).isoformat(),
+            'root': str(root), 'issue': issue, 'git': git_evidence(root),
+            'handoff_sha256': hashlib.sha256(handoff.read_bytes()).hexdigest(),
+            'next_step': next_step}
+
+
+def resume(root, saved, current_issue, handoff):
+    require(saved.get('version') == 1, 'unsupported checkpoint version')
+    require(Path(root).resolve(strict=True) == Path(saved['root']).resolve(strict=True),
+            'checkpoint belongs to a different worktree')
+    require(saved['issue'].get('number') == current_issue.get('number') and
+            saved['issue'].get('html_url') == current_issue.get('html_url'),
+            'checkpoint belongs to a different issue/repository')
+    live = git_evidence(root)
+    changed = drift(saved['issue'], current_issue)
+    git_changed = [k for k in ('head', 'branch', 'diff_sha256', 'files_sha256') if saved['git'].get(k) != live.get(k)]
+    handoff_changed = hashlib.sha256(Path(handoff).read_bytes()).hexdigest() != saved['handoff_sha256']
+    return {'state': 'reconcile' if changed or git_changed or handoff_changed else 'unchanged',
+            'issue_drift': changed, 'git_drift': git_changed, 'handoff_changed': handoff_changed,
+            'next_step': saved['next_step'], 'required': 'Read current GitHub issue, handoff and diff before continuing.'}
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError('RoadS redirect refused; configure the final approved endpoint')
+
+
+def inspect(config, root):
+    require(repository(config.get('repository')), 'repository must be owner/name')
+    repo = config['repository']
+    result = {'repository': repo, 'fetched_at': dt.datetime.now(dt.timezone.utc).isoformat(),
+              'sources': {}, 'verification_commands': {}}
+    try:
+        raw = run(['gh', 'api', '--paginate', '--slurp', f'repos/{repo}/issues?state=all&per_page=100'])
+        pages = json.loads(raw)
+        require(isinstance(pages, list) and all(isinstance(page, list) and
+                all(isinstance(i, dict) and number(i.get('number')) for i in page)
+                for page in pages), 'malformed GitHub paginated response')
+        result['sources']['github'] = {'status': 'available', 'source': f'https://github.com/{repo}/issues',
+                                       'issues': [i for page in pages for i in page if 'pull_request' not in i]}
+    except (ValueError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        result['sources']['github'] = {'status': 'unavailable', 'reason': 'GitHub read failed; check gh authentication and repository access'}
+    roads = config.get('roads')
+    if not roads:
+        result['sources']['roads'] = {'status': 'unconfigured'}
+    else:
+        try:
+            url = roads['observations_url']
+            parsed = urllib.parse.urlsplit(url)
+            require(parsed.scheme == 'https' and parsed.hostname and not parsed.username and
+                    not parsed.password and not parsed.query and not parsed.fragment,
+                    'RoadS requires HTTPS endpoint without credentials/query/fragment')
+            token = os.environ.get(roads.get('token_env', ''))
+            require(token, 'RoadS token unavailable')
+            request = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}', 'Accept': 'application/json'})
+            with urllib.request.build_opener(NoRedirect).open(request, timeout=20) as response:
+                raw = response.read(2_000_001)
+            require(len(raw) <= 2_000_000, 'RoadS payload exceeds pilot limit')
+            result['sources']['roads'] = {'status': 'available', 'source': url, 'data': json.loads(raw)}
+        except (ValueError, OSError, KeyError):
+            result['sources']['roads'] = {'status': 'unavailable', 'reason': 'RoadS read failed; verify endpoint contract and token locally'}
+    package = Path(root) / 'package.json'
+    if package.exists():
+        result['verification_commands'] = json.loads(package.read_text(encoding='utf-8')).get('scripts', {})
+    return result
+
+
+def load(path):
+    return json.loads(Path(path).read_text(encoding='utf-8-sig'))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest='command', required=True)
+    for name in ('validate-plan', 'schedule'):
+        p = sub.add_parser(name)
+        p.add_argument('--plan', required=True)
+        if name == 'schedule':
+            p.add_argument('--limit', type=int, required=True)
+    p = sub.add_parser('authorize')
+    p.add_argument('--charter', required=True)
+    p.add_argument('--operation', required=True)
+    p = sub.add_parser('context')
+    p.add_argument('--used', type=int)
+    p.add_argument('--reserve', type=int, required=True)
+    p = sub.add_parser('inspect')
+    p.add_argument('--config', required=True)
+    p.add_argument('--root', default='.')
+    p = sub.add_parser('evidence')
+    p.add_argument('--root', default='.')
+    for name in ('checkpoint', 'resume'):
+        p = sub.add_parser(name)
+        p.add_argument('--root', required=True)
+        p.add_argument('--issue', required=True, help='Current gh api issue JSON')
+        p.add_argument('--handoff', required=True)
+        if name == 'checkpoint':
+            p.add_argument('--next-step', required=True)
+        else:
+            p.add_argument('--checkpoint', required=True)
+    p = sub.add_parser('drift')
+    p.add_argument('--snapshot', required=True)
+    p.add_argument('--current', required=True)
+    args = parser.parse_args()
+    try:
+        if args.command == 'validate-plan':
+            validate_plan(load(args.plan))
+            result = {'valid': True, 'semantic_review_required': True}
+        elif args.command == 'schedule':
+            result = {'start': schedule(load(args.plan), args.limit)}
+        elif args.command == 'authorize':
+            result = authorize(load(args.charter), load(args.operation))
+        elif args.command == 'context':
+            result = {'action': context_action(args.used, args.reserve)}
+        elif args.command == 'inspect':
+            result = inspect(load(args.config), args.root)
+        elif args.command == 'evidence':
+            result = git_evidence(args.root)
+        elif args.command == 'checkpoint':
+            result = checkpoint(args.root, load(args.issue), args.handoff, args.next_step)
+        elif args.command == 'resume':
+            result = resume(args.root, load(args.checkpoint), load(args.issue), args.handoff)
+        else:
+            result = {'discrepancies': drift(load(args.snapshot), load(args.current))}
+        print(json.dumps(result, indent=2, ensure_ascii=True))
+        return 0
+    except (ValueError, OSError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
+        print(json.dumps({'error': str(exc)}), file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

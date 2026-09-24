@@ -1,0 +1,50 @@
+{
+  "repository": "example/pilot",
+  "issues": [
+    {
+      "id": 1,
+      "url": "https://github.com/example/pilot/issues/1",
+      "title": "Save and reload one observation",
+      "outcome": "User can save an observation and see it after reload",
+      "acceptance": ["Saved text survives reload", "Invalid text produces an actionable error"],
+      "tests": ["UI save/reload through API and temporary storage", "Invalid-input regression"],
+      "ownership": ["src/observations", "tests/observations"],
+      "dependencies": [],
+      "vertical_check": "Enter text, save, reload the view and observe the same text",
+      "non_goals": ["Bulk import", "Editing observations"],
+      "risks": ["Storage write failure"],
+      "session_sized": true,
+      "status": "ready"
+    },
+    {
+      "id": 2,
+      "url": "https://github.com/example/pilot/issues/2",
+      "title": "Download a project summary",
+      "outcome": "User can download a summary of existing project metadata",
+      "acceptance": ["Download contains the current project name and owner"],
+      "tests": ["Request download and compare parsed contents with fixture project"],
+      "ownership": ["src/summary", "tests/summary"],
+      "dependencies": [],
+      "vertical_check": "Click download in the existing project page and open the generated summary",
+      "non_goals": ["Observation exports"],
+      "risks": ["Non-ASCII project names"],
+      "session_sized": true,
+      "status": "ready"
+    },
+    {
+      "id": 3,
+      "url": "https://github.com/example/pilot/issues/3",
+      "title": "Edit an observation with conflict feedback",
+      "outcome": "User can edit saved text without silently overwriting concurrent changes",
+      "acceptance": ["An accepted edit survives reload", "Stale edits display a conflict"],
+      "tests": ["Edit and reload", "Two clients editing the same revision"],
+      "ownership": ["src/observations", "tests/observations"],
+      "dependencies": [1],
+      "vertical_check": "Save, edit and reload; use a stale second tab to observe a conflict",
+      "non_goals": ["Automatic conflict merging"],
+      "risks": ["Race between validation and persistence"],
+      "session_sized": true,
+      "status": "ready"
+    }
+  ]
+}
