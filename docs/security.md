@@ -24,6 +24,16 @@ e branch imediatamente antes de agir. Os caminhos são resolvidos para rejeitar
 escapes por diretórios ou links simbólicos, mas isso não é um isolamento de arquivos
 imune a alterações concorrentes. Responsabilidade desconhecida nunca autoriza edição.
 
+As branches precisam começar pelo `branch_prefix` da autorização (padrão `claude/`).
+O prefixo é recusado quando coincide com uma branch protegida ou com o espaço de nomes
+dela: `release/*` protegido impede o prefixo `release/`. A comparação não distingue
+maiúsculas de minúsculas. Autorizações antigas com branches `codex/` passam a ser
+negadas até declararem `branch_prefix: "codex/"`, o que é uma falha segura. No modo
+local (`repository: null`), a autorização fica presa apenas ao caminho exato da
+worktree. O utilitário não confere se o projeto realmente não tem remoto, então
+confira `git remote -v` antes de agir. Um registro de issue com `source: "local"`
+dispensa o registro canônico do GitHub e só deve ser usado em projeto sem remoto.
+
 Argumentos exatos de teste não garantem código inofensivo: testes e rotinas de
 compilação podem chamar terminal, rede, Git ou utilitários de implantação. Não
 conceda `Bash(*)` nem permissões amplas para PowerShell, Python, `gh`, rede ou
@@ -55,10 +65,15 @@ do esquema ativo (apagar a tela ao bloquear e ação ao fechar a tampa) e a list
 processos, casando `remote-control` como token da linha de comando. Ausência de
 candidato é conclusão segura de que não há host; presença de candidato prova um
 processo, nunca um celular conectado. O plugin não grava tarefa agendada, atalho
-de inicialização nem serviço, e não altera esquema de energia sem aprovação
-explícita na própria sessão. O PC pode ficar bloqueado, mas a janela do terminal
-que hospeda o comando precisa continuar aberta — isso não é configuração de
-energia e não tem como ser contornado.
+de inicialização nem serviço, e nunca altera o esquema de energia: quando algum
+ajuste é necessário, mostra os comandos `powercfg` e quem roda é o próprio usuário.
+O PC pode ficar bloqueado, mas a janela do terminal que hospeda o comando precisa
+continuar aberta — isso não é configuração de energia e não tem como ser contornado.
+
+A detecção de host considera qualquer processo `remote-control` na máquina. Ela não
+filtra pela pasta do projeto, e `--since` só marca processos mais antigos que a
+sessão, sem excluí-los. Um host de outra pasta conta como candidato, e por isso a
+confirmação no celular precisa citar o nome exato da máquina (`--name`).
 
 Os limites de contexto também dependem de medição confiável do ambiente; não há
 hook neste plugin que garanta um teto de 150 mil tokens antes de cada geração.

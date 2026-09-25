@@ -41,9 +41,9 @@ Na mesma sessão do Claude, use:
 
 O Claude Code acrescenta o nome do plugin aos comandos. `/workflows`, mencionado
 no documento de requisitos do piloto, representa a entrada conceitual; este pacote
-não instala um atalho no projeto. As cinco skills de apoio ficam ocultas no menu
-de comandos por meio de `user-invocable: false`. O comando `/help` deve mostrar
-apenas a entrada pública do plugin. O `CLAUDE.md` da raiz orienta quem trabalha neste
+não instala um atalho no projeto. Há dois comandos públicos: `/workflows:workflows`
+e `/workflows:total-remote-control`. As quatro skills de apoio ficam ocultas no
+menu de comandos por meio de `user-invocable: false`. O `CLAUDE.md` da raiz orienta quem trabalha neste
 repositório; o Claude não o carrega nos projetos que usam o plugin. A skill principal
 contém todas as regras essenciais de operação.
 
@@ -52,11 +52,37 @@ parar de usá-lo, encerre a sessão e inicie outra sem `--plugin-dir`. Preserve 
 pontos de retomada e as cópias de trabalho isoladas do Git (worktrees). Nenhuma
 configuração ou rotina automática de interceptação (hook) é instalada.
 
+## Acompanhar pelo celular (máquina fixa no app)
+
+A primeira pergunta de todo `/workflows:workflows` é se você quer acompanhar a
+sessão pelo celular. Para que este PC apareça sempre no app Claude do celular,
+como uma máquina onde você abre sessões novas:
+
+1. Abra o PowerShell, fora do app desktop. Essa janela vai ficar aberta.
+2. Vá para a pasta do projeto: `cd "C:\caminho\do\projeto"`
+3. Rode `claude` e aceite a confiança da pasta, se for perguntado.
+4. Rode `/workflows:total-remote-control`.
+
+A configuração segue por perguntas com opções. Numa **segunda** janela do
+PowerShell, você roda `claude remote-control --name <nome>`, com espaço e sem
+traço antes de `remote`. Com um traço só (`claude -remote-control`), o comando
+abre a lista de sessões antigas. Depois você confirma no celular que a máquina
+aparece e responde. A janela do host precisa ficar aberta, e a tampa do notebook
+também, até existir um teste com a tampa fechada. O PC pode ficar bloqueado.
+
+Acompanhar **uma** sessão do desktop pelo celular é outra coisa: não cria uma
+máquina fixa. No app desktop, o `/workflows` também pode mostrar o comando para
+abrir a mesma sessão no CLI (`claude --resume <id>`). Ele nunca roda esse comando
+por conta própria.
+
 ## Configurar um projeto
 
 Copie `examples/config.json` para `.workflows/config.json` no projeto de destino,
 defina o repositório exato no formato `proprietario/repositorio` e mantenha
-`.workflows/` ignorado pelo Git desse projeto. Configure o RoadS somente quando o
+`.workflows/` ignorado pelo Git desse projeto. Um projeto sem remoto usa
+`"repository": null`: o GitHub aparece como `unconfigured`, o plano usa
+`url: null` e as issues ficam em `.workflows/issues/<n>/`, com `source: "local"`.
+As branches de trabalho usam o `branch_prefix` da autorização, com padrão `claude/`. Configure o RoadS somente quando o
 endereço real de consulta autenticada e o formato da resposta forem conhecidos:
 
 ```json
@@ -79,14 +105,16 @@ uma rota JSON de observações. Integrações ausentes são informadas explicita
 
 ## Fluxo de trabalho e utilitários
 
-Inspeção (incluindo a verificação de energia e de host do Remote Control) →
-acordo de monitoramento, com a opção de ancorar o celular → entrevista de
-decisões → PRD aprovado →
+Pergunta do celular (com a verificação de energia e de host do Remote Control) →
+pedido e dimensionamento → inspeção → entrevista de decisões → PRD mostrado na
+íntegra e aprovado →
 plano de issues verticais aprovado e publicado → autorização delimitada de
 implementação → desenvolvimento orientado a testes (TDD), revisão e evidências.
 Uma issue vertical entrega um resultado observável de ponta a ponta, incluindo as
 camadas necessárias, em vez de separar tickets apenas por banco de dados, API ou tela.
-As perguntas ao usuário usam `AskUserQuestion`. O GitHub é a fonte oficial;
+Toda pergunta ao usuário usa `AskUserQuestion`, sempre com opções. A conversa
+segue no idioma do usuário. Nada é aprovado sem que o texto completo tenha
+sido mostrado antes. O GitHub é a fonte oficial;
 os arquivos Markdown e JSON locais são registros e pontos de retomada, não um
 segundo sistema de tickets.
 

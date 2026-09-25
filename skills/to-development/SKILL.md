@@ -21,6 +21,13 @@ Git tooling; verify the resolved path, actual branch and common repository befor
 editing. Never reuse a dirty shared checkout, discard changes or write a protected
 branch. Recheck branch/worktree identity before each mutation boundary.
 
+Branches use the charter's `branch_prefix` (default `claude/`). Choose the
+worktree base before asking the authorization: when `inspect` reports
+`path_risk` other than `ok`, propose a short base such as `C:/wt/<project>` in
+the authorization question itself instead of discovering a
+`'$GIT_DIR' too big` failure afterwards. Any other change of base after
+approval goes back to the user through `AskUserQuestion`.
+
 Refresh the plan from GitHub and run `workflow.py schedule --plan <file> --limit
 <approved-limit>`. The result is a recommendation, not proof of authority. Start
 all eligible non-conflicting issues up to the ceiling with supported generic

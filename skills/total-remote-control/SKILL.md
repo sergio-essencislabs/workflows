@@ -1,100 +1,147 @@
 ---
 name: total-remote-control
-description: Supports workflows by configuring a persistent Remote Control host so the user's phone can start a new session on this machine at any time.
-user-invocable: false
+description: Guides the user, step by step and with option-based questions, to make this PC a fixed machine in the Claude mobile app by starting a persistent Remote Control host and confirming the phone reaches it. Run it from an interactive claude session opened in the project folder.
+disable-model-invocation: true
 ---
 
-# Anchored remote control
+# Fixed machine in the Claude mobile app
 
-Run only inside the coordinating workflows session, after stage 1, and only after
-the user chose the anchored arrangement. Everything presented to the user is in
-Portuguese. Configure nothing silently and start no host on the user's behalf.
+The user runs this as `/workflows:total-remote-control` inside an interactive
+`claude` session opened from PowerShell in the project folder. `/workflows` sends
+them here; they may also run it directly. The goal is one thing only: this PC
+appears in the Claude mobile app as a machine where the user can open sessions,
+and the user has proven it by opening one from the phone.
 
-State the two conditions before anything else, and state them as requirements
-rather than preferences. They are not the same kind of constraint and must not be
-presented as one. The terminal window hosting the command must stay open, always:
-`claude remote-control` is a terminal interface, closing its window ends the host
-within seconds, and sessions hosted from a scheduled task or a background logon
-died about twenty seconds after the phone connected. No power setting changes
-this. The lid must stay open until the closed-lid test has passed on this machine;
-the cause once observed for a dropped session has been removed, but removing a
-cause is not a measurement. The PC may be locked in both cases.
+Everything the user reads is in Brazilian Portuguese (or the user's language).
+Every step ends in one `AskUserQuestion` with two to four options; never leave an
+open question in prose. Every command goes in its own code block, ready to
+copy, with real paths. Configure nothing silently and never start the host
+yourself: a host started from your own tools dies with this session.
 
-Never propose boot automation of any kind: no scheduled task, no startup
-shortcut, no service, no background logon host. Never call
-`SetThreadExecutionState`, and never present sleep or display timeouts set to
-"never" as protection; both were instrumented on this machine and neither
-prevented standby on lock. Only S0 Modern Standby exists here, so there is no
-deeper sleep state to fall back on.
+Be explicit about the difference, because users confuse them: following one
+existing session from the phone (the desktop app's remote access, or native
+`/remote-control` inside a session) is not a fixed machine. Only the host
+started by `claude remote-control` in a terminal that stays open makes the
+machine appear for new sessions.
 
-Read the machine before asking about it. `workflow.py monitoring --root <project>`
-returns both power values, any candidate host process, and the exact commands it
-ran. Prefer it over ad-hoc parsing: the lock-display setting is hidden, `powercfg
-/q` reports no value for it, and only `/qh` with the raw identifiers shows it. A
-value of zero means "never blank on lock" and "do nothing on lid close". A missing
-value reads as unknown, never as zero. Quote the measured values back to the user
-before proposing any change.
+## 1. Read the machine
 
-Explain the lever honestly whenever the display setting comes up. Blanking the
-display kills no process; standby does. On this machine locking alone was measured
-to enter standby even with every timeout set to "never", and a zero lock-display
-value is an attempt to break that chain, not a fix for a known cause. A screen
-that stays on is not evidence that the session survives.
+Run `python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow.py" monitoring --root .` and
+tell the user, in one short paragraph, the two power values and whether a host
+process exists. A missing power value reads as unknown, never as zero. No
+candidate process is a safe conclusion that no host runs here. A candidate is a
+process, not a connected phone.
 
-Label every limit and never promise past it. That a zero lock-display value on AC
-holds through a long lock is unproven: the only measured survival was about ninety
-seconds, and it was on battery. That a zero lid value makes a closed lid safe is
-untested. The result of the preflight is a recommendation, not proof of authority.
+If a candidate already exists, ask header `Host existente`: `É o meu host, seguir
+para o celular` (go to step 5), `Iniciar outro host`, `Não sei` (explain how to
+find the window that runs `claude remote-control`).
 
-Ask at most three `AskUserQuestion` calls and stop at the first refusal. The first
-carries two questions: header `Condições`, asking acceptance of a locked PC with
-the terminal window and the lid open, options `Concordo` and `Não posso`; and
-header `Energia`, asking whether the machine stays on AC power while unattended,
-options `Na tomada`, `Na bateria` and `Não sei`. `Não posso` ends this skill and
-returns mode `local` or `alternative` to the coordinator. Battery and uncertainty
-both continue, carrying the measured battery profile as a stated caveat and no
-claim that the arrangement survives.
+## 2. The two conditions
 
-Make the second call only when a measured value is not zero, on either profile.
-Present the exact `powercfg` lines to be run and the current values, then ask with
-header `Ajuste de energia` and options `Aplicar`, `Deixar como está` and `Só
-mostrar`. Changing a power scheme is a system change and requires this approval
-every time. Record the previous values before any change, never modify a scheme
-other than the active one, and never widen the change beyond the two settings
-named here.
+State them as requirements, in plain words, then ask two questions together:
 
-Make the third call after the user has started the host. Instruct the user to open
-a terminal that will stay open, in the project directory, and run `claude
-remote-control --name <nome-curto>`. Keep `--spawn`, `--capacity` and
-`--permission-mode` at their defaults. Never propose `bypassPermissions`,
-`acceptEdits`, `auto` or `dontAsk` to make unattended work easier; a wider
-permission mode is a separate human decision with its own authorization and is
-refused here. Then ask, header `Conexão`, whether the phone opened the session and
-answered a test question, options `Confirmo pelo celular`, `Não conectou` and
-`Prefiro local`; and header `Nova sessão`, whether a session started from the
-phone works in the same directory or a separate worktree. Only `Confirmo pelo
-celular` records `phone_connected: true`. A running process, a printed URL, a QR
-code or a displayed prompt is never that evidence.
+- A janela do PowerShell que roda o host precisa ficar **aberta o tempo todo**.
+  Fechar a janela encerra o host em segundos; nenhuma configuração de energia
+  muda isso.
+- A tampa do notebook fica **aberta** até um teste com a tampa fechada passar
+  nesta máquina. O PC pode ficar bloqueado.
 
-Describe detection as asymmetric, because it is. No candidate process means no
-persistent host, and that conclusion is safe. A candidate means a process: the
-host may be listening with no phone attached, the terminal may be about to close,
-and the argument also appears in a help invocation. Whether the phone is attached,
-whether the tunnel is healthy and whether a session is recorded inside the
-reattachment window are all outside what any local check can answer; report them
-as unknown rather than as false.
+Header `Condições`: `Concordo`, `Não posso`. Header `Energia`, "A máquina fica na
+tomada enquanto você estiver fora?": `Na tomada`, `Na bateria`, `Não sei`.
+`Não posso` ends the skill: tell the user the phone can still follow a single
+session, and that `/workflows` will run in local mode. Battery or unknown power
+continues with the caveat that only about ninety seconds of locked survival were
+ever measured, on battery; promise nothing beyond that.
 
-After a restart, in a new session, or whenever the user reports a disconnection,
-detect first and offer this configuration again when no host is found. Do not
-reuse an earlier confirmation. Where a session was recorded for this directory or
-one of its worktrees, `claude remote-control -c` reattaches to it and fails when
-nothing was recorded there within roughly the last four hours. Offer that path
-before a fresh host, describe the window as documented rather than verified here,
-and never plan around it as a guarantee.
+## 3. Power, only when needed
 
-Record mode `phone`, `confirmed_by`, `phone_connected`, the session identity, the
-measured power values and the time in the authorization's `monitoring` block and
-in the handoff's monitoring field. Write no scheduled task, no shortcut, no
-startup entry and no file outside `.workflows/`. Return the recorded arrangement
-and every unresolved condition to `/workflows:workflows`; an unconfirmed phone
-blocks each phase that depends on reaching the user.
+Only if a measured value is not zero or is unknown: show the current values and
+the exact `powercfg` lines for the active scheme and these two settings only,
+with the previous values so they can be restored. The user runs them; you do
+not change system settings. Ask header `Ajuste de energia`: `Vou rodar os
+comandos`, `Deixar como está`. After `Vou rodar os comandos`, rerun the
+preflight and report the new values. A zero lock-display value attempts to stop
+lock from entering standby; it is not a proven fix. Never set sleep to "never",
+never call `SetThreadExecutionState`, never touch another scheme.
+
+## 4. Start the host in a second window
+
+Tell the user to keep this window open and open **another** PowerShell window,
+then paste, with the real folder and a short name derived from it:
+
+```powershell
+cd "<pasta do projeto>"
+```
+
+```powershell
+claude remote-control --name <nome-curto>
+```
+
+Warn in one line: it is `claude remote-control`, with a space and no dash before
+`remote`. `claude -remote-control` is not the host command: the single dash
+turns it into short options such as `-r` (resume), which was observed to open a
+list of old sessions instead of starting a host. Keep `--spawn`, `--capacity` and
+`--permission-mode` at their defaults; never suggest `bypassPermissions`,
+`acceptEdits`, `auto` or `dontAsk`.
+
+Ask header `Host`: `A janela mostra o host ativo`, `Apareceu uma lista de
+sessões`, `Deu erro ou a janela fechou`.
+
+- List of sessions: explain the one-dash cause, tell them to leave it with `Esc`,
+  and repeat this step.
+- Error: offer the known causes as options — `Não estou logado` (run `claude`,
+  then `/login`, in that window), `Pediu para confiar na pasta` (run `claude`
+  once in the folder, accept, `/exit`, then the host command), `Outro erro`
+  (paste it in the free-text choice). Repeat this step afterwards.
+
+## 5. Confirm the host exists
+
+Rerun the preflight. With no candidate process, say plainly that the host is not
+running on this machine, whatever the window seems to show, and return to step
+4 with header `Host`: `Tentar de novo`, `Ficar no modo local`. Never continue to
+the phone without a detected process.
+
+## 6. Pin it on the phone
+
+Tell the user: no app Claude do celular, entre na área de código (Code), procure a
+máquina `<nome-curto>` na lista de ambientes ou sessões, abra, envie "teste" e
+espere a resposta. Menu names may vary with the app version; say so rather than
+inventing exact labels. Ask header `Celular`: `A máquina aparece e respondeu`,
+`Não aparece`, `Aparece mas não abre`.
+
+- Does not appear: the same account on phone and PC, the app updated, pull to
+  refresh, the host window still open; then ask again.
+- Appears but does not open: check the host window for a message and rerun the
+  preflight; then ask again.
+
+Only a detected host plus `A máquina aparece e respondeu`, given in this session,
+records `phone_connected: true`. A process, a URL, a QR code or a prompt shown
+on screen is never that evidence.
+
+## 7. Record and hand back
+
+Write `.workflows/monitoring.json` in the project as a historical record: mode
+`phone`, `confirmed_by`, `observed_phone_confirmation` with its time, host name,
+detected process id, measured power values, caveats and
+`"valid_for_other_sessions": false`. Never write `phone_connected` there; only
+the session that asks the user may set it in its own authorization. Write nothing else, and nothing outside `.workflows/`: no
+scheduled task, startup shortcut, service or background logon host (hosts
+started that way died about twenty seconds after the phone connected).
+
+Close with the reminders — host window open, lid open, PC may lock — and tell
+the user to answer `Concluí e o celular respondeu` back in the `/workflows`
+session, which redetects the host itself; this file does not carry the
+confirmation across sessions.
+
+## After a restart or disconnection
+
+Detect first. `claude remote-control --help` (CLI 2.1.282) documents that `-c`
+reattaches to the session last recorded for this folder or one of its worktrees
+and fails when nothing was recorded there within roughly the last four hours.
+Offer it before a fresh host, describe the window as documented rather than
+verified here, and never plan around it. Never reuse an earlier confirmation.
+
+The survival figures above (about ninety seconds locked on battery, about twenty
+seconds for hosts started from a scheduled task or background logon) and the
+single-dash behaviour are observations from earlier pilots on one machine, not
+guarantees. Say so when you cite them.

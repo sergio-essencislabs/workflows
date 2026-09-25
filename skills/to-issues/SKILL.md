@@ -28,8 +28,14 @@ ports, shared services, dependency cycles and context size. Add dependencies or
 shared ownership for resources that cannot safely run together. Split oversized
 issues into independently acceptable outcomes. See `evals/vertical-slices.md`.
 
-Present the complete plan and graph. Ask approval through `AskUserQuestion` for
-the exact issue creation/update scope before any write. Use installed GitHub
+Before asking for approval, show the complete plan in the user's language: the
+table of slices with dependencies and ownership, and the full body of every
+issue, in the conversation, as a file sent with the host's file-sending tool
+when one exists, and in the `preview` of the approve option (as much as fits).
+Then ask approval through `AskUserQuestion`, with options, for the exact issue
+creation/update scope before any write. A local project without a remote writes
+the approved bodies under `.workflows/issues/<n>/` with `source: "local"`
+snapshots; the same approval rule applies. Use installed GitHub
 tools or `gh issue create/edit --repo <approved-repo> --body-file <file>` with
 literal UTF-8 bodies, not interpolated shell strings. Keep native permissions.
 If a network response is uncertain, reread/list issues before retrying to avoid

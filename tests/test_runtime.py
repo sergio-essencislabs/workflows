@@ -37,7 +37,7 @@ def charter(root):
                 protected_branches=['main', 'master', 'production'],
                 operations=['edit', 'test', 'checkpoint', 'draft_pr', 'issue_update'],
                 worktrees=[{'issue': 1, 'path': str(root),
-                            'branch': 'codex/issue-1', 'ownership': ['src']}],
+                            'branch': 'claude/issue-1', 'ownership': ['src']}],
                 verification_commands=[['python', '-m', 'unittest']],
                 stop_conditions=['New product decision', 'Permission prompt'])
 
@@ -110,7 +110,7 @@ class AuthorizationTests(unittest.TestCase):
         (self.root / 'src').mkdir()
         self.c = charter(self.root)
         self.op = dict(repository='example/pilot', issue=1, kind='edit',
-                       branch='codex/issue-1', worktree=str(self.root),
+                       branch='claude/issue-1', worktree=str(self.root),
                        path=str(self.root / 'src' / 'app.py'))
 
     def test_positive_local_edit(self):
@@ -121,7 +121,7 @@ class AuthorizationTests(unittest.TestCase):
                    'shell', 'road_ack', 'push', 'issue_close']]
         changes += [('repository', 'attacker/other'), ('issue', 9),
                     ('branch', 'main'), ('branch', 'production'),
-                    ('branch', 'codex/unapproved'), ('issue', True)]
+                    ('branch', 'claude/unapproved'), ('issue', True)]
         for key, value in changes:
             op = dict(self.op, **{key: value})
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
@@ -242,6 +242,203 @@ class IntegrationReadTests(unittest.TestCase):
         self.assertNotIn('private-secret', json.dumps(result))
 
 
+class LocalModeTests(unittest.TestCase):
+    """A project without a remote is a supported state, not a missing prerequisite."""
+
+    def test_inspect_without_repository_reports_github_unconfigured(self):
+        with tempfile.TemporaryDirectory() as root, patch.object(workflow, 'run') as run:
+            result = workflow.inspect({'repository': None, 'roads': None}, root)
+        run.assert_not_called()
+        self.assertIsNone(result['repository'])
+        self.assertEqual(result['sources']['github']['status'], 'unconfigured')
+        self.assertEqual(result['sources']['roads']['status'], 'unconfigured')
+
+    def test_inspect_still_rejects_a_malformed_or_missing_repository(self):
+        for config in ({'repository': 'not a repository'}, {'roads': None}, {'repsitory': None}):
+            with self.subTest(config=config), tempfile.TemporaryDirectory() as root, \
+                    self.assertRaisesRegex(ValueError, 'repository'):
+                workflow.inspect(config, root)
+
+    def test_resume_rejects_a_source_change_alone(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            handoff = root / 'handoff.md'
+            handoff.write_text('Next.')
+            local = {'number': 1, 'body': 'Accept A', 'source': 'local'}
+            evidence = {'head': 'a', 'branch': 'claude/i', 'diff_sha256': 'a', 'files_sha256': 'b', 'files': {}}
+            with patch.object(workflow, 'git_evidence', return_value=evidence):
+                saved = workflow.checkpoint(root, local, handoff, 'Next')
+                with self.assertRaisesRegex(ValueError, 'different issue'):
+                    workflow.resume(root, saved, dict(local, source=None), handoff)
+
+    def test_local_plan_validates_without_urls(self):
+        p = plan()
+        p['repository'] = None
+        for i in p['issues']:
+            i['url'] = None
+        workflow.validate_plan(p)
+        p['issues'][0]['url'] = 'https://github.com/example/pilot/issues/1'
+        with self.assertRaisesRegex(ValueError, 'local plan'):
+            workflow.validate_plan(p)
+
+    def test_local_issue_snapshot_checkpoints_and_resumes(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            handoff = root / 'handoff.md'
+            handoff.write_text('Next: run focused tests.')
+            local = {'number': 1, 'title': 'Save', 'body': 'Accept A', 'state': 'open', 'source': 'local'}
+            evidence = {'head': 'a' * 40, 'branch': 'claude/issue-1',
+                        'diff_sha256': 'a', 'files_sha256': 'b', 'files': {}}
+            with patch.object(workflow, 'git_evidence', return_value=evidence):
+                saved = workflow.checkpoint(root, local, handoff, 'Run focused tests')
+                self.assertEqual(workflow.resume(root, saved, local, handoff)['state'], 'unchanged')
+                with self.assertRaises(ValueError):
+                    workflow.checkpoint(root, dict(local, source='guess'), handoff, 'Run focused tests')
+                remote = dict(local, source=None, html_url='https://github.com/example/pilot/issues/1')
+                with self.assertRaisesRegex(ValueError, 'different issue'):
+                    workflow.resume(root, saved, remote, handoff)
+
+
+class LocalAuthorizationTests(unittest.TestCase):
+    def test_local_charter_needs_an_explicit_local_operation(self):
+        with tempfile.TemporaryDirectory() as root:
+            Path(root, 'src').mkdir()
+            c = dict(charter(root), repository=None)
+            op = dict(repository=None, issue=1, kind='edit', branch='claude/issue-1',
+                      worktree=root, path=str(Path(root) / 'src' / 'a.py'))
+            workflow.authorize(c, op)
+            missing = {k: v for k, v in op.items() if k != 'repository'}
+            for bad in (missing, dict(op, repository='example/pilot')):
+                with self.subTest(op=bad), self.assertRaisesRegex(ValueError, 'repository'):
+                    workflow.authorize(c, bad)
+
+
+class BranchPrefixTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / 'src').mkdir()
+
+    def operation(self, branch):
+        return dict(repository='example/pilot', issue=1, kind='edit', branch=branch,
+                    worktree=str(self.root), path=str(self.root / 'src' / 'app.py'))
+
+    def charter_for(self, branch, **extra):
+        c = charter(self.root)
+        c['worktrees'][0]['branch'] = branch
+        c.update(extra)
+        return c
+
+    def test_default_prefix_is_claude(self):
+        workflow.authorize(self.charter_for('claude/issue-1'), self.operation('claude/issue-1'))
+        with self.assertRaisesRegex(ValueError, 'branch'):
+            workflow.authorize(self.charter_for('codex/issue-1'), self.operation('codex/issue-1'))
+
+    def test_prefix_cannot_open_a_protected_namespace(self):
+        for protected, prefix, branch in ((['release/*'], 'release/', 'release/1.0'),
+                                          (['Release'], 'release/', 'release/1.0'),
+                                          (['MAIN'], 'main/', 'main/x')):
+            c = self.charter_for(branch, branch_prefix=prefix, protected_branches=protected)
+            with self.subTest(prefix=prefix), self.assertRaisesRegex(ValueError, 'branch_prefix'):
+                workflow.authorize(c, self.operation(branch))
+
+    def test_mid_pattern_protection_closes_the_prefix_and_bad_entries_fail_cleanly(self):
+        for pattern in ('release/*/hotfix', '*/hotfix', 'rel*/hotfix'):
+            c = self.charter_for('release/a/hotfix/x', branch_prefix='release/',
+                                 protected_branches=[pattern])
+            with self.subTest(pattern=pattern), \
+                    self.assertRaisesRegex(ValueError, 'protected or unapproved branch'):
+                workflow.authorize(c, self.operation('release/a/hotfix/x'))
+        allowed = self.charter_for('release/1.0', branch_prefix='release/',
+                                   protected_branches=['release/*/hotfix'])
+        workflow.authorize(allowed, self.operation('release/1.0'))
+        for entries in ([None], [5], 'main'):
+            with self.subTest(entries=entries), self.assertRaisesRegex(ValueError, 'protected_branches'):
+                workflow.authorize(self.charter_for('claude/issue-1', protected_branches=entries),
+                                   self.operation('claude/issue-1'))
+
+    def test_protected_branch_inside_prefix_is_denied_case_insensitively(self):
+        c = self.charter_for('claude/x', protected_branches=['Claude/X'])
+        with self.assertRaisesRegex(ValueError, 'protected or unapproved branch'):
+            workflow.authorize(c, self.operation('claude/x'))
+
+    def test_one_protected_branch_does_not_block_its_siblings(self):
+        c = self.charter_for('claude/issue-2', protected_branches=['claude/issue-1'])
+        workflow.authorize(c, self.operation('claude/issue-2'))
+        for branch in ('claude/issue-1', 'claude/issue-1/sub'):
+            trailing = self.charter_for(branch, protected_branches=['claude/issue-1/'])
+            with self.subTest(branch=branch), \
+                    self.assertRaisesRegex(ValueError, 'protected or unapproved branch'):
+                workflow.authorize(trailing, self.operation(branch))
+        below = self.charter_for('claude/issue-1/sub', protected_branches=['claude/issue-1'])
+        with self.assertRaisesRegex(ValueError, 'protected or unapproved branch'):
+            workflow.authorize(below, self.operation('claude/issue-1/sub'))
+
+    def test_null_prefix_and_missing_charter_repository_are_denied(self):
+        with self.assertRaisesRegex(ValueError, 'branch_prefix'):
+            workflow.authorize(self.charter_for('claude/issue-1', branch_prefix=None),
+                               self.operation('claude/issue-1'))
+        c = self.charter_for('claude/issue-1')
+        del c['repository']
+        with self.assertRaisesRegex(ValueError, 'repository'):
+            workflow.authorize(c, self.operation('claude/issue-1'))
+
+    def test_charter_prefix_is_honoured_and_validated(self):
+        c = self.charter_for('codex/issue-1', branch_prefix='codex/')
+        workflow.authorize(c, self.operation('codex/issue-1'))
+        for prefix in ('', 'codex', '/', 'main/', 5):
+            with self.subTest(prefix=prefix), self.assertRaisesRegex(ValueError, 'branch_prefix'):
+                workflow.authorize(self.charter_for('codex/issue-1', branch_prefix=prefix),
+                                   self.operation('codex/issue-1'))
+
+
+class VerificationDiscoveryTests(unittest.TestCase):
+    def inspect(self, files):
+        with tempfile.TemporaryDirectory() as d:
+            for name, text in files.items():
+                path = Path(d, name)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding='utf-8')
+            return workflow.inspect({'repository': None}, d)
+
+    def test_python_unittest_and_pytest_candidates(self):
+        self.assertEqual(self.inspect({'tests/test_a.py': ''})['verification_candidates'],
+                         [['python', '-m', 'unittest', 'discover', '-s', 'tests', '-v']])
+        self.assertEqual(self.inspect({'pyproject.toml': '[tool.pytest.ini_options]\n',
+                                       'tests/test_a.py': ''})['verification_candidates'],
+                         [['python', '-m', 'pytest']])
+        self.assertEqual(self.inspect({'pytest.ini': '[pytest]\n'})['verification_candidates'],
+                         [['python', '-m', 'pytest']])
+
+    def test_npm_scripts_kept_and_nothing_invented(self):
+        result = self.inspect({'package.json': '{"scripts": {"test": "vitest"}}'})
+        self.assertEqual(result['verification_commands'], {'test': 'vitest'})
+        self.assertEqual(result['verification_candidates'], [])
+        self.assertEqual(self.inspect({})['verification_candidates'], [])
+
+
+class PathRiskTests(unittest.TestCase):
+    def test_long_or_virtualized_windows_root_is_flagged(self):
+        short = workflow.path_risk('C:/wt/app', 'C:/wt/app', 'win32')
+        self.assertEqual(short['status'], 'ok')
+        deep = 'C:/Users/u/AppData/Roaming/' + 'x' * 170
+        self.assertEqual(workflow.path_risk(deep, deep, 'win32')['status'], 'long_path')
+        virtual = workflow.path_risk('C:/Users/u/AppData/Roaming/App/s',
+                                     'C:/Users/u/AppData/Local/Packages/App_x/LocalCache/Roaming/App/s', 'win32')
+        self.assertEqual(virtual['status'], 'virtualized')
+        self.assertIn('worktree', virtual['advice'])
+
+    def test_other_platforms_are_not_flagged(self):
+        deep = '/home/u/' + 'x' * 300
+        self.assertEqual(workflow.path_risk(deep, deep, 'linux')['status'], 'ok')
+
+    def test_inspect_reports_path_risk(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertIn(workflow.inspect({'repository': None}, root)['path_risk']['status'],
+                          {'ok', 'long_path', 'virtualized'})
+
+
 QH_ENGLISH = ('    Current AC Power Setting Index: 0x00000000\n'
               '    Current DC Power Setting Index: 0x0000001e\n')
 QH_LOCALIZED = ('    \u00cdndice de Configura\u00e7\u00f5es de Correntes Alternadas Atuais: 0x00000000\n'
@@ -299,7 +496,7 @@ class MonitoringTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             Path(root, 'src').mkdir()
             operation = dict(repository='example/pilot', issue=1, kind='edit',
-                             branch='codex/issue-1', worktree=root,
+                             branch='claude/issue-1', worktree=root,
                              path=str(Path(root) / 'src' / 'a.py'))
             good = charter(root)
             good['monitoring'] = {'mode': 'phone', 'confirmed_by': 'human', 'phone_connected': True}
