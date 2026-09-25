@@ -58,8 +58,14 @@ def conflicts(a, b):
     return any(overlap(x, y) for x in a['ownership'] for y in b['ownership'])
 
 
+def repository_or_local(value):
+    """None means a local project without a remote, which is a supported state."""
+    return value is None or repository(value)
+
+
 def validate_plan(plan):
-    require(isinstance(plan, dict) and repository(plan.get('repository')), 'repository must be owner/name')
+    require(isinstance(plan, dict) and 'repository' in plan and repository_or_local(plan['repository']),
+            'repository must be owner/name, or null for a local project')
     issues = plan.get('issues')
     require(isinstance(issues, list) and 0 < len(issues) <= 24,
             'plan must contain 1..24 session-sized issues; split larger batches')
@@ -80,6 +86,7 @@ def validate_plan(plan):
                 'dependencies must be unique integer ids')
         require(issue.get('status') in {'ready', 'running', 'blocked', 'verified', 'proposed'}, 'invalid status')
         if issue.get('url'):
+            require(plan['repository'] is not None, 'a local plan cannot reference GitHub issue URLs')
             require(issue['url'] == f'https://github.com/{plan["repository"]}/issues/{issue["id"]}',
                     'issue URL does not match repository/id')
     graph = {i['id']: i['dependencies'] for i in issues}
@@ -136,7 +143,7 @@ def context_action(used, reserve):
 def authorize(charter, operation):
     """Check an intended structured operation. This does NOT grant permissions."""
     require(isinstance(charter, dict) and isinstance(operation, dict), 'objects required')
-    require(repository(charter.get('repository')), 'invalid charter repository')
+    require('repository' in charter and repository_or_local(charter['repository']), 'invalid charter repository')
     for field in ('approved_by', 'approval_reference'):
         require(nonempty(charter.get(field)), f'missing human {field}')
     expiry = dt.datetime.fromisoformat(charter.get('expires_at', ''))
@@ -150,7 +157,8 @@ def authorize(charter, operation):
         require(nonempty(monitor.get('details')), 'alternative monitoring needs details')
     if monitor['mode'] == 'phone':
         require(monitor.get('phone_connected') is True, 'physical phone not confirmed')
-    require(operation.get('repository') == charter['repository'], 'unapproved repository')
+    require('repository' in operation and operation['repository'] == charter['repository'],
+            'unapproved repository')
     require(number(operation.get('issue')) and operation['issue'] in charter.get('issue_ids', []),
             'unapproved issue')
     kind = operation.get('kind')
@@ -165,8 +173,11 @@ def authorize(charter, operation):
     selected = matches[0]
     branch = operation.get('branch')
     protected = {'main', 'master'} | set(charter.get('protected_branches', []))
+    prefix = charter.get('branch_prefix', 'claude/')
+    require(nonempty(prefix) and prefix.endswith('/') and nonempty(prefix.rstrip('/')) and
+            prefix.rstrip('/') not in protected, 'invalid branch_prefix')
     require(nonempty(branch) and branch == selected.get('branch') and branch not in protected and
-            branch.startswith('codex/'), 'protected or unapproved branch')
+            branch.startswith(prefix), 'protected or unapproved branch')
     if kind == 'test':
         argv = operation.get('argv')
         require(strings(argv) and argv in charter.get('verification_commands', []), 'unapproved verification argv')
@@ -232,7 +243,8 @@ def checkpoint(root, issue, handoff, next_step):
     root, handoff = Path(root).resolve(strict=True), Path(handoff).resolve()
     require(handoff.is_file(), 'durable handoff file required')
     require(number(issue.get('number')) and nonempty(issue.get('body')) and
-            nonempty(issue.get('html_url')), 'current canonical GitHub issue snapshot required')
+            (nonempty(issue.get('html_url')) or issue.get('source') == 'local'),
+            'current canonical GitHub issue snapshot, or a local issue with source "local", required')
     require(nonempty(next_step), 'next concrete step required')
     return {'version': 1, 'created_at': dt.datetime.now(dt.timezone.utc).isoformat(),
             'root': str(root), 'issue': issue, 'git': git_evidence(root),
@@ -245,7 +257,8 @@ def resume(root, saved, current_issue, handoff):
     require(Path(root).resolve(strict=True) == Path(saved['root']).resolve(strict=True),
             'checkpoint belongs to a different worktree')
     require(saved['issue'].get('number') == current_issue.get('number') and
-            saved['issue'].get('html_url') == current_issue.get('html_url'),
+            saved['issue'].get('html_url') == current_issue.get('html_url') and
+            saved['issue'].get('source') == current_issue.get('source'),
             'checkpoint belongs to a different issue/repository')
     live = git_evidence(root)
     changed = drift(saved['issue'], current_issue)
@@ -261,21 +274,62 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError('RoadS redirect refused; configure the final approved endpoint')
 
 
+LONG_PATH_LIMIT = 160
+SHORT_BASE_ADVICE = ('Git worktrees under this root may exceed the Windows path limit; propose a short '
+                     'worktree base such as C:/wt/<project> and ask before using it.')
+
+
+def path_risk(given, resolved, platform=None):
+    """Flag roots where `git worktree add` can fail on Windows ('$GIT_DIR' too big).
+
+    Packaged desktop apps may redirect AppData into a much longer
+    `Packages/<app>/LocalCache` path that Git sees but the user never typed.
+    """
+    platform = platform or sys.platform
+    given_n, resolved_n = (str(p).replace('\\', '/').rstrip('/') for p in (given, resolved))
+    result = {'status': 'ok', 'length': max(len(given_n), len(resolved_n))}
+    if not platform.startswith('win'):
+        return result
+    lowered = resolved_n.casefold()
+    if given_n.casefold() != lowered and '/packages/' in lowered and '/localcache/' in lowered:
+        result.update(status='virtualized', resolved=resolved_n, advice=SHORT_BASE_ADVICE)
+    elif result['length'] > LONG_PATH_LIMIT:
+        result.update(status='long_path', advice=SHORT_BASE_ADVICE)
+    return result
+
+
+def verification_candidates(root):
+    """Candidate argv from repository files. Candidates, never approved commands."""
+    root = Path(root)
+    pyproject = root / 'pyproject.toml'
+    if (root / 'pytest.ini').is_file() or (
+            pyproject.is_file() and '[tool.pytest' in pyproject.read_text(encoding='utf-8', errors='replace')):
+        return [['python', '-m', 'pytest']]
+    if (root / 'tests').is_dir() and any((root / 'tests').glob('test*.py')):
+        return [['python', '-m', 'unittest', 'discover', '-s', 'tests', '-v']]
+    return []
+
+
 def inspect(config, root):
-    require(repository(config.get('repository')), 'repository must be owner/name')
-    repo = config['repository']
+    repo = config.get('repository')
+    require(repository_or_local(repo), 'repository must be owner/name, or null for a local project')
     result = {'repository': repo, 'fetched_at': dt.datetime.now(dt.timezone.utc).isoformat(),
-              'sources': {}, 'verification_commands': {}}
-    try:
-        raw = run(['gh', 'api', '--paginate', '--slurp', f'repos/{repo}/issues?state=all&per_page=100'])
-        pages = json.loads(raw)
-        require(isinstance(pages, list) and all(isinstance(page, list) and
-                all(isinstance(i, dict) and number(i.get('number')) for i in page)
-                for page in pages), 'malformed GitHub paginated response')
-        result['sources']['github'] = {'status': 'available', 'source': f'https://github.com/{repo}/issues',
-                                       'issues': [i for page in pages for i in page if 'pull_request' not in i]}
-    except (ValueError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
-        result['sources']['github'] = {'status': 'unavailable', 'reason': 'GitHub read failed; check gh authentication and repository access'}
+              'sources': {}, 'verification_commands': {},
+              'verification_candidates': verification_candidates(root),
+              'path_risk': path_risk(Path(root).absolute(), os.path.realpath(root))}
+    if repo is None:
+        result['sources']['github'] = {'status': 'unconfigured'}
+    else:
+        try:
+            raw = run(['gh', 'api', '--paginate', '--slurp', f'repos/{repo}/issues?state=all&per_page=100'])
+            pages = json.loads(raw)
+            require(isinstance(pages, list) and all(isinstance(page, list) and
+                    all(isinstance(i, dict) and number(i.get('number')) for i in page)
+                    for page in pages), 'malformed GitHub paginated response')
+            result['sources']['github'] = {'status': 'available', 'source': f'https://github.com/{repo}/issues',
+                                           'issues': [i for page in pages for i in page if 'pull_request' not in i]}
+        except (ValueError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+            result['sources']['github'] = {'status': 'unavailable', 'reason': 'GitHub read failed; check gh authentication and repository access'}
     roads = config.get('roads')
     if not roads:
         result['sources']['roads'] = {'status': 'unconfigured'}
