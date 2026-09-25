@@ -253,9 +253,23 @@ class LocalModeTests(unittest.TestCase):
         self.assertEqual(result['sources']['github']['status'], 'unconfigured')
         self.assertEqual(result['sources']['roads']['status'], 'unconfigured')
 
-    def test_inspect_still_rejects_a_malformed_repository(self):
-        with tempfile.TemporaryDirectory() as root, self.assertRaises(ValueError):
-            workflow.inspect({'repository': 'not a repository'}, root)
+    def test_inspect_still_rejects_a_malformed_or_missing_repository(self):
+        for config in ({'repository': 'not a repository'}, {'roads': None}, {'repsitory': None}):
+            with self.subTest(config=config), tempfile.TemporaryDirectory() as root, \
+                    self.assertRaisesRegex(ValueError, 'repository'):
+                workflow.inspect(config, root)
+
+    def test_resume_rejects_a_source_change_alone(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            handoff = root / 'handoff.md'
+            handoff.write_text('Next.')
+            local = {'number': 1, 'body': 'Accept A', 'source': 'local'}
+            evidence = {'head': 'a', 'branch': 'claude/i', 'diff_sha256': 'a', 'files_sha256': 'b', 'files': {}}
+            with patch.object(workflow, 'git_evidence', return_value=evidence):
+                saved = workflow.checkpoint(root, local, handoff, 'Next')
+                with self.assertRaisesRegex(ValueError, 'different issue'):
+                    workflow.resume(root, saved, dict(local, source=None), handoff)
 
     def test_local_plan_validates_without_urls(self):
         p = plan()
@@ -320,6 +334,28 @@ class BranchPrefixTests(unittest.TestCase):
         workflow.authorize(self.charter_for('claude/issue-1'), self.operation('claude/issue-1'))
         with self.assertRaisesRegex(ValueError, 'branch'):
             workflow.authorize(self.charter_for('codex/issue-1'), self.operation('codex/issue-1'))
+
+    def test_prefix_cannot_open_a_protected_namespace(self):
+        for protected, prefix, branch in ((['release/*'], 'release/', 'release/1.0'),
+                                          (['Release'], 'release/', 'release/1.0'),
+                                          (['MAIN'], 'main/', 'main/x')):
+            c = self.charter_for(branch, branch_prefix=prefix, protected_branches=protected)
+            with self.subTest(prefix=prefix), self.assertRaisesRegex(ValueError, 'branch_prefix'):
+                workflow.authorize(c, self.operation(branch))
+
+    def test_protected_branch_inside_prefix_is_denied_case_insensitively(self):
+        c = self.charter_for('claude/x', protected_branches=['Claude/X'])
+        with self.assertRaisesRegex(ValueError, 'branch'):
+            workflow.authorize(c, self.operation('claude/x'))
+
+    def test_null_prefix_and_missing_charter_repository_are_denied(self):
+        with self.assertRaisesRegex(ValueError, 'branch_prefix'):
+            workflow.authorize(self.charter_for('claude/issue-1', branch_prefix=None),
+                               self.operation('claude/issue-1'))
+        c = self.charter_for('claude/issue-1')
+        del c['repository']
+        with self.assertRaisesRegex(ValueError, 'repository'):
+            workflow.authorize(c, self.operation('claude/issue-1'))
 
     def test_charter_prefix_is_honoured_and_validated(self):
         c = self.charter_for('codex/issue-1', branch_prefix='codex/')

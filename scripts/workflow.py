@@ -5,6 +5,7 @@ tests, grants Claude permissions, or changes a product repository.
 """
 import argparse
 import datetime as dt
+import fnmatch
 import hashlib
 import itertools
 import json
@@ -172,12 +173,16 @@ def authorize(charter, operation):
     require(len(matches) == 1, 'unapproved or ambiguous worktree')
     selected = matches[0]
     branch = operation.get('branch')
-    protected = {'main', 'master'} | set(charter.get('protected_branches', []))
+    protected = {p.casefold() for p in {'main', 'master'} | set(charter.get('protected_branches', []))}
+    # A protected entry, or a pattern such as release/*, also closes its namespace.
+    namespaces = {p.rstrip('*').rstrip('/') for p in protected} - {''}
     prefix = charter.get('branch_prefix', 'claude/')
-    require(nonempty(prefix) and prefix.endswith('/') and nonempty(prefix.rstrip('/')) and
-            prefix.rstrip('/') not in protected, 'invalid branch_prefix')
-    require(nonempty(branch) and branch == selected.get('branch') and branch not in protected and
-            branch.startswith(prefix), 'protected or unapproved branch')
+    stem = prefix.rstrip('/').casefold() if isinstance(prefix, str) else ''
+    require(nonempty(prefix) and prefix.endswith('/') and nonempty(stem) and
+            not any(stem == n or stem.startswith(n + '/') for n in namespaces), 'invalid branch_prefix')
+    require(nonempty(branch) and branch == selected.get('branch') and branch.startswith(prefix) and
+            not any(fnmatch.fnmatchcase(branch.casefold(), p) for p in protected),
+            'protected or unapproved branch')
     if kind == 'test':
         argv = operation.get('argv')
         require(strings(argv) and argv in charter.get('verification_commands', []), 'unapproved verification argv')
@@ -311,8 +316,10 @@ def verification_candidates(root):
 
 
 def inspect(config, root):
-    repo = config.get('repository')
-    require(repository_or_local(repo), 'repository must be owner/name, or null for a local project')
+    # A missing key is a typo, not a local project: only an explicit null disables GitHub.
+    require('repository' in config and repository_or_local(config['repository']),
+            'repository must be owner/name, or null for a local project')
+    repo = config['repository']
     result = {'repository': repo, 'fetched_at': dt.datetime.now(dt.timezone.utc).isoformat(),
               'sources': {}, 'verification_commands': {},
               'verification_candidates': verification_candidates(root),

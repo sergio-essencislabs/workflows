@@ -82,7 +82,10 @@ desktop app, ask header `Abrir no CLI`, "Quer abrir esta mesma sessão também n
 CLI?", options `Mostrar comando` and `Não`. The command resumes this same
 conversation from the same directory: `cd "<pasta desta sessão>"` then
 `claude --resume <id-desta-sessão>`, or `claude --resume` and pick the session
-by its title when the id is unknown. Advise closing the session in the desktop
+by its title when the id is unknown. Take the id and the desktop context only
+from what the host states about this session (its environment notes, or the
+transcript file named after the id under `~/.claude/projects/<pasta>/`); never
+guess an id. Advise closing the session in the desktop
 app before continuing in the CLI, so that two clients do not write the same
 conversation. Never run it yourself.
 
@@ -105,7 +108,7 @@ Then choose the lightest path that still fits, and say which one you chose and
 why in one sentence:
 
 - **Direct.** A small, well-understood, low-risk change or a question you can
-  answer. Skip stages 4 to 6 entirely. Confirm the intent, do the work, report
+  answer. Skip stages 3 to 5 entirely. Confirm the intent, do the work, report
   what you measured. Do not manufacture a PRD or an issue for it.
 - **Short.** A bounded piece of work whose shape is clear but whose details are
   not. Grill (stage 3), show the plan in full and get it approved, implement
@@ -170,7 +173,10 @@ the exact blocked operation.
 
 Read `../to-development/SKILL.md`. If the user intends to be away, first confirm
 in its own `AskUserQuestion` that the stage 0 arrangement still holds (rerun the
-preflight), never in the same batch as the authorization. Then recommend the
+preflight), never in the same batch as the authorization. Inventory hooks,
+permission settings, confirmation requirements and integration access without
+exposing secrets. Do not disable hooks or request bypass mode. An AFK phase that
+depends on reaching the user waits for a confirmed arrangement. Then recommend the
 highest safe parallelism and ask the concurrency question and one bounded
 implementation authorization, batched when practical. Identify exact issue IDs,
 repository, worktree base and branch prefix, verification argv, draft PR

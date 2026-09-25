@@ -55,12 +55,14 @@ ever measured, on battery; promise nothing beyond that.
 
 ## 3. Power, only when needed
 
-Only if a measured value is not zero: show the current values and the exact
-`powercfg` lines for the active scheme and these two settings only, record the
-previous values, and ask header `Ajuste de energia`: `Aplicar`, `Deixar como
-está`, `Só mostrar os comandos`. A zero lock-display value attempts to stop lock
-from entering standby; it is not a proven fix. Never set sleep to "never", never
-call `SetThreadExecutionState`, never touch another scheme.
+Only if a measured value is not zero or is unknown: show the current values and
+the exact `powercfg` lines for the active scheme and these two settings only,
+with the previous values so they can be restored. The user runs them; you do
+not change system settings. Ask header `Ajuste de energia`: `Vou rodar os
+comandos`, `Deixar como está`. After `Vou rodar os comandos`, rerun the
+preflight and report the new values. A zero lock-display value attempts to stop
+lock from entering standby; it is not a proven fix. Never set sleep to "never",
+never call `SetThreadExecutionState`, never touch another scheme.
 
 ## 4. Start the host in a second window
 
@@ -118,9 +120,11 @@ on screen is never that evidence.
 
 ## 7. Record and hand back
 
-Write `.workflows/monitoring.json` in the project: mode `phone`, `confirmed_by`,
-`phone_connected`, host name, detected process id, measured power values,
-caveats and time. Write nothing else, and nothing outside `.workflows/`: no
+Write `.workflows/monitoring.json` in the project as a historical record: mode
+`phone`, `confirmed_by`, `observed_phone_confirmation` with its time, host name,
+detected process id, measured power values, caveats and
+`"valid_for_other_sessions": false`. Never write `phone_connected` there; only
+the session that asks the user may set it in its own authorization. Write nothing else, and nothing outside `.workflows/`: no
 scheduled task, startup shortcut, service or background logon host (hosts
 started that way died about twenty seconds after the phone connected).
 
@@ -131,8 +135,13 @@ confirmation across sessions.
 
 ## After a restart or disconnection
 
-Detect first. Where a host session was recorded for this folder or one of its
-worktrees, `claude remote-control -c` reattaches to it and fails when nothing was
-recorded there within roughly the last four hours; offer it before a fresh host,
-describe the window as documented rather than verified here, and never plan
-around it. Never reuse an earlier confirmation.
+Detect first. `claude remote-control --help` (CLI 2.1.282) documents that `-c`
+reattaches to the session last recorded for this folder or one of its worktrees
+and fails when nothing was recorded there within roughly the last four hours.
+Offer it before a fresh host, describe the window as documented rather than
+verified here, and never plan around it. Never reuse an earlier confirmation.
+
+The survival figures above (about ninety seconds locked on battery, about twenty
+seconds for hosts started from a scheduled task or background logon) and the
+single-dash behaviour are observations from earlier pilots on one machine, not
+guarantees. Say so when you cite them.

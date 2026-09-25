@@ -1,6 +1,6 @@
 # Evidências do piloto — 24/09/2026
 
-Branch de implementação: `codex/workflows-pilot`, em `C:/Software/WorkflowS`.
+Branch de implementação: `codex/workflows-pilot`, no clone de desenvolvimento.
 Ambiente: Windows, Python 3.14.6 e Claude Code 2.1.278. Não houve publicação remota,
 instalação, alteração do GuardianS, merge ou implantação.
 
@@ -91,13 +91,15 @@ Achados que motivaram a versão 0.3.0:
 - `inspect` exigia `repository`; `validate-plan` e `checkpoint` não tinham modo local.
 - `authorize` só aceitava branches `codex/`.
 - `inspect` não detectava verificação Python.
-- `git worktree add` falhou com `'$GIT_DIR' too big` porque o app desktop redireciona
-  o diretório de trabalho para um caminho longo.
+- `git worktree add` falhou por exceder o limite de caminho do Windows, porque o app
+  desktop redireciona o diretório de trabalho para um caminho longo.
 
 Correções na 0.3.0: pergunta do celular primeiro; regras de idioma, perguntas
 com opções e "mostrar antes de aprovar"; `/workflows:total-remote-control`
 público e guiado; oferta do comando `claude --resume` para abrir no CLI a mesma
 sessão do desktop; `repository: null`, issues locais com `source: "local"`,
 `branch_prefix` (padrão `claude/`), candidatos de verificação Python e
-`path_risk`. Os utilitários têm 41 testes automatizados. O novo fluxo de
+`path_risk`. Os utilitários têm 45 testes automatizados, e uma revisão independente
+por outro agente, que não escreveu o código, apontou achados que foram corrigidos
+antes do fechamento. O novo fluxo de
 conversa e a máquina fixa no celular **ainda não foram testados em sessão real**.

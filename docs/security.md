@@ -24,6 +24,16 @@ e branch imediatamente antes de agir. Os caminhos são resolvidos para rejeitar
 escapes por diretórios ou links simbólicos, mas isso não é um isolamento de arquivos
 imune a alterações concorrentes. Responsabilidade desconhecida nunca autoriza edição.
 
+As branches precisam começar pelo `branch_prefix` da autorização (padrão `claude/`).
+O prefixo é recusado quando coincide com uma branch protegida ou com o espaço de nomes
+dela: `release/*` protegido impede o prefixo `release/`. A comparação não distingue
+maiúsculas de minúsculas. Autorizações antigas com branches `codex/` passam a ser
+negadas até declararem `branch_prefix: "codex/"`, o que é uma falha segura. No modo
+local (`repository: null`), a autorização fica presa apenas ao caminho exato da
+worktree. O utilitário não confere se o projeto realmente não tem remoto, então
+confira `git remote -v` antes de agir. Um registro de issue com `source: "local"`
+dispensa o registro canônico do GitHub e só deve ser usado em projeto sem remoto.
+
 Argumentos exatos de teste não garantem código inofensivo: testes e rotinas de
 compilação podem chamar terminal, rede, Git ou utilitários de implantação. Não
 conceda `Bash(*)` nem permissões amplas para PowerShell, Python, `gh`, rede ou
