@@ -135,6 +135,13 @@ npm scripts, Python verification candidates and `path_risk`. Inspect other
 build files and CI for actual verification commands. Never echo credentials or
 full settings.
 
+When `.workflows/config.json` is absent, create it before any issue work: take
+`repository` from the Git remote (or `null` without one) and resolve `project`
+as `../to-issues/SKILL.md` describes, then run `inspect` with it. Report the
+board in one line: `sources.project` status, owner/number, defaults and the
+fields to choose per issue. A configured board that reads `unavailable` blocks
+publication, not discovery; say which operation it blocks and how to fix it.
+
 RoadS is optional. When `.workflows/config.json` is absent, or its `roads` key is
 null, or the source is unreachable, say so in one line and carry on from the
 user's request. Never block on it.
@@ -168,6 +175,12 @@ then ask approval for the plan and the named GitHub writes. Publish only after
 approval and verify returned issue links, bodies and dependencies by rereading
 GitHub. If permissions block writes, preserve the approved draft and identify
 the exact blocked operation.
+
+These publication rules cover every issue the session creates, on any path and
+at any stage, including follow-ups proposed after delivery: with a configured
+`project`, each issue joins that board with its assignee, type and fields in the
+same approved write, and is verified there. Never create an issue outside the
+configured board.
 
 ## 6. Bounded development
 
