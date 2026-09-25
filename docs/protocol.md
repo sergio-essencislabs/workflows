@@ -5,12 +5,20 @@
 | Etapa | Permitido antes da próxima aprovação | Evidência exigida |
 | --- | --- | --- |
 | Inspeção | Ler o projeto atual e as fontes configuradas | Fontes, horários e limitações |
-| Monitoramento | Conferir a sessão e perguntar ao usuário | Confirmação pelo celular ou alternativa explícita |
+| Monitoramento | Detectar o estado da máquina e perguntar ao usuário | Confirmação pelo celular ou alternativa explícita |
 | Descoberta | Entrevistar, ler código e registrar decisões | Resultado, limites e escolhas aprovados |
 | PRD | Redigir e revisar uma versão local | Aprovação humana da versão exata |
 | Plano de issues | Propor entregas e dependências | Aprovação das gravações específicas no GitHub |
 | Publicação | Somente criações e atualizações aprovadas | Nova leitura dos links, conteúdos e dependências reais |
 | Desenvolvimento | Somente issues e operações autorizadas | Testes, alterações, integração e revisão independente |
+
+O bloco `monitoring` da autorização registra `mode` (`phone`, `local` ou
+`alternative`), `confirmed_by`, a identidade da sessão e o horário. Em `phone`,
+`phone_connected` só recebe `true` depois que o usuário afirmar, na sessão atual,
+que o celular recebeu uma pergunta e respondeu. Em `alternative`, `details` é
+obrigatório. A verificação prévia nunca preenche `phone_connected`: ela devolve
+`null` e o campo `authority`, e é reexecutada a cada sessão, reinício ou queda
+relatada — uma confirmação anterior não sobrevive a nenhum dos três.
 
 Mudanças posteriores de escopo invalidam as aprovações afetadas. A exibição de
 solicitações remotas não significa consentimento. Nunca deduza consentimento de

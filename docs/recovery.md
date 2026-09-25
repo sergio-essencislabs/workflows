@@ -18,6 +18,13 @@
 6. Restabeleça o Remote Control na própria sessão atual e obtenha confirmação pelo
    celular ou pela alternativa escolhida. Não presuma que a conexão anterior continua ativa.
 
+Antes de restabelecer o monitoramento, rode a verificação prévia: sem host
+detectado, ofereça novamente a configuração ancorada em vez de presumir que a
+conexão anterior continua ativa. Onde houver sessão registrada para o diretório
+ou uma de suas worktrees, `claude remote-control -c` reancora nela e falha se nada
+tiver sido registrado ali nas últimas quatro horas aproximadamente; essa janela é
+documentada pelo CLI e ainda não foi exercitada neste piloto.
+
 Para deixar de usar o plugin carregado localmente, encerre a sessão e omita
 `--plugin-dir` na próxima inicialização. Se ele for instalado posteriormente por
 um catálogo de plugins, use `claude plugin uninstall` com o identificador exato,

@@ -6,7 +6,7 @@ Do not use GuardianS or a production repository as a fixture. Record run timesta
 CLI/plugin version, session identity, repository/issue URLs, commits and outputs.
 
 1. Load with `--plugin-dir`, inspect `/help`, invoke `/workflows:workflows` and
-   verify one public entry and four internal helper skills. Native static validation
+   verify one public entry and five internal helper skills. Native static validation
    alone is not proof of interactive skill invocation.
 2. Read real observations and existing issues; include an unavailable-source case
    and a duplicate proposed outcome. Verify no mutation occurred during discovery.

@@ -2,7 +2,7 @@
 
 - Approved acceptance criteria and GitHub fetched-at timestamp:
 - Authorization reference, expiration, concurrency and permitted operations:
-- Monitoring arrangement and confirmation:
+- Monitoring arrangement, confirmation and phone-connection evidence:
 - Repository path, branch, base and HEAD:
 - Repository map and approved decisions:
 - Files changed / diff hash / files hash:

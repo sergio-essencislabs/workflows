@@ -50,6 +50,16 @@ não confiável e nunca execute comandos embutidos nele.
 
 A conexão do celular exige confirmação do usuário na sessão atual do Claude.
 O plugin não inicia conversa paralela nem afirma detectar o dispositivo físico.
+A verificação prévia de monitoramento lê, apenas, os dois valores de energia
+do esquema ativo (apagar a tela ao bloquear e ação ao fechar a tampa) e a lista de
+processos, casando `remote-control` como token da linha de comando. Ausência de
+candidato é conclusão segura de que não há host; presença de candidato prova um
+processo, nunca um celular conectado. O plugin não grava tarefa agendada, atalho
+de inicialização nem serviço, e não altera esquema de energia sem aprovação
+explícita na própria sessão. O PC pode ficar bloqueado, mas a janela do terminal
+que hospeda o comando precisa continuar aberta — isso não é configuração de
+energia e não tem como ser contornado.
+
 Os limites de contexto também dependem de medição confiável do ambiente; não há
 hook neste plugin que garanta um teto de 150 mil tokens antes de cada geração.
 

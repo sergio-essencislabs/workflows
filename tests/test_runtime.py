@@ -242,5 +242,76 @@ class IntegrationReadTests(unittest.TestCase):
         self.assertNotIn('private-secret', json.dumps(result))
 
 
+QH_ENGLISH = ('    Current AC Power Setting Index: 0x00000000\n'
+              '    Current DC Power Setting Index: 0x0000001e\n')
+QH_LOCALIZED = ('    \u00cdndice de Configura\u00e7\u00f5es de Correntes Alternadas Atuais: 0x00000000\n'
+                '    \u00cdndice de Configura\u00e7\u00f5es de Correntes Cont\ufffdnuas Atuais: 0x00000000\n')
+Q_WITHOUT_VALUE = ('GUID do Esquema de Energia: 381b4222 (Equilibrado)\n'
+                   '  Subgrupo: SUB_VIDEO\n')
+
+
+class MonitoringTests(unittest.TestCase):
+    def test_power_value_parses_english_and_localized_output(self):
+        self.assertEqual(workflow.power_value(QH_ENGLISH), {'ac': 0, 'dc': 30})
+        # The console codepage mangles the accented word; the ASCII stem must still match.
+        self.assertEqual(workflow.power_value(QH_LOCALIZED), {'ac': 0, 'dc': 0})
+
+    def test_absent_power_index_is_unknown_not_zero(self):
+        for text in (Q_WITHOUT_VALUE, '', None, 'garbage without any index'):
+            with self.subTest(text=text):
+                self.assertEqual(workflow.power_value(text), {'ac': None, 'dc': None})
+
+    def test_host_candidates_match_tokens_not_image_name(self):
+        rows = [{'ProcessId': 1, 'CommandLine': 'claude remote-control --name Vision'},
+                {'ProcessId': 2, 'CommandLine': 'claude remote-control --help'},
+                {'ProcessId': 3, 'CommandLine': 'node C:\\x\\cli.js remote-control --name A'},
+                {'ProcessId': 4, 'CommandLine': 'code C:\\src\\remote-control\\readme.md'},
+                {'ProcessId': 5, 'CommandLine': 'claude remote-control --version'},
+                {'ProcessId': 6, 'CommandLine': None}]
+        self.assertEqual([c['pid'] for c in workflow.host_candidates(rows)], [1, 3])
+
+    def test_since_marks_hosts_older_than_the_session(self):
+        rows = [{'ProcessId': 7, 'CommandLine': 'claude remote-control', 'CreationDate': '2026-09-25T08:00:00'},
+                {'ProcessId': 8, 'CommandLine': 'claude remote-control', 'CreationDate': '2026-09-25T12:00:00'}]
+        found = workflow.host_candidates(rows, since='2026-09-25T10:00:00')
+        self.assertEqual([(c['pid'], c['predates_session']) for c in found], [(7, True), (8, False)])
+
+    def test_monitoring_never_claims_a_phone_and_degrades_per_source(self):
+        with patch.object(workflow.sys, 'platform', 'win32'), \
+             patch.object(workflow, 'run', side_effect=ValueError('powercfg exploded')):
+            result = workflow.monitoring('.')
+        self.assertIsNone(result['phone_connected'])
+        self.assertEqual(result['authority'], 'user confirmation in this session')
+        for name in ('lock_display_timeout', 'lid_close_action'):
+            self.assertEqual(result['power'][name]['status'], 'unavailable')
+        # Absence must not be concluded when the listing itself failed.
+        self.assertEqual(result['host']['status'], 'unavailable')
+        self.assertNotIn('powercfg exploded', json.dumps(result))
+
+    def test_monitoring_is_unsupported_off_windows_without_raising(self):
+        with patch.object(workflow.sys, 'platform', 'linux'):
+            result = workflow.monitoring('.')
+        self.assertEqual(result['power']['status'], 'unsupported')
+        self.assertEqual(result['host']['status'], 'unsupported')
+        self.assertIsNone(result['phone_connected'])
+
+    def test_phone_mode_requires_a_real_confirmation(self):
+        with tempfile.TemporaryDirectory() as root:
+            Path(root, 'src').mkdir()
+            operation = dict(repository='example/pilot', issue=1, kind='edit',
+                             branch='codex/issue-1', worktree=root,
+                             path=str(Path(root) / 'src' / 'a.py'))
+            good = charter(root)
+            good['monitoring'] = {'mode': 'phone', 'confirmed_by': 'human', 'phone_connected': True}
+            self.assertEqual(workflow.authorize(good, operation)['scope_check'], 'pass')
+            for value in ({}, {'phone_connected': False}, {'phone_connected': 'true'},
+                          {'phone_connected': 1}):
+                with self.subTest(value=value):
+                    bad = charter(root)
+                    bad['monitoring'] = {'mode': 'phone', 'confirmed_by': 'human', **value}
+                    with self.assertRaisesRegex(ValueError, 'physical phone not confirmed'):
+                        workflow.authorize(bad, operation)
+
+
 if __name__ == '__main__':
     unittest.main()

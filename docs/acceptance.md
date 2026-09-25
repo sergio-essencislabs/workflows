@@ -20,7 +20,7 @@ instalação, alteração do GuardianS, merge ou implantação.
   As regras essenciais estão na skill de entrada. Por isso, a validação estrita da
   raiz não passa; o CLAUDE.md curto para colaboradores é mantido intencionalmente.
 - `claude --plugin-dir . plugin details workflows`: carregou `workflows@inline`,
-  versão 0.1.0, e encontrou cinco skills, sem agentes, hooks ou servidores MCP/LSP.
+  versão 0.1.0, e encontrou seis skills, sem agentes, hooks ou servidores MCP/LSP.
 
 Não interprete `claude plugin validate skills` como validação das skills: a versão
 local retornou uma lista de conteúdos vazia para esse caminho. Informar o diretório
@@ -39,14 +39,14 @@ validação do formato da resposta e das dependências de tarefas em execução.
 
 | Verificação dos requisitos | Evidência e situação |
 | --- | --- |
-| 1. Carregamento e descoberta, com entrada pública única | Carregamento nativo identifica cinco skills; uma delas tem entrada pública. Verificação interativa do menu pendente. Comando: `/workflows:workflows`. |
+| 1. Carregamento e descoberta, com entrada pública única | Carregamento nativo identifica seis skills; uma delas tem entrada pública. Verificação interativa do menu pendente. Comando: `/workflows:workflows`. |
 | 2. Planejamento com RoadS e GitHub reais | Utilitário de consulta e testes de fontes indisponíveis implementados. Projeto e RoadS reais configurados não foram fornecidos; teste real pendente. |
 | 3. Descoberta, PRD e aprovações | Skills e modelos persistentes implementados. Entrevista real e teste de bloqueio de gravações pendentes. |
 | 4. Decomposição vertical | Validador estrutural e avaliação de conversão de tickets por camada em entregas verticais fornecidos. Avaliação real do modelo pendente. |
 | 5. Implementação paralela isolada | Planejador testado, incluindo maior lote seguro, reposição de vagas e conflitos. Execução simultânea real de modelos em worktrees não testada. |
 | 6. TDD, verificações e revisão independente | Testes locais e evidências de repositórios Git temporários verificados. Sem revisor independente; entrega de produto vinculada a issues pendente. |
 | 7. Renovação de contexto | Testes de limites e retomada passaram. Teto acumulado de tokens imposto pelo ambiente e retomada em sessão nova não demonstrados. |
-| 8. Celular e permissão pendente | Procedimento implementado; exige celular do usuário e sessão real do Claude. Não testado. |
+| 8. Celular e permissão pendente | Verificação prévia de energia e host implementada e coberta por testes unitários; `phone_connected` só é gravado por confirmação do usuário. Conexão do celular, sobrevivência a bloqueio longo, tampa fechada e a janela de reancoragem de ~4 h continuam **não testadas**. |
 | 9. Controles AFK | Testes positivos e negativos da verificação prévia passaram. Controle obrigatório de ferramentas genéricas indisponível; gravações externas continuam sujeitas à aprovação. Segurança AFK completa NÃO homologada. |
 | 10. Documentação, instalação, recuperação e reversão | Carregamento local, configuração, testes, limitações e recuperação documentados. Teste real de desinstalação e convivência pendente. |
 

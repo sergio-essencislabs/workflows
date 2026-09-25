@@ -301,6 +301,99 @@ def inspect(config, root):
     return result
 
 
+POWER_SETTINGS = {
+    'lock_display_timeout': ('7516b95f-f776-4464-8c53-06167f40cc99',
+                             '8EC4B3A5-6868-48c2-BE75-4F3044BE88A7'),
+    'lid_close_action': ('4f971e89-eebd-4455-a8de-9e59040e7347',
+                         '5ca83367-6e45-459f-a27b-476b1d01c936'),
+}
+HELP_TOKENS = {'--help', '-h', '-?', '/?', '--version', 'help', 'version'}
+
+
+def power_value(text):
+    """Parse one powercfg /qh block. An absent index stays None, never 0.
+
+    powercfg /q omits these settings entirely because they are hidden, so a
+    missing index must read as unknown; treating it as 0 would silently claim
+    the safe value on a machine that was never configured.
+    """
+    found = {'ac': None, 'dc': None}
+    for line in (text or '').splitlines():
+        match = re.search(r'\b(AC|DC)\b[^:]*:\s*(0x[0-9a-fA-F]+|\d+)\s*$', line, re.IGNORECASE)
+        if match:
+            key = match.group(1).lower()
+        else:
+            # Localized powercfg translates the words but keeps the index. Match
+            # ASCII-only stems: the console codepage mangles accented characters
+            # into replacement chars, which no \w class would match.
+            match = re.search(r'(Altern|Cont)[^:]*:\s*(0x[0-9a-fA-F]+|\d+)\s*$', line)
+            if not match:
+                continue
+            key = 'ac' if match.group(1) == 'Altern' else 'dc'
+        raw = match.group(2)
+        if found[key] is None:
+            found[key] = int(raw, 16) if raw.lower().startswith('0x') else int(raw)
+    return found
+
+
+def host_candidates(rows, since=None):
+    """Select processes that look like a Remote Control host.
+
+    Matches the tokenized command line, not the image name: on Windows the CLI
+    frequently runs under node.exe, so an image-name filter both misses real
+    hosts and matches a bare `remote-control --help`.
+    """
+    selected = []
+    for row in rows or []:
+        command = row.get('CommandLine') or row.get('command') or ''
+        tokens = [token.strip('"\'') for token in command.split()]
+        if 'remote-control' not in tokens:
+            continue
+        if any(token.lower() in HELP_TOKENS for token in tokens):
+            continue
+        created = row.get('CreationDate') or row.get('created')
+        selected.append({'pid': row.get('ProcessId') or row.get('pid'),
+                         'created': created,
+                         'predates_session': bool(since and created and str(created) < str(since))})
+    return selected
+
+
+def monitoring(root, since=None):
+    """Read-only monitoring preflight. Proves absence, never a connected phone."""
+    result = {'checked_at': dt.datetime.now(dt.timezone.utc).isoformat(),
+              'root': str(root), 'phone_connected': None,
+              'authority': 'user confirmation in this session',
+              'requirement': 'terminal window stays open; lid open until the closed-lid test passes',
+              'power': {}, 'host': {}}
+    if not sys.platform.startswith('win'):
+        unsupported = {'status': 'unsupported', 'platform': sys.platform}
+        result['power'], result['host'] = dict(unsupported), dict(unsupported)
+        return result
+    for name, (subgroup, setting) in POWER_SETTINGS.items():
+        argv = ['powercfg', '/qh', 'SCHEME_CURRENT', subgroup, setting]
+        try:
+            values = power_value(run(argv).decode('utf-8', 'replace'))
+            require(values['ac'] is not None or values['dc'] is not None, 'no power index reported')
+            result['power'][name] = {'status': 'available', 'source': ' '.join(argv), **values}
+        except (ValueError, OSError, subprocess.TimeoutExpired):
+            result['power'][name] = {'status': 'unavailable', 'source': ' '.join(argv),
+                                     'reason': 'powercfg read failed; run the command locally'}
+    argv = ['powershell', '-NoProfile', '-NonInteractive', '-Command',
+            'Get-CimInstance Win32_Process | Select-Object ProcessId,CommandLine,CreationDate '
+            '| ConvertTo-Json -Compress']
+    try:
+        rows = json.loads(run(argv).decode('utf-8', 'replace') or 'null')
+        require(isinstance(rows, (list, dict)), 'malformed process listing')
+        found = host_candidates(rows if isinstance(rows, list) else [rows], since)
+        result['host'] = {'status': 'available', 'candidates': found,
+                          'conclusion': 'no persistent host' if not found
+                                        else 'a process, not a connected phone'}
+    except (ValueError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        result['host'] = {'status': 'unavailable',
+                          'reason': 'process listing failed; absence cannot be concluded'}
+    return result
+
+
 def load(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))
 
@@ -324,6 +417,9 @@ def main():
     p.add_argument('--root', default='.')
     p = sub.add_parser('evidence')
     p.add_argument('--root', default='.')
+    p = sub.add_parser('monitoring')
+    p.add_argument('--root', default='.')
+    p.add_argument('--since', help='ISO 8601 session start; marks older hosts')
     for name in ('checkpoint', 'resume'):
         p = sub.add_parser(name)
         p.add_argument('--root', required=True)
@@ -351,6 +447,8 @@ def main():
             result = inspect(load(args.config), args.root)
         elif args.command == 'evidence':
             result = git_evidence(args.root)
+        elif args.command == 'monitoring':
+            result = monitoring(args.root, args.since)
         elif args.command == 'checkpoint':
             result = checkpoint(args.root, load(args.issue), args.handoff, args.next_step)
         elif args.command == 'resume':

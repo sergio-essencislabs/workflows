@@ -6,7 +6,7 @@ descoberta do problema, documentos de requisitos (PRDs) aprovados, issues
 verticais no GitHub e implementação com testes e autorização delimitada. O
 caminho é dimensionado ao pedido: trabalho pequeno é feito direto, sem PRD nem
 issue. Observações do RoadS são uma entrada **opcional**, usada quando
-configurada; nada exige RoadS para começar. Uma única sessão pública e quatro
+configurada; nada exige RoadS para começar. Uma única sessão pública e cinco
 skills internas de apoio. Não depende do GuardianS nem altera sua instalação.
 
 **Situação do piloto:** implementado localmente, com testes automatizados dos
@@ -41,7 +41,7 @@ Na mesma sessão do Claude, use:
 
 O Claude Code acrescenta o nome do plugin aos comandos. `/workflows`, mencionado
 no documento de requisitos do piloto, representa a entrada conceitual; este pacote
-não instala um atalho no projeto. As quatro skills de apoio ficam ocultas no menu
+não instala um atalho no projeto. As cinco skills de apoio ficam ocultas no menu
 de comandos por meio de `user-invocable: false`. O comando `/help` deve mostrar
 apenas a entrada pública do plugin. O `CLAUDE.md` da raiz orienta quem trabalha neste
 repositório; o Claude não o carrega nos projetos que usam o plugin. A skill principal
@@ -79,7 +79,9 @@ uma rota JSON de observações. Integrações ausentes são informadas explicita
 
 ## Fluxo de trabalho e utilitários
 
-Inspeção → acordo de monitoramento → entrevista de decisões → PRD aprovado →
+Inspeção (incluindo a verificação de energia e de host do Remote Control) →
+acordo de monitoramento, com a opção de ancorar o celular → entrevista de
+decisões → PRD aprovado →
 plano de issues verticais aprovado e publicado → autorização delimitada de
 implementação → desenvolvimento orientado a testes (TDD), revisão e evidências.
 Uma issue vertical entrega um resultado observável de ponta a ponta, incluindo as
@@ -94,6 +96,7 @@ Execute estes comandos no diretório do plugin:
 python scripts/workflow.py validate-plan --plan examples/plan.json
 python scripts/workflow.py schedule --plan examples/plan.json --limit 2
 python scripts/workflow.py context --used 85000 --reserve 15000
+python scripts/workflow.py monitoring --root .
 python -m unittest discover -s tests -v
 python -m compileall -q scripts tests
 claude plugin validate . --json

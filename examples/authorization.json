@@ -5,7 +5,7 @@
   "approved_by": "",
   "approval_reference": "",
   "expires_at": "2000-01-01T00:00:00+00:00",
-  "monitoring": {"mode": "local", "confirmed_by": ""},
+  "monitoring": {"mode": "local", "confirmed_by": "", "phone_connected": false},
   "protected_branches": ["main", "master"],
   "operations": ["edit", "test", "checkpoint"],
   "worktrees": [

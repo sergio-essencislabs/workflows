@@ -57,6 +57,12 @@ Use `python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow.py" inspect --config
 timestamps, unavailable sources and npm scripts. Inspect other build files and
 CI for actual verification commands. Never echo credentials or full settings.
 
+Also run `python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow.py" monitoring --root
+<project>` here, as part of the read-only inspection. It reports the machine's
+lid and lock-display power values and any candidate Remote Control host. This
+runs on every session, so a restart or a dropped host is noticed without the
+user having to remember; stage 2 decides what to do about it.
+
 RoadS is optional. When `.workflows/config.json` is absent, or its `roads` key is
 null, or the source is unreachable, that is an ordinary and fully supported
 state: say so in one line and carry on from the user's request. Never block,
@@ -82,13 +88,32 @@ that you are working locally with the user present, and proceed. Establish an
 explicit arrangement before any phase where the user intends to be away, and
 before the Full path's stage 6, whichever comes first.
 
-Inspect native Remote Control status where available. Ask the user to run native
-`/remote-control` in this same session and confirm connection from the phone, or
-choose local-only/another explicit monitoring arrangement. Process presence or
-a URL is not proof of a connected phone. Record confirmation and session identity.
-Inventory hooks, permission settings, confirmation requirements and integration
-access without exposing secrets. Do not disable hooks or request bypass mode.
-An AFK phase depending on reachable users must wait for the agreed arrangement.
+Report stage 1's monitoring preflight in one line before asking anything. No
+candidate host is a safe conclusion that none is running. A candidate proves a
+process, never a connected phone: a help invocation carries the same argument.
+The result is a recommendation, not proof of authority.
+
+Then ask one `AskUserQuestion`, header `Monitoramento`, saying in the question
+text that the preflight cannot confirm a phone:
+
+- `Celular fixo` — read `../total-remote-control/SKILL.md` and run the guided
+  configuration, so the phone keeps this machine reachable and can start a new
+  session at any time. The reasonable choice whenever detection found no host
+  and the user intends to be away more than once.
+- `Celular agora` — the user runs native `/remote-control` in this session only
+  and confirms reception from the phone.
+- `Local` — the user stays at the keyboard; record mode `local`.
+- `Outro combinado` — record mode `alternative` with the explicit details.
+
+Record mode, `confirmed_by`, session identity and time in the authorization's
+`monitoring` block. Set `phone_connected` to true only after the user states in
+this session that the phone received a question and answered it. Never infer it
+from a process, a URL, a QR code or a displayed prompt. Repeat the detection and
+this question after every restart, new session or reported disconnection; an
+earlier confirmation does not survive them. Inventory hooks, permission settings,
+confirmation requirements and integration access without exposing secrets. Do
+not disable hooks or request bypass mode. An AFK phase depending on reachable
+users must wait for the agreed arrangement.
 
 ## 3. Grill
 
