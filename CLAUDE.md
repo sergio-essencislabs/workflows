@@ -19,10 +19,13 @@ capturada de sessão real. Exemplos, modelos, testes e documentação usam apena
 marcadores genéricos (`OWNER/REPOSITORY`, `roads: null`). Configuração real vive
 fora deste repositório, no `.workflows/config.json` do projeto de destino.
 
-Suba a versão em `.claude-plugin/plugin.json` em toda alteração que precise
-chegar a quem já instalou. O `claude plugin update` e o botão Atualizar do
-Desktop comparam a versão, não o conteúdo: sem o incremento, ambos respondem
-"already at the latest version" e a cópia instalada continua antiga.
+Suba a versão em `.claude-plugin/plugin.json` **e** na entrada do plugin em
+`.claude-plugin/marketplace.json` em toda alteração que precise chegar a quem já
+instalou. As duas precisam ser iguais, e um teste confere isso. O
+`claude plugin update` e o botão Atualizar do Desktop comparam a versão, não o
+conteúdo: sem o incremento, ambos respondem "already at the latest version" e a
+cópia instalada continua antiga. O botão do Desktop não liberou com a versão só
+no `plugin.json`.
 
 Use worktrees isoladas. A autorização comum de implementação não permite escrever
 em branches protegidas, fazer merge, implantar ou publicar versões. Preserve o
