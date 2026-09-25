@@ -1,6 +1,6 @@
 ---
 name: workflows
-description: Starts a single RoadS-informed planning and delivery session, from discovery through approved vertical GitHub issues and bounded implementation.
+description: Starts a single planning and delivery session for whatever the user asks, from discovery through approved vertical GitHub issues and bounded implementation, right-sized to the request. RoadS observations are an optional input when configured.
 disable-model-invocation: true
 ---
 
@@ -19,6 +19,33 @@ using `AskUserQuestion`, including approvals and blockers. If it is unavailable,
 record the pending question and stop that decision-dependent work. Never imply
 approval from silence or a tool's ability to execute.
 
+## 0. Take the request and right-size the path
+
+The user's own request is the starting point and the authority on scope. Accept
+any kind of work: a product feature, a bug, a refactor, research, a one-off
+script, a document, operating an external system. Never tell the user the
+request is out of scope because it did not come from RoadS, and never require a
+RoadS source, a configured repository or a GitHub board before you will begin.
+If the user opens with no request, ask what they want to achieve.
+
+Then choose the lightest path that still fits, and say which one you chose and
+why in one sentence:
+
+- **Direct.** A small, well-understood, low-risk change or a question you can
+  answer. Skip stages 3 to 5 entirely. Confirm the intent, do the work, report
+  what you measured. Do not manufacture a PRD or an issue for it.
+- **Short.** A bounded piece of work whose shape is clear but whose details are
+  not. Grill (stage 3), agree the plan in the conversation, implement under
+  stage 6. Publish issues only if the user wants them.
+- **Full.** A feature or body of work with real uncertainty, several slices or
+  more than one person involved. Run stages 3 to 6 as written.
+
+Escalate to a heavier path whenever new uncertainty appears, and say so when you
+do. Do not silently downgrade a path the user asked for: if they asked for a PRD
+or for issues, produce them. Ambition and ceremony are different things — the
+path controls the ceremony, never the quality of the work or the honesty of the
+evidence.
+
 ## 1. Start and inspect (read only)
 
 Identify the actual project path, Git remotes, current branch/worktrees, dirty
@@ -30,8 +57,17 @@ Use `python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow.py" inspect --config
 timestamps, unavailable sources and npm scripts. Inspect other build files and
 CI for actual verification commands. Never echo credentials or full settings.
 
+RoadS is optional. When `.workflows/config.json` is absent, or its `roads` key is
+null, or the source is unreachable, that is an ordinary and fully supported
+state: say so in one line and carry on from the user's request. Never block,
+never ask the user to configure RoadS in order to proceed, and never treat an
+unconfigured source as a missing prerequisite.
+
 Read the current RoadS observations, roadmap/sprint and relevant GitHub issues
-and board if configured. The helper's generic endpoint reads observations only;
+and board if configured. Where they exist they are context that may inform the
+work, never a constraint on what the user is allowed to ask for; when the
+request and the RoadS material diverge, the request wins and you note the
+divergence. The helper's generic endpoint reads observations only;
 verify the returned contract and use separately configured read-only board and
 roadmap tools as needed. Record source URL, retrieval time and source freshness.
 Do not claim completeness when pagination/contracts are unknown. Deduplicate
@@ -39,6 +75,12 @@ against existing issues by outcome and acceptance criteria, not title alone.
 Do not write external records. Report unavailable integrations accurately.
 
 ## 2. Establish monitoring
+
+Monitoring is proportional to the path. On the Direct path, and on the Short
+path while the user is present at the keyboard, skip this stage: say in one line
+that you are working locally with the user present, and proceed. Establish an
+explicit arrangement before any phase where the user intends to be away, and
+before the Full path's stage 6, whichever comes first.
 
 Inspect native Remote Control status where available. Ask the user to run native
 `/remote-control` in this same session and confirm connection from the phone, or

@@ -1,9 +1,13 @@
 # Workflows — piloto para Claude Code
 
-Um plugin independente que transforma observações do RoadS em descoberta do
-problema, documentos de requisitos (PRDs) aprovados, issues verticais no GitHub e
-implementação com testes e autorização delimitada. Uma única sessão pública e
-quatro skills internas de apoio. Não depende do GuardianS nem altera sua instalação.
+Um plugin independente que conduz **qualquer pedido seu** — uma funcionalidade,
+um bug, uma refatoração, uma pesquisa, um script pontual, um documento — por
+descoberta do problema, documentos de requisitos (PRDs) aprovados, issues
+verticais no GitHub e implementação com testes e autorização delimitada. O
+caminho é dimensionado ao pedido: trabalho pequeno é feito direto, sem PRD nem
+issue. Observações do RoadS são uma entrada **opcional**, usada quando
+configurada; nada exige RoadS para começar. Uma única sessão pública e quatro
+skills internas de apoio. Não depende do GuardianS nem altera sua instalação.
 
 **Situação do piloto:** implementado localmente, com testes automatizados dos
 utilitários e validação nativa do pacote. A integração real com RoadS, o
