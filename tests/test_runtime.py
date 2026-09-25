@@ -10,6 +10,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import workflow
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class ReleaseManifestTests(unittest.TestCase):
+    """The desktop Update button needs a version it can compare; both manifests must agree."""
+
+    def test_marketplace_entry_declares_the_plugin_json_version(self):
+        plugin = json.loads((ROOT / '.claude-plugin' / 'plugin.json').read_text(encoding='utf-8'))
+        market = json.loads((ROOT / '.claude-plugin' / 'marketplace.json').read_text(encoding='utf-8'))
+        entry = next(p for p in market['plugins'] if p['name'] == plugin['name'])
+        self.assertEqual(entry.get('version'), plugin['version'])
+
 
 def issue(number, paths, dependencies=()):
     return dict(id=number, title=f'Deliver outcome {number}',
