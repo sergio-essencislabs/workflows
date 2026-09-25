@@ -96,6 +96,37 @@ endereço real de consulta autenticada e o formato da resposta forem conhecidos:
 ```
 
 O endereço acima é ilustrativo; não representa uma API garantida do RoadS.
+
+### Quadro de projeto do GitHub
+
+Quando as issues do repositório são controladas num quadro (GitHub Projects), configure
+`project`. Com ele definido, **toda** issue criada pelo Workflows entra no quadro, com
+responsável, tipo e campos preenchidos, e é relida para conferir:
+
+```json
+{
+  "repository": "PROPRIETARIO/REPOSITORIO",
+  "project": {
+    "owner": "PROPRIETARIO",
+    "number": 1,
+    "assignee": "@me",
+    "issue_type": "Task",
+    "fields": {"Status": "Open", "Area": null}
+  }
+}
+```
+
+- `owner` e `number` identificam o quadro (`github.com/orgs/<owner>/projects/<number>`).
+- `fields` associa cada campo do quadro a um valor padrão; `null` obriga a escolher o valor
+  de cada issue no plano aprovado (`project_fields` da issue no `plan.json`).
+- `issue_type` é o tipo nativo da issue (`gh issue edit --type`); uma issue do plano pode
+  trocá-lo com `issue_type`. `assignee` usa `@me` para quem está autenticado no `gh`.
+- `python scripts/workflow.py validate-plan --plan plan.json --config .workflows/config.json`
+  recusa o plano enquanto faltar valor para algum campo.
+- O token do `gh` precisa do escopo `project` (`gh auth refresh -s project`).
+
+Sem `project`, ou com `"project": null`, as issues não entram em quadro nenhum; num
+repositório de organização, o Workflows pergunta qual quadro usar antes de publicar.
 O utilitário envia somente GET, obtém o token da variável de ambiente indicada,
 recusa redirecionamentos e não confirma nem consome filas. Verifique se o endereço
 real permite apenas leitura. Nenhum endereço ou credencial do RoadS foi presumido

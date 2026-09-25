@@ -64,9 +64,50 @@ def repository_or_local(value):
     return value is None or repository(value)
 
 
-def validate_plan(plan):
+def board(project, repo=...):
+    """The issue board every created issue must join, or None when none is configured.
+
+    `fields` maps a board field to its default value; None means the value is chosen per
+    issue in the approved plan. The board is data for gh, never a place to embed credentials.
+    """
+    if project is None:
+        return None
+    require(isinstance(project, dict), 'project must be an object or null')
+    require(repo is not None, 'project board requires a GitHub repository; a local project has none')
+    owner, num = project.get('owner'), project.get('number')
+    require(isinstance(owner, str) and re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})', owner),
+            'project.owner must be a GitHub user or organization login')
+    require(number(num), 'project.number must be a positive integer')
+    fields = project.get('fields', {})
+    require(isinstance(fields, dict) and all(nonempty(k) and (v is None or nonempty(v))
+            for k, v in fields.items()), 'project.fields must map field names to a value or null')
+    for key in ('assignee', 'issue_type'):
+        require(project.get(key) is None or nonempty(project.get(key)),
+                f'project.{key} must be a non-empty string or null')
+    return {'owner': owner, 'number': num, 'fields': dict(fields),
+            'assignee': project.get('assignee'), 'issue_type': project.get('issue_type')}
+
+
+def board_fields(project, issue):
+    """Board values for one issue: defaults plus the per-issue choices, with nothing left open."""
+    chosen = issue.get('project_fields', {})
+    require(isinstance(chosen, dict) and all(nonempty(k) and nonempty(v) for k, v in chosen.items()),
+            f'{issue["id"]}: project_fields must map field names to non-empty values')
+    unknown = sorted(set(chosen) - set(project['fields']))
+    require(not unknown, f'{issue["id"]}: project_fields not on the board: {", ".join(unknown)}')
+    values = {k: v for k, v in project['fields'].items() if v is not None}
+    values.update(chosen)
+    missing = sorted(k for k in project['fields'] if k not in values)
+    require(not missing, f'{issue["id"]}: choose board field(s) {", ".join(missing)} in the plan')
+    issue_type = issue.get('issue_type') or project['issue_type']
+    require(nonempty(issue_type), f'{issue["id"]}: issue_type required by the board (plan or project default)')
+    return values
+
+
+def validate_plan(plan, project=None):
     require(isinstance(plan, dict) and 'repository' in plan and repository_or_local(plan['repository']),
             'repository must be owner/name, or null for a local project')
+    project = board(project, plan['repository'])
     issues = plan.get('issues')
     require(isinstance(issues, list) and 0 < len(issues) <= 24,
             'plan must contain 1..24 session-sized issues; split larger batches')
@@ -86,6 +127,8 @@ def validate_plan(plan):
         require(isinstance(deps, list) and all(number(x) for x in deps) and len(deps) == len(set(deps)),
                 'dependencies must be unique integer ids')
         require(issue.get('status') in {'ready', 'running', 'blocked', 'verified', 'proposed'}, 'invalid status')
+        if project is not None:
+            board_fields(project, issue)
         if issue.get('url'):
             require(plan['repository'] is not None, 'a local plan cannot reference GitHub issue URLs')
             require(issue['url'] == f'https://github.com/{plan["repository"]}/issues/{issue["id"]}',
@@ -345,6 +388,23 @@ def inspect(config, root):
                                            'issues': [i for page in pages for i in page if 'pull_request' not in i]}
         except (ValueError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
             result['sources']['github'] = {'status': 'unavailable', 'reason': 'GitHub read failed; check gh authentication and repository access'}
+    project = board(config.get('project'), repo)
+    if project is None:
+        result['sources']['project'] = {'status': 'unconfigured'}
+    else:
+        summary = {'owner': project['owner'], 'number': project['number'],
+                   'defaults': {k: v for k, v in project['fields'].items() if v is not None},
+                   'choose_per_issue': sorted(k for k, v in project['fields'].items() if v is None),
+                   'assignee': project['assignee'], 'issue_type': project['issue_type']}
+        try:
+            view = json.loads(run(['gh', 'project', 'view', str(project['number']),
+                                   '--owner', project['owner'], '--format', 'json']))
+            require(isinstance(view, dict) and nonempty(view.get('title')), 'malformed project response')
+            result['sources']['project'] = {'status': 'available', 'title': view['title'],
+                                            'url': view.get('url'), **summary}
+        except (ValueError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+            result['sources']['project'] = {'status': 'unavailable', **summary,
+                                            'reason': 'project board read failed; check gh "project" scope and board access'}
     roads = config.get('roads')
     if not roads:
         result['sources']['roads'] = {'status': 'unconfigured'}
@@ -475,6 +535,8 @@ def main():
         p.add_argument('--plan', required=True)
         if name == 'schedule':
             p.add_argument('--limit', type=int, required=True)
+        else:
+            p.add_argument('--config', help='.workflows/config.json; enforces its project board fields')
     p = sub.add_parser('authorize')
     p.add_argument('--charter', required=True)
     p.add_argument('--operation', required=True)
@@ -504,7 +566,8 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == 'validate-plan':
-            validate_plan(load(args.plan))
+            project = load(args.config).get('project') if args.config else None
+            validate_plan(load(args.plan), project)
             result = {'valid': True, 'semantic_review_required': True}
         elif args.command == 'schedule':
             result = {'start': schedule(load(args.plan), args.limit)}

@@ -254,6 +254,103 @@ class IntegrationReadTests(unittest.TestCase):
         self.assertNotIn('private-secret', json.dumps(result))
 
 
+def board(**overrides):
+    project = {'owner': 'example-org', 'number': 3, 'assignee': '@me', 'issue_type': 'Task',
+               'fields': {'Status': 'Open', 'Area': None}}
+    project.update(overrides)
+    return project
+
+
+class ProjectBoardTests(unittest.TestCase):
+    """Issues belong on the configured board; a board that is set must never be skipped."""
+
+    def test_inspect_reports_board_unconfigured_when_absent_or_null(self):
+        for config in ({'repository': 'example/pilot'}, {'repository': 'example/pilot', 'project': None}):
+            with self.subTest(config=config), tempfile.TemporaryDirectory() as root, \
+                    patch.object(workflow, 'run', return_value=b'[]'):
+                result = workflow.inspect(config, root)
+            self.assertEqual(result['sources']['project']['status'], 'unconfigured')
+
+    def test_inspect_reads_the_configured_board(self):
+        def fake(argv, cwd=None):
+            if argv[:3] == ['gh', 'project', 'view']:
+                return json.dumps({'title': 'Board', 'url': 'https://github.com/orgs/example-org/projects/3'}).encode()
+            return b'[]'
+        with tempfile.TemporaryDirectory() as root, patch.object(workflow, 'run', side_effect=fake) as run:
+            result = workflow.inspect({'repository': 'example/pilot', 'project': board()}, root)
+        project = result['sources']['project']
+        self.assertEqual(project['status'], 'available')
+        self.assertEqual((project['owner'], project['number']), ('example-org', 3))
+        self.assertEqual(project['defaults'], {'Status': 'Open'})
+        self.assertEqual(project['choose_per_issue'], ['Area'])
+        self.assertIn(['gh', 'project', 'view', '3', '--owner', 'example-org', '--format', 'json'],
+                      [c.args[0] for c in run.call_args_list])
+
+    def test_inspect_reports_an_unreachable_board_without_inventing_it(self):
+        def fake(argv, cwd=None):
+            if argv[:3] == ['gh', 'project', 'view']:
+                raise ValueError('missing project scope private-token')
+            return b'[]'
+        with tempfile.TemporaryDirectory() as root, patch.object(workflow, 'run', side_effect=fake):
+            result = workflow.inspect({'repository': 'example/pilot', 'project': board()}, root)
+        self.assertEqual(result['sources']['project']['status'], 'unavailable')
+        self.assertNotIn('private-token', json.dumps(result))
+
+    def test_inspect_rejects_a_malformed_board(self):
+        for bad in (board(owner='bad owner'), board(number=0), board(number=True), board(number='3'),
+                    board(fields={'Status': 7}), board(fields=[]), board(assignee=''), 'example-org/3'):
+            with self.subTest(bad=bad), tempfile.TemporaryDirectory() as root, \
+                    patch.object(workflow, 'run', return_value=b'[]'), self.assertRaisesRegex(ValueError, 'project'):
+                workflow.inspect({'repository': 'example/pilot', 'project': bad}, root)
+
+    def test_a_local_project_cannot_have_a_board(self):
+        with tempfile.TemporaryDirectory() as root, self.assertRaisesRegex(ValueError, 'project'):
+            workflow.inspect({'repository': None, 'project': board()}, root)
+
+    def test_plan_must_choose_every_open_board_field_per_issue(self):
+        p = plan()
+        with self.assertRaisesRegex(ValueError, 'Area'):
+            workflow.validate_plan(p, board())
+        for i in p['issues']:
+            i['project_fields'] = {'Area': 'Backend'}
+        checked = workflow.validate_plan(p, board())
+        self.assertEqual(checked['issues'][0]['project_fields'], {'Area': 'Backend'})
+
+    def test_plan_issue_type_comes_from_issue_or_board_default(self):
+        p = plan()
+        for i in p['issues']:
+            i['project_fields'] = {'Area': 'Backend'}
+        workflow.validate_plan(p, board())
+        with self.assertRaisesRegex(ValueError, 'issue_type'):
+            workflow.validate_plan(p, board(issue_type=None))
+        for i in p['issues']:
+            i['issue_type'] = 'Bug'
+        workflow.validate_plan(p, board(issue_type=None))
+
+    def test_plan_rejects_malformed_or_unknown_board_fields(self):
+        for bad in ({'Area': ''}, {'Area': 3}, {'Area': 'Backend', 'Typo': 'x'}, ['Area']):
+            p = plan()
+            for i in p['issues']:
+                i['project_fields'] = bad
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                workflow.validate_plan(p, board())
+
+    def test_plan_without_board_ignores_nothing_and_still_validates(self):
+        workflow.validate_plan(plan())
+
+    def test_cli_validate_plan_applies_the_board_from_config(self):
+        with tempfile.TemporaryDirectory() as d:
+            plan_path, config_path = Path(d) / 'plan.json', Path(d) / 'config.json'
+            plan_path.write_text(json.dumps(plan()), encoding='utf-8')
+            config_path.write_text(json.dumps({'repository': 'example/pilot', 'project': board()}), encoding='utf-8')
+            result = subprocess.run([sys.executable, str(Path(workflow.__file__)), 'validate-plan',
+                                     '--plan', str(plan_path), '--config', str(config_path)],
+                                    capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Area', result.stdout + result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+
+
 class LocalModeTests(unittest.TestCase):
     """A project without a remote is a supported state, not a missing prerequisite."""
 

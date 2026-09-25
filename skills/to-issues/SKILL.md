@@ -21,8 +21,8 @@ with UI/API/storage/tests in one slice, then "edit with conflict feedback", then
 tickets, correct it yourself before presenting it; no extra user prompt needed.
 A genuine prerequisite must expose a working seam tested by a named consumer.
 
-Run `workflow.py validate-plan --plan <plan.json>`; this checks structure and DAG,
-not semantic verticality. Review every vertical demonstration manually. Check
+Run `workflow.py validate-plan --plan <plan.json> --config <.workflows/config.json>`;
+this checks structure, DAG and board fields, not semantic verticality. Review every vertical demonstration manually. Check
 missing cross-layer tests, hidden sequencing, generated/shared files, migrations,
 ports, shared services, dependency cycles and context size. Add dependencies or
 shared ownership for resources that cannot safely run together. Split oversized
@@ -40,6 +40,38 @@ tools or `gh issue create/edit --repo <approved-repo> --body-file <file>` with
 literal UTF-8 bodies, not interpolated shell strings. Keep native permissions.
 If a network response is uncertain, reread/list issues before retrying to avoid
 duplicates. Record partial publication and resume remaining writes idempotently.
+
+## Project board
+
+When `.workflows/config.json` has `project` (reported by `inspect` as
+`sources.project`), every issue this skill creates or adopts belongs on that board;
+never publish one outside it. Plan it with the issue:
+
+- For each issue, record `issue_type` (or rely on `project.issue_type`) and
+  `project_fields` for every board field whose default is `null`. Choose values
+  that exist as options on the board; `validate-plan --config` refuses the plan
+  while any field is still open.
+- Show the board values of every issue in the approval table (type, assignee and
+  each field), so approving the plan approves them. They are part of the named
+  writes, not a later step.
+- After `gh issue create`, in this order: `gh project item-add <number> --owner
+  <owner> --url <issue-url>`; `gh issue edit <n> --repo <repo> --add-assignee
+  <assignee> --type <issue_type>`; one `gh project item-edit <number> --owner
+  <owner> --url <issue-url> --field <name> --value <value>` per field. Use
+  `assignee` exactly as configured (`@me` is whoever runs `gh`), never a guessed login.
+- Verify by rereading GitHub (the issue's `projectItems`, `issueType`, `assignees`
+  and each single-select value) and report any value that did not land. A failed
+  board write is a partial publication: record it and retry only the missing
+  writes, never by creating the issue again.
+- If `sources.project` is `unavailable` (commonly a `gh` token without the `project`
+  scope), do not publish silently outside the board. Report the exact blocked
+  operation and give the user the command to fix it (`gh auth refresh -s project`).
+
+Without `project` configured: for a repository owned by an organization, ask
+through `AskUserQuestion` whether its issues live on a board (options: a board
+you found with `gh project list --owner <owner>`, "no board", free text). Record
+the answer in `.workflows/config.json` as `project` (or `"project": null`) before
+publishing, so later sessions do not ask again. A local project has no board.
 
 Put `Depends on: #N, #M` in each canonical issue body (or `none`); verify dependency
 IDs and content after publication. Link local snapshots to returned issue URLs.
