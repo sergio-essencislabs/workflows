@@ -343,6 +343,16 @@ class BranchPrefixTests(unittest.TestCase):
             with self.subTest(prefix=prefix), self.assertRaisesRegex(ValueError, 'branch_prefix'):
                 workflow.authorize(c, self.operation(branch))
 
+    def test_mid_pattern_protection_closes_the_prefix_and_bad_entries_fail_cleanly(self):
+        c = self.charter_for('release/a/hotfix/x', branch_prefix='release/',
+                             protected_branches=['release/*/hotfix'])
+        with self.assertRaisesRegex(ValueError, 'branch_prefix'):
+            workflow.authorize(c, self.operation('release/a/hotfix/x'))
+        for entries in ([None], [5], 'main'):
+            with self.subTest(entries=entries), self.assertRaisesRegex(ValueError, 'protected_branches'):
+                workflow.authorize(self.charter_for('claude/issue-1', protected_branches=entries),
+                                   self.operation('claude/issue-1'))
+
     def test_protected_branch_inside_prefix_is_denied_case_insensitively(self):
         c = self.charter_for('claude/x', protected_branches=['Claude/X'])
         with self.assertRaisesRegex(ValueError, 'branch'):
