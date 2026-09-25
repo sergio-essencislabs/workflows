@@ -344,10 +344,15 @@ class BranchPrefixTests(unittest.TestCase):
                 workflow.authorize(c, self.operation(branch))
 
     def test_mid_pattern_protection_closes_the_prefix_and_bad_entries_fail_cleanly(self):
-        c = self.charter_for('release/a/hotfix/x', branch_prefix='release/',
-                             protected_branches=['release/*/hotfix'])
-        with self.assertRaisesRegex(ValueError, 'branch_prefix'):
-            workflow.authorize(c, self.operation('release/a/hotfix/x'))
+        for pattern in ('release/*/hotfix', '*/hotfix', 'rel*/hotfix'):
+            c = self.charter_for('release/a/hotfix/x', branch_prefix='release/',
+                                 protected_branches=[pattern])
+            with self.subTest(pattern=pattern), \
+                    self.assertRaisesRegex(ValueError, 'protected or unapproved branch'):
+                workflow.authorize(c, self.operation('release/a/hotfix/x'))
+        allowed = self.charter_for('release/1.0', branch_prefix='release/',
+                                   protected_branches=['release/*/hotfix'])
+        workflow.authorize(allowed, self.operation('release/1.0'))
         for entries in ([None], [5], 'main'):
             with self.subTest(entries=entries), self.assertRaisesRegex(ValueError, 'protected_branches'):
                 workflow.authorize(self.charter_for('claude/issue-1', protected_branches=entries),
@@ -355,8 +360,15 @@ class BranchPrefixTests(unittest.TestCase):
 
     def test_protected_branch_inside_prefix_is_denied_case_insensitively(self):
         c = self.charter_for('claude/x', protected_branches=['Claude/X'])
-        with self.assertRaisesRegex(ValueError, 'branch'):
+        with self.assertRaisesRegex(ValueError, 'protected or unapproved branch'):
             workflow.authorize(c, self.operation('claude/x'))
+
+    def test_one_protected_branch_does_not_block_its_siblings(self):
+        c = self.charter_for('claude/issue-2', protected_branches=['claude/issue-1'])
+        workflow.authorize(c, self.operation('claude/issue-2'))
+        below = self.charter_for('claude/issue-1/sub', protected_branches=['claude/issue-1'])
+        with self.assertRaisesRegex(ValueError, 'protected or unapproved branch'):
+            workflow.authorize(below, self.operation('claude/issue-1/sub'))
 
     def test_null_prefix_and_missing_charter_repository_are_denied(self):
         with self.assertRaisesRegex(ValueError, 'branch_prefix'):

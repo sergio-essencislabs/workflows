@@ -176,17 +176,19 @@ def authorize(charter, operation):
     extra = charter.get('protected_branches', [])
     require(isinstance(extra, list) and all(nonempty(p) for p in extra), 'invalid protected_branches')
     protected = {p.casefold() for p in {'main', 'master'} | set(extra)}
-    # A protected entry, or a pattern such as release/* or release/*/hotfix, also
-    # closes its namespace: the prefix may neither sit inside it nor contain it.
+    # The prefix may not sit inside a protected name or trailing-* namespace.
     namespaces = {p.rstrip('*').rstrip('/') for p in protected} - {''}
     prefix = charter.get('branch_prefix', 'claude/')
     stem = prefix.rstrip('/').casefold() if isinstance(prefix, str) else ''
     require(nonempty(prefix) and prefix.endswith('/') and nonempty(stem) and
-            not any(stem == n or stem.startswith(n + '/') for n in namespaces) and
-            not any(p.startswith(stem + '/') for p in protected), 'invalid branch_prefix')
+            not any(stem == n or stem.startswith(n + '/') for n in namespaces), 'invalid branch_prefix')
+    # Each protected entry p also protects everything below it (p/*), so
+    # release/*/hotfix, */hotfix and claude/issue-1 cover their descendants
+    # without blocking sibling branches.
+    folded = branch.casefold() if nonempty(branch) else ''
     require(nonempty(branch) and branch == selected.get('branch') and branch.startswith(prefix) and
-            not any(fnmatch.fnmatchcase(branch.casefold(), p) for p in protected),
-            'protected or unapproved branch')
+            not any(fnmatch.fnmatchcase(folded, p) or fnmatch.fnmatchcase(folded, p + '/*')
+                    for p in protected), 'protected or unapproved branch')
     if kind == 'test':
         argv = operation.get('argv')
         require(strings(argv) and argv in charter.get('verification_commands', []), 'unapproved verification argv')
