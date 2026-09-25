@@ -65,3 +65,39 @@ aprovação de gravações externas de issues, confirmação do celular na sess�
 completa também exige mecanismos do ambiente que imponham o escopo exato das
 operações e renovem o contexto antes do limite. São limitações técnicas; uma
 aprovação do usuário, por si só, não as resolve.
+
+## Ensaio local — 25/09/2026 (versão 0.2.0)
+
+Ensaio conduzido pelo app desktop, com o celular acompanhando a sessão, num
+repositório Git descartável, sem remoto e sem RoadS. O ensaio foi abandonado
+antes do desenvolvimento. Nenhuma gravação externa foi feita.
+
+Verificado: fonte RoadS `unconfigured` e GitHub `unavailable` informados sem
+bloquear o fluxo; uma aprovação de publicação recusada deixou de fato de escrever
+as issues; a proposta com tickets horizontais foi revisada para fatias verticais
+sem pergunta extra; `validate-plan` e `schedule --limit 2` produziram `[1, 2]`.
+
+Achados que motivaram a versão 0.3.0:
+
+- A configuração do celular só foi oferecida na etapa 6, depois da PRD e das issues.
+- A PRD e o plano de issues foram aprovados sem que o usuário os tivesse visto na
+  íntegra; só um resumo apareceu, fora da pergunta.
+- A conversa seguiu em inglês, apesar de o usuário escrever em português.
+- As instruções para iniciar o host vieram soltas, sem pergunta com opções.
+- O usuário confundiu acompanhar uma sessão pelo celular com ter uma máquina fixa
+  no app. `claude -remote-control`, com um traço só, abriu a lista de sessões
+  antigas em vez de iniciar o host. Duas confirmações do celular chegaram sem
+  nenhum processo de host detectado.
+- `inspect` exigia `repository`; `validate-plan` e `checkpoint` não tinham modo local.
+- `authorize` só aceitava branches `codex/`.
+- `inspect` não detectava verificação Python.
+- `git worktree add` falhou com `'$GIT_DIR' too big` porque o app desktop redireciona
+  o diretório de trabalho para um caminho longo.
+
+Correções na 0.3.0: pergunta do celular primeiro; regras de idioma, perguntas
+com opções e "mostrar antes de aprovar"; `/workflows:total-remote-control`
+público e guiado; oferta do comando `claude --resume` para abrir no CLI a mesma
+sessão do desktop; `repository: null`, issues locais com `source: "local"`,
+`branch_prefix` (padrão `claude/`), candidatos de verificação Python e
+`path_risk`. Os utilitários têm 41 testes automatizados. O novo fluxo de
+conversa e a máquina fixa no celular **ainda não foram testados em sessão real**.

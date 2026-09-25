@@ -18,7 +18,11 @@ contradictions, regressions and testability. Do not smuggle unresolved product
 choices into technical assumptions. Use an independent critique where supported;
 it does not substitute for human approval.
 
-Present the concrete revision, use `AskUserQuestion` for material decisions and
-explicit PRD approval, and preserve the response reference. Do not publish issues
+Write the PRD in the user's language. Before asking for approval, show the
+complete revision: the full text in the conversation, the file sent with the
+host's file-sending tool when one exists, and the text (or as much as fits) in
+the `preview` of the approve option. A summary or a path is not showing it.
+Then use `AskUserQuestion`, with options, for material decisions and explicit
+PRD approval, and preserve the response reference. Do not publish issues
 or implement code from PRD approval alone. Return the approved revision to the
 coordinator; later material changes invalidate downstream approvals.

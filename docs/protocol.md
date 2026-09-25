@@ -4,11 +4,11 @@
 
 | Etapa | Permitido antes da próxima aprovação | Evidência exigida |
 | --- | --- | --- |
+| Celular (primeira pergunta) | Detectar o estado da máquina e perguntar ao usuário | Host detectado e confirmação pelo celular nesta sessão, ou alternativa explícita |
 | Inspeção | Ler o projeto atual e as fontes configuradas | Fontes, horários e limitações |
-| Monitoramento | Detectar o estado da máquina e perguntar ao usuário | Confirmação pelo celular ou alternativa explícita |
 | Descoberta | Entrevistar, ler código e registrar decisões | Resultado, limites e escolhas aprovados |
-| PRD | Redigir e revisar uma versão local | Aprovação humana da versão exata |
-| Plano de issues | Propor entregas e dependências | Aprovação das gravações específicas no GitHub |
+| PRD | Redigir e revisar uma versão local | Texto integral mostrado e aprovação humana da versão exata |
+| Plano de issues | Propor entregas e dependências | Plano e corpos das issues mostrados; aprovação das gravações específicas |
 | Publicação | Somente criações e atualizações aprovadas | Nova leitura dos links, conteúdos e dependências reais |
 | Desenvolvimento | Somente issues e operações autorizadas | Testes, alterações, integração e revisão independente |
 
@@ -19,6 +19,22 @@ que o celular recebeu uma pergunta e respondeu. Em `alternative`, `details` é
 obrigatório. A verificação prévia nunca preenche `phone_connected`: ela devolve
 `null` e o campo `authority`, e é reexecutada a cada sessão, reinício ou queda
 relatada — uma confirmação anterior não sobrevive a nenhum dos três.
+
+A pergunta do celular vem antes de qualquer outra. `phone` com `phone_connected:
+true` exige as duas coisas na sessão atual: processo do host detectado e confirmação
+do usuário. Acompanhar uma sessão já aberta pelo celular é modo `alternative`, não
+uma máquina fixa. Na etapa 6, a confirmação de que o arranjo continua valendo é
+uma pergunta separada da autorização, nunca no mesmo lote.
+
+Nenhuma aprovação vale sem que o usuário tenha visto o conteúdo completo na sessão.
+Antes da pergunta, o texto integral vai para a conversa, o arquivo é enviado pela
+ferramenta de envio do ambiente, quando houver, e o texto se repete no `preview` da
+opção de aprovação. Toda pergunta tem opções, e todo texto ao usuário sai no idioma dele.
+
+Projeto sem remoto é um estado suportado: `repository: null` no `config.json`, no
+plano e na autorização. As issues locais ficam em `.workflows/issues/<n>/`, e o
+registro de cada uma traz `number`, `title`, `body`, `state` e `source: "local"`,
+sem `html_url`. As branches usam `branch_prefix`, com padrão `claude/`.
 
 Mudanças posteriores de escopo invalidam as aprovações afetadas. A exibição de
 solicitações remotas não significa consentimento. Nunca deduza consentimento de

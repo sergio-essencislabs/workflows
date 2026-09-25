@@ -14,7 +14,9 @@ Designed for design reviews, architecture validation, and pre-implementation pla
 
 Use only within the coordinating workflows session. Read approved decisions and
 current planning input before asking anything. Use `AskUserQuestion` for every
-question; workers without it return questions to the coordinator.
+question, in the user's language, each with two to four concrete options and
+the recommended one first; never ask an open question in prose. Workers without
+the tool return questions to the coordinator.
 
 1. Summarize the observation, source/timestamp, affected users and observed pain.
 2. Separate evidence from inference and untested assumptions. Read relevant code
