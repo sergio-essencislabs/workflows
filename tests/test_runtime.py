@@ -366,6 +366,11 @@ class BranchPrefixTests(unittest.TestCase):
     def test_one_protected_branch_does_not_block_its_siblings(self):
         c = self.charter_for('claude/issue-2', protected_branches=['claude/issue-1'])
         workflow.authorize(c, self.operation('claude/issue-2'))
+        for branch in ('claude/issue-1', 'claude/issue-1/sub'):
+            trailing = self.charter_for(branch, protected_branches=['claude/issue-1/'])
+            with self.subTest(branch=branch), \
+                    self.assertRaisesRegex(ValueError, 'protected or unapproved branch'):
+                workflow.authorize(trailing, self.operation(branch))
         below = self.charter_for('claude/issue-1/sub', protected_branches=['claude/issue-1'])
         with self.assertRaisesRegex(ValueError, 'protected or unapproved branch'):
             workflow.authorize(below, self.operation('claude/issue-1/sub'))

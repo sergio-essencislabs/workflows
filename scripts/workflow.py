@@ -174,8 +174,10 @@ def authorize(charter, operation):
     selected = matches[0]
     branch = operation.get('branch')
     extra = charter.get('protected_branches', [])
-    require(isinstance(extra, list) and all(nonempty(p) for p in extra), 'invalid protected_branches')
-    protected = {p.casefold() for p in {'main', 'master'} | set(extra)}
+    require(isinstance(extra, list) and all(nonempty(p) and p.strip('/') for p in extra),
+            'invalid protected_branches')
+    # A trailing slash is malformed for Git; normalize it rather than let it match nothing.
+    protected = {p.casefold().rstrip('/') for p in {'main', 'master'} | set(extra)}
     # The prefix may not sit inside a protected name or trailing-* namespace.
     namespaces = {p.rstrip('*').rstrip('/') for p in protected} - {''}
     prefix = charter.get('branch_prefix', 'claude/')
