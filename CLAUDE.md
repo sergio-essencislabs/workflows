@@ -19,6 +19,11 @@ capturada de sessão real. Exemplos, modelos, testes e documentação usam apena
 marcadores genéricos (`OWNER/REPOSITORY`, `roads: null`). Configuração real vive
 fora deste repositório, no `.workflows/config.json` do projeto de destino.
 
+Suba a versão em `.claude-plugin/plugin.json` em toda alteração que precise
+chegar a quem já instalou. O `claude plugin update` e o botão Atualizar do
+Desktop comparam a versão, não o conteúdo: sem o incremento, ambos respondem
+"already at the latest version" e a cópia instalada continua antiga.
+
 Use worktrees isoladas. A autorização comum de implementação não permite escrever
 em branches protegidas, fazer merge, implantar ou publicar versões. Preserve o
 GuardianS e os dados do usuário. Leia `docs/protocol.md` para execução e retomada,
