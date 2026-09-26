@@ -481,10 +481,63 @@ def host_candidates(rows, since=None):
         if any(token.lower() in HELP_TOKENS for token in tokens):
             continue
         created = row.get('CreationDate') or row.get('created')
+        started, start = moment(created), moment(since)
         selected.append({'pid': row.get('ProcessId') or row.get('pid'),
                          'created': created,
-                         'predates_session': bool(since and created and str(created) < str(since))})
+                         'predates_session': bool(started and start and started < start)})
     return selected
+
+
+def moment(value):
+    """Parse ISO 8601 or the `/Date(ms)/` that PowerShell 5.1 emits; None when unknown."""
+    if not isinstance(value, str) or not value:
+        return None
+    match = re.fullmatch(r'/Date\((-?\d+)\)/', value)
+    try:
+        if match:
+            return dt.datetime.fromtimestamp(int(match.group(1)) / 1000, dt.timezone.utc)
+        parsed = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except (ValueError, OverflowError, OSError):
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
+
+
+def monitoring_record(root):
+    """Read `.workflows/monitoring.json` here or, from a linked worktree, in the main one."""
+    places = [Path(root)]
+    try:
+        common = run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd=root)
+        places.append(Path(common.decode('utf-8', 'replace').strip()).parent)
+    except (ValueError, OSError, subprocess.TimeoutExpired):
+        pass
+    for place in places:
+        try:
+            record = load(place / '.workflows' / 'monitoring.json')
+        except (OSError, ValueError):
+            continue
+        if isinstance(record, dict):
+            return record
+    return None
+
+
+def known_host(record, candidates):
+    """Match a running host to the one the user confirmed on the phone.
+
+    Same process id, and a process started no later than the confirmation: a
+    restarted host, or a reused id, gets a new start time and falls back to asking.
+    """
+    if not isinstance(record, dict) or record.get('mode') != 'phone':
+        return None
+    confirmed = moment((record.get('observed_phone_confirmation') or {}).get('at'))
+    if not confirmed:
+        return None
+    for candidate in candidates:
+        started = moment(candidate.get('created'))
+        if candidate.get('pid') == record.get('host_process_id') and started and started <= confirmed:
+            return {'pid': candidate['pid'], 'host_name': record.get('host_name'),
+                    'confirmed_at': record['observed_phone_confirmation']['at'],
+                    'source': '.workflows/monitoring.json'}
+    return None
 
 
 def monitoring(root, since=None):
@@ -514,8 +567,10 @@ def monitoring(root, since=None):
         rows = json.loads(run(argv).decode('utf-8', 'replace') or 'null')
         require(isinstance(rows, (list, dict)), 'malformed process listing')
         found = host_candidates(rows if isinstance(rows, list) else [rows], since)
-        result['host'] = {'status': 'available', 'candidates': found,
+        known = known_host(monitoring_record(root), found)
+        result['host'] = {'status': 'available', 'candidates': found, 'known': known,
                           'conclusion': 'no persistent host' if not found
+                                        else 'confirmed host still running' if known
                                         else 'a process, not a connected phone'}
     except (ValueError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
         result['host'] = {'status': 'unavailable',

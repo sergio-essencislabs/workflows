@@ -18,11 +18,14 @@ O bloco `monitoring` da autorização registra `mode` (`phone`, `local` ou
 que o celular recebeu uma pergunta e respondeu. Em `alternative`, `details` é
 obrigatório. A verificação prévia nunca preenche `phone_connected`: ela devolve
 `null` e o campo `authority`, e é reexecutada a cada sessão, reinício ou queda
-relatada — uma confirmação anterior não sobrevive a nenhum dos três.
+relatada. Uma confirmação anterior só sobrevive como `host.known`: o
+`.workflows/monitoring.json` registrado por `/workflows:total-remote-control`
+aponta o mesmo pid de um host ainda em execução, iniciado antes da confirmação.
 
-A pergunta do celular vem antes de qualquer outra. `phone` com `phone_connected:
-true` exige as duas coisas na sessão atual: processo do host detectado e confirmação
-do usuário. Acompanhar uma sessão já aberta pelo celular é modo `alternative`, não
+A pergunta do celular vem antes de qualquer outra, exceto com `host.known`, quando
+a sessão informa em uma linha que segue em modo `phone` e não pergunta nada.
+Fora desse caso, `phone` com `phone_connected: true` exige as duas coisas na
+sessão atual: processo do host detectado e confirmação do usuário. Acompanhar uma sessão já aberta pelo celular é modo `alternative`, não
 uma máquina fixa. Na etapa 6, a confirmação de que o arranjo continua valendo é
 uma pergunta separada da autorização, nunca no mesmo lote.
 
