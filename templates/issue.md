@@ -10,6 +10,12 @@ PRD: <approved revision/link>
 
 - [ ] <observable result>
 
+## Seams under test
+
+- <public interface> — <acceptance behavior observed there>
+
+Only these seams receive tests. A missing or wrong seam goes back to the user.
+
 ## Test expectations
 
 Focused regression, broader integration and actual type-check commands.

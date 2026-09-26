@@ -13,13 +13,19 @@ integer IDs are proposal IDs only; remap every dependency to real GitHub numbers
 after creation and verify links. Local status is always a timestamped snapshot.
 
 Each issue must have outcome, boundaries/non-goals, observable acceptance,
-tests, dependency IDs, concrete ownership (or `*` when unknown), risks and a
+seams under test, tests, dependency IDs, concrete ownership (or `*` when unknown), risks and a
 session-sized end-to-end demonstration. Do not split by UI/API/database layers.
 For an observation editor, prefer "save one observation and see it after reload"
 with UI/API/storage/tests in one slice, then "edit with conflict feedback", then
 "filter observations". If the proposal starts as database/backend/frontend
 tickets, correct it yourself before presenting it; no extra user prompt needed.
 A genuine prerequisite must expose a working seam tested by a named consumer.
+
+Seams under test name the public interfaces where each acceptance behavior is
+observed (an HTTP endpoint, a CLI command, a module's exported function, a UI
+action), never internals. Favor critical paths and complex logic over every edge
+case. `to-development` writes tests only at these seams, so approving the issue
+approves them; name them in the approval table too.
 
 Run `workflow.py validate-plan --plan <plan.json> --config <.workflows/config.json>`;
 this checks structure, DAG and board fields, not semantic verticality. Review every vertical demonstration manually. Check

@@ -43,14 +43,77 @@ is current and its required changes are present in the dependent issue's approve
 base. An unmerged PR alone does not meet this condition. Stacked bases/cherry-picks
 need the recorded repository-operation authorization; otherwise park dependents.
 
-## TDD loop
+## Test-driven development
 
-For one acceptance behavior: write/adjust the test, run it, capture the actual
-expected failure, implement the minimum change, then rerun focused tests. An
-import error or broken harness is not the intended behavioral red. Fix the harness
-and obtain a meaningful failing assertion. Preserve commands, exit codes, counts
-and output paths. Never invent failure evidence for a nontestable documentation
-change; state the exception and verify the relevant behavior another way.
+TDD is the red → green loop. This section is the reference that makes that loop
+produce tests worth keeping: what a good test is, where tests go, the
+anti-patterns and the rules of the loop. Every subsection applies on every cycle:
+consult them before and during the loop, not after.
+
+When exploring the codebase, read `CONTEXT.md` (if it exists) so test names and
+interface vocabulary match the project's domain language, and respect ADRs in the
+area you're touching.
+
+### What a good test is
+
+Tests verify behavior through public interfaces, not implementation details. Code
+can change entirely; tests shouldn't. A good test reads like a specification:
+"user can checkout with valid cart" tells you exactly what capability exists, and
+it survives refactors because it doesn't care about internal structure. See
+[tests.md](tests.md) for examples and [mocking.md](mocking.md) for mocking
+guidelines.
+
+### Seams: where tests go
+
+A **seam** is the public boundary you test at: the interface where you observe
+behavior without reaching inside. Tests live at seams, never against internals.
+
+**Test only at pre-agreed seams.** The seams under test are part of each issue
+(`## Seams under test` in `templates/issue.md`) and were approved when the issues
+were published. You can't test everything; agreeing the seams up front is how
+testing effort lands on the critical paths and complex logic instead of every
+edge case. Before the first test, restate the issue's seams in the handoff. No
+test is written at an unconfirmed seam. If the issue lists none, a listed seam
+does not exist or cannot observe the acceptance behavior, or the shape of the
+interface is itself in question (how deep the module is, where the seam belongs,
+what it should expose), park the issue and return the question "What's the public
+interface, and which seams should we test?" to the coordinator's
+`AskUserQuestion`. Continue independent issues meanwhile.
+
+### Anti-patterns
+
+- **Implementation-coupled**: mocks internal collaborators, tests private
+  methods, or verifies through a side channel (querying the database instead of
+  using the interface). The tell: the test breaks when you refactor but behavior
+  hasn't changed.
+- **Tautological**: the assertion recomputes the expected value the way the code
+  does (`expect(add(a, b)).toBe(a + b)`, a snapshot derived by hand the same way,
+  a constant asserted equal to itself), so it passes by construction and can
+  never disagree with the code. Expected values must come from an independent
+  source of truth: a known-good literal, a worked example, the spec.
+- **Horizontal slicing**: writing all tests first, then all implementation. Bulk
+  tests verify _imagined_ behavior: you test the _shape_ of things rather than
+  user-facing behavior, the tests go insensitive to real changes, and you commit
+  to test structure before understanding the implementation. Work in **vertical
+  slices** instead: one test → one implementation → repeat, each test a **tracer
+  bullet** that responds to what the last cycle taught you.
+
+### Rules of the loop
+
+- **Red before green.** Write the failing test first, run it and capture the
+  actual expected failure, then write only enough code to pass it and rerun the
+  focused tests. Don't anticipate future tests or add speculative features.
+- **The red must be behavioral.** An import error or broken harness is not the
+  intended red. Fix the harness and obtain a meaningful failing assertion.
+- **One slice at a time.** One seam, one test, one minimal implementation per
+  cycle, each tied to one acceptance behavior.
+- **Refactoring is not part of the loop.** It belongs to the review stage below,
+  not the red → green implementation cycle.
+- **Evidence is real.** Preserve commands, exit codes, counts and output paths.
+  Never invent failure evidence for a nontestable documentation change; state the
+  exception and verify the relevant behavior another way.
+
+### After the loop
 
 Run relevant broader tests and actual type checks discovered from repository/CI;
 do not assume npm scripts. If no type checker exists, say so and record applicable
@@ -65,6 +128,12 @@ They must not author the changes under review. Bind review to `workflow.py
 evidence --root <worktree>` hashes/HEAD; any change invalidates review. If no
 independent reviewer is available, report "implemented, awaiting independent
 review", not completed. Do not manufacture reviewer identities or approvals.
+
+Refactoring happens here. The reviewer may recommend refactors of the green code;
+the author applies them without changing behavior or adding tests at new seams,
+reruns the full relevant suite and type checks, and records fresh evidence. The
+new hashes invalidate the earlier review, so the independent reviewer reviews
+again before the issue can be reported as reviewed.
 
 Save compact `templates/handoff.md` and a machine-readable checkpoint before each
 session renewal. Include the issue URL and acceptance snapshot, repository map,
