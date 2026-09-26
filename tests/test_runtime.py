@@ -582,6 +582,55 @@ class MonitoringTests(unittest.TestCase):
         found = workflow.host_candidates(rows, since='2026-09-25T10:00:00')
         self.assertEqual([(c['pid'], c['predates_session']) for c in found], [(7, True), (8, False)])
 
+    def test_since_compares_powershell_dates_as_times(self):
+        rows = [{'ProcessId': 9, 'CommandLine': 'claude remote-control',
+                 'CreationDate': '/Date(1790360617247)/'}]  # 2026-09-25T18:23:37Z
+        self.assertTrue(workflow.host_candidates(rows, since='2026-09-25T19:00:00Z')[0]['predates_session'])
+        self.assertFalse(workflow.host_candidates(rows, since='2026-09-25T18:00:00Z')[0]['predates_session'])
+
+    def test_known_host_needs_the_same_process_started_before_confirmation(self):
+        record = {'mode': 'phone', 'host_name': 'pc', 'host_process_id': 42,
+                  'observed_phone_confirmation': {'at': '2026-09-25T18:25:43Z'}}
+        before = {'pid': 42, 'created': '/Date(1790360617247)/'}
+        known = workflow.known_host(record, [before])
+        self.assertEqual((known['pid'], known['host_name'], known['confirmed_at']),
+                         (42, 'pc', '2026-09-25T18:25:43Z'))
+        restarted = {'pid': 42, 'created': '2026-09-26T09:00:00Z'}
+        for rec, candidates in ((record, [restarted]), (record, [{'pid': 43, 'created': before['created']}]),
+                                (record, [{'pid': 42, 'created': None}]), (record, []),
+                                ({**record, 'mode': 'local'}, [before]),
+                                ({**record, 'observed_phone_confirmation': {}}, [before]), (None, [before])):
+            with self.subTest(record=rec, candidates=candidates):
+                self.assertIsNone(workflow.known_host(rec, candidates))
+
+    def test_monitoring_record_is_found_from_a_linked_worktree(self):
+        with tempfile.TemporaryDirectory() as main, tempfile.TemporaryDirectory() as linked:
+            Path(main, '.workflows').mkdir()
+            Path(main, '.workflows', 'monitoring.json').write_text('{"mode": "phone"}', encoding='utf-8')
+            common = (str(Path(main, '.git')) + '\n').encode()
+            with patch.object(workflow, 'run', return_value=common):
+                self.assertEqual(workflow.monitoring_record(linked), {'mode': 'phone'})
+            with patch.object(workflow, 'run', side_effect=ValueError('not a repository')):
+                self.assertIsNone(workflow.monitoring_record(linked))
+
+    def test_monitoring_reports_a_known_host_without_claiming_a_phone(self):
+        listing = json.dumps([{'ProcessId': 42, 'CommandLine': 'claude remote-control --name pc',
+                               'CreationDate': '/Date(1790360617247)/'}]).encode()
+        record = {'mode': 'phone', 'host_name': 'pc', 'host_process_id': 42,
+                  'observed_phone_confirmation': {'at': '2026-09-25T18:25:43Z'}}
+
+        def fake(argv, cwd=None):
+            if argv[0] == 'powershell':
+                return listing
+            raise ValueError('not needed')
+        with patch.object(workflow.sys, 'platform', 'win32'), \
+             patch.object(workflow, 'run', side_effect=fake), \
+             patch.object(workflow, 'monitoring_record', return_value=record):
+            result = workflow.monitoring('.')
+        self.assertEqual(result['host']['known']['pid'], 42)
+        self.assertEqual(result['host']['conclusion'], 'confirmed host still running')
+        self.assertIsNone(result['phone_connected'])
+
     def test_monitoring_never_claims_a_phone_and_degrades_per_source(self):
         with patch.object(workflow.sys, 'platform', 'win32'), \
              patch.object(workflow, 'run', side_effect=ValueError('powercfg exploded')):

@@ -49,7 +49,17 @@ preflight `python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow.py" monitoring --root
 <project>` and report it in one line. Absence of a candidate host is a safe
 conclusion that none is running; a candidate proves a process, never a phone.
 
-Then ask one `AskUserQuestion`, header `Celular`, "Quer acompanhar e responder
+When `host.known` is present, the user already confirmed this very host process
+on the phone in `/workflows:total-remote-control`, and it has been running ever
+since. Ask nothing about the phone: say in one line that the fixed machine
+`<host_name>` (pid `<pid>`, confirmed at `<confirmed_at>`) is still running, that
+you continue in phone mode, and that saying "fico no teclado" switches to local
+mode. Record mode `phone` with `phone_connected: true` and `confirmed_by`
+"persistent host <pid> confirmed on the phone at <confirmed_at>, still running",
+skip `Abrir no CLI`, and go to stage 1. Any other result, including a candidate
+without `known`, takes the question below.
+
+Otherwise ask one `AskUserQuestion`, header `Celular`, "Quer acompanhar e responder
 esta sessão pelo celular?":
 
 - `Máquina fixa no app` — this PC becomes a machine the Claude mobile app keeps
@@ -92,7 +102,8 @@ conversation. Never run it yourself.
 Record mode, `confirmed_by`, session identity and time in the authorization's
 `monitoring` block when one exists, and in the handoff. Repeat detection after
 every restart, new session or reported disconnection; an earlier confirmation
-does not survive them.
+survives them only as `host.known`, that is, while the same confirmed host
+process keeps running.
 
 ## 1. Take the request and right-size the path
 

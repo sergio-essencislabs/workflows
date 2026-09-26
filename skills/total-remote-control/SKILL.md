@@ -123,15 +123,17 @@ on screen is never that evidence.
 Write `.workflows/monitoring.json` in the project as a historical record: mode
 `phone`, `confirmed_by`, `observed_phone_confirmation` with its time, host name,
 detected process id, measured power values, caveats and
-`"valid_for_other_sessions": false`. Never write `phone_connected` there; only
-the session that asks the user may set it in its own authorization. Write nothing else, and nothing outside `.workflows/`: no
+`"valid_while_process_runs": true`. Never write `phone_connected` there; the
+preflight of later sessions reads this record and reports `host.known` only while
+the same process, started before the confirmation, is still running. Write nothing else, and nothing outside `.workflows/`: no
 scheduled task, startup shortcut, service or background logon host (hosts
 started that way died about twenty seconds after the phone connected).
 
 Close with the reminders — host window open, lid open, PC may lock — and tell
 the user to answer `Concluí e o celular respondeu` back in the `/workflows`
-session, which redetects the host itself; this file does not carry the
-confirmation across sessions.
+session, which redetects the host itself. From then on, new `/workflows`
+sessions skip the phone question while this host window stays open; closing it
+or restarting the host brings the question back.
 
 ## After a restart or disconnection
 
