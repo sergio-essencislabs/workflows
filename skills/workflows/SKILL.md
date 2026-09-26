@@ -127,6 +127,10 @@ Identify the actual project path, Git remotes, current branch/worktrees, dirty
 changes and project instructions. Inspect configured integrations rather than
 guessing URLs or borrowing another plugin's credentials/runtime. Read
 `.workflows/config.json` if present; its shape is in `examples/config.json`.
+The file is usually untracked, so a linked worktree does not carry it: when the
+session runs in one, look in the main worktree too (the parent of `git rev-parse
+--path-format=absolute --git-common-dir`) and use that config. Never treat it as
+absent, or create a second one, before checking there.
 Use `python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow.py" inspect --config
 <config-path> --root <project>`. `repository: null` is a supported local project
 without a remote: GitHub reads as `unconfigured`, plans use `repository: null`
