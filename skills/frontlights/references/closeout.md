@@ -75,6 +75,16 @@ of truth: the local `.frontlights/issues/<n>/` snapshots are updated to closed w
 never the other way round. Put the approved list, the user's literal answer, the results and the verify
 output in the handoff.
 
+## 5. Let RoadS see it
+
+RoadS reads only the **Status** of the card in the Project, never whether the issue is closed: closing an issue
+without moving its card changes nothing there, and a completed item stays in its sprint, marked done, until the
+sprint rotation removes it. RoadS also refreshes only when it syncs, and a sync within 30 s of the previous one
+returns the old snapshot. So, when cards were moved and the roadmap sync of stage 1 is configured, tell the user
+this in one line and offer a new sync (a question with options, "Sincronizar agora" and "Deixar para depois");
+on yes run the roadmap sync again as `references/roadmap-sync.md` describes. Without the board (`board.status`
+`unconfigured` or `unavailable`) say plainly that the close-only fallback will not show in RoadS.
+
 ## Never
 
 - Close an issue that has no criteria section or an unticked criterion in this flow. A user who asks for a

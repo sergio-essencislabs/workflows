@@ -39,7 +39,7 @@ class SkillTests(unittest.TestCase):
         stage7 = ' '.join(self.text.split('## 7.')[1].split())
         for phrase in ('Closeout of finished issues (its own approval)', 'references/closeout.md', 'all ticked',
                        'children before parents', 'exact commands', 'explicit approval of that list',
-                       'rereads GitHub to verify', 'No implementation authorization, merged PR or green test covers it',
+                       'rereads GitHub to verify and, because RoadS reads only the card Status, offers a new roadmap sync', 'No implementation authorization, merged PR or green test covers it',
                        'never merges, deploys, reopens or edits an issue body'):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, stage7)
@@ -96,6 +96,16 @@ class ReferenceTests(unittest.TestCase):
             with self.subTest(code=code):
                 self.assertIn(f"'{code}'", source, 'the script no longer produces it')
                 self.assertIn(code, self.flat, 'the reference does not explain it')
+
+    def test_the_reference_tells_that_roads_reads_only_the_card_status_and_offers_a_new_sync(self):
+        for phrase in ('RoadS reads only the **Status** of the card in the Project, never whether the issue is closed',
+                       'closing an issue without moving its card changes nothing there',
+                       'a sync within 30 s of the previous one returns the old snapshot',
+                       '"Sincronizar agora" and "Deixar para depois"', 'the close-only fallback will not show in RoadS'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.flat)
+        self.assertLessEqual(len('Sincronizar agora'.split()), 5)
+        self.assertLessEqual(len('Deixar para depois'.split()), 5)
 
     def test_closing_is_never_implied(self):
         for phrase in ('with **its own approval**', 'no merged PR and no green test stands in for it',

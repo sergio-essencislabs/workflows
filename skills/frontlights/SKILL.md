@@ -357,5 +357,5 @@ Read `references/closeout.md`. It runs when the stage 1 closeout question is ans
 worked in stage 6 is reported merged, or when the user asks to close or move finished issues. It proposes
 closing every open issue and sub-issue whose acceptance criteria are all ticked (children before parents) and
 moving their board cards to Done, shows the table and the exact commands in full, and writes only after an
-explicit approval of that list, then rereads GitHub to verify. No implementation authorization, merged PR or
+explicit approval of that list, then rereads GitHub to verify and, because RoadS reads only the card Status, offers a new roadmap sync. No implementation authorization, merged PR or
 green test covers it, and it never merges, deploys, reopens or edits an issue body.

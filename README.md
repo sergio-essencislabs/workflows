@@ -452,7 +452,10 @@ fechá-las e mover os cartões para Done. A lista vem completa, com as sub-issue
 ligados (aberto, mesclado ou nenhum), o status atual do cartão e os comandos exatos; só depois da sua
 aprovação dessa lista ele fecha (`gh issue close --reason completed`) e move, e relê o GitHub para conferir.
 Uma issue sem a seção de critérios, com critério desmarcado ou com filha ainda aberta nunca entra na lista.
-Nenhuma autorização de implementação, merge ou teste verde substitui essa aprovação. O utilitário é
+O RoadS lê só o **Status** do cartão no Project, nunca se a issue está fechada: fechar sem mover o cartão não muda nada
+lá, e um item concluído fica na sprint (marcado como concluído) até a rotação semanal removê-lo; por isso, depois de mover
+cartões, o Frontlights oferece sincronizar de novo. Nenhuma autorização de implementação, merge ou teste verde
+substitui essa aprovação. O utilitário é
 `python scripts/closeout.py candidates|verify --config <config> [--issues 12,13] [--all]` e só lê.
 
 ## Fluxo de trabalho e utilitários

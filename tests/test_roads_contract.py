@@ -91,6 +91,16 @@ class DocumentShapeTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, flat)
 
+    def test_the_contract_records_what_the_service_does_with_the_project_status(self):
+        flat = ' '.join(DOC.split())
+        for phrase in ('Só o Status do Project conta', 'não é lido** para itens de sprint', 'Item de sprint concluído fica',
+                       'Só a **rotação** das sprints o remove', 'sprint ended, issue done', 'Grupos são diferentes',
+                       'nunca do GitHub ao vivo', 'até 30 s depois de outra',
+                       'Fechar uma issue sem mover o cartão para Done não muda nada no RoadS',
+                       'não aparece como concluído nos `.md` até a rotação'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, flat)
+
     def test_the_move_lane_keys_in_the_contract_are_the_ones_the_code_reads(self):
         change = {'id': 'm1', 'action': 'move_lane', 'item': {'title': 'T'},
                   'payload': {'from_lane_id': 'origem', 'lane_id': 'destino', 'reason': 'x', 'title': 'T'}}

@@ -144,6 +144,34 @@ O plugin não envia o rascunho: quem chama a rota de envio e a de prints (`POST 
 `POST progress-report/shots` e `POST progress-report/<id>/shots`) é o comando do projeto, que recebe o
 segredo pela variável de ambiente. O formato do rascunho e dos prints é o do documento do RoadS.
 
+## O que o RoadS faz com o Status do Project e com issues fechadas
+
+Informado pelo RoadS a partir do código dele; vale como contrato do lado de quem consome.
+
+- **Só o Status do Project conta.** O "Sincronizar" consulta o campo Status do Project e grava o snapshot; o estado
+  aberta ou fechada da issue **não é lido** para itens de sprint. `Done` vira `status: done` e `done: true` no
+  `roadmap-state`; `Open`, `Development` e `Blocker` viram `open`, `development` e `blocker`. Uma issue fechada com o
+  Status ainda em Development continua contando como Development; uma tirada do Project fica na sprint sem status.
+- **Item de sprint concluído fica.** Ele permanece no bloco da sprint com `done: true`, sem nenhuma mudança `remove`,
+  durante toda a semana e até a primeira sincronização depois do último dia da sprint. Só a **rotação** das sprints
+  o remove: quando o último dia da sprint atual já passou e a issue do item está em Done, sai uma mudança `remove`
+  (`payload` com `item_id`, `lane_id`, `title`, `github_issue_url` e `reason` "sprint ended, issue done"); os que não
+  estão em Done passam para a nova sprint atual (`move_lane` com `lane_id` e `from_lane_id`). A rotação roda dentro
+  de toda sincronização (botão, rotina diária ou `sync-board`), uma vez por passagem de semana.
+- **Grupos são diferentes.** A limpeza de issue fechada ou fora do Project atua só em itens de lane de **grupo**
+  (backlog), onde o item sai com uma mudança `remove`.
+- **Painel e Roadmap usam o mesmo snapshot.** Os contadores do Dashboard são calculados no servidor a partir do
+  Roadmap guardado cruzado com o **último** snapshot, nunca do GitHub ao vivo: "Development" (itens da sprint atual em
+  desenvolvimento), "Concluídas na sprint X de Y" (Y são os itens da sprint atual agora e X os que estão em Done; um
+  item removido pela rotação sai das duas contas), "Bloqueios" (a coluna Blocker do Project inteiro), "Esta sprint",
+  "Em paralelo" (em desenvolvimento fora da sprint atual) e "Próxima sprint".
+- **Quando aparece.** Ao apertar Sincronizar, na hora. Uma sincronização feita até 30 s depois de outra (de qualquer
+  origem: botão, rotina diária, `sync-board` do plugin) não consulta o GitHub e devolve o snapshot anterior. Sem
+  sincronizar, recarregar a página só relê o que está guardado.
+- **Consequência para o plugin.** Fechar uma issue sem mover o cartão para Done não muda nada no RoadS. Os arquivos
+  `.md` só recebem o que vem da fila de mudanças (`add`, `modify`, `remove`, `move_lane`): um item concluído que
+  fica na sprint não gera mudança e, portanto, não aparece como concluído nos `.md` até a rotação, que o remove.
+
 ## Pasta dos prints do resumo (`weekShots`)
 
 `<scrumRoot>/<weekFolderPattern da segunda>/<weekShots>/<dd_MM do último dia do período>`, em que a segunda
