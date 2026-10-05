@@ -86,6 +86,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 ## Para a 1.0
 
 A 1.0 sai depois de **uma sessão real com a 0.18.0** que cumpra os itens 12 e 13 do roteiro (família empilhada
-com os PRs das filhas na base do pai e o retarget depois do merge; teste assistido com `serve` e `checks`),
-e de a pessoa responsável aceitar este registro. Os itens parciais acima ficam como limites ou como issues de
+com os PRs das filhas na base do pai e o retarget depois do merge; teste assistido com `serve` e `checks`) e
+exercite o fechamento de issues (item 14) e o registro de conclusões nos `.md` (item 15), que só foram testados com
+GitHub e RoadS simulados, e de a pessoa responsável aceitar este registro. Os itens parciais acima ficam como limites ou como issues de
 acompanhamento, nunca como "passou".

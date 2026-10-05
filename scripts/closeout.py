@@ -128,11 +128,11 @@ def criteria(body):
                 fence = None
             continue
         line, comment = strip_comments(raw)
-        line = line[:LINE_CAP]
-        opened = FENCE.match(line)
+        opened = FENCE.match(line)   # linear, so it reads the whole line: a cut line could look like a fence
         if opened and not (opened.group(1)[0] == '`' and '`' in opened.group(2)):
             fence = (opened.group(1)[0], len(opened.group(1)))
             continue
+        line = line[:LINE_CAP]
         heading = HEADING.match(line)
         if heading:
             depth = len(heading.group(1))

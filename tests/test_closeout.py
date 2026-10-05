@@ -962,6 +962,13 @@ class ReviewFindingsTests(CloseoutCase):
                 self.assertLess(time.monotonic() - started, 1.0)
                 self.assertIsNotNone(counts)
 
+    def test_a_long_line_that_is_not_a_fence_never_hides_an_unticked_criterion(self):
+        # Three backticks, many spaces and one more backtick is not a fence in CommonMark (the info string of a
+        # backtick fence cannot hold a backtick). Cutting the line before looking for the fence made it one.
+        long_line = '```' + ' ' * 2100 + '`'
+        self.assertEqual(closeout.criteria(f'## Acceptance criteria\n- [x] a\n{long_line}\n- [ ] b\n'), (1, 2))
+        self.assertEqual(closeout.criteria('## Acceptance criteria\n- [x] a\n``` `\n- [ ] b\n'), (1, 2))
+
     def test_a_heading_with_a_closing_sequence_still_names_its_section(self):
         for heading in ('## Acceptance criteria ##', '### Acceptance criteria   ###  ', '## **Critérios de aceitação**'):
             with self.subTest(heading=heading):

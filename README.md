@@ -256,8 +256,7 @@ de acordo com o RoadS. Com a resposta "sim", o Frontlights:
    feita, você é avisado;
 3. escreve a prosa em cópias temporárias do `ROADMAP.md` do ano e do `SPRINT_*.md` de cada
    sprint que tem mudança. A pasta e o arquivo de uma sprint nova são criados dentro do
-   `scrumRoot`, seguindo os títulos e as seções do `SPRINT_*.md` mais recente;
-   O mesmo vale para as conclusões: um item de sprint que o RoadS mostra como concluído (`done`, dentro do limite da
+   `scrumRoot`, seguindo os títulos e as seções do `SPRINT_*.md` mais recente. O mesmo vale para as conclusões: um item de sprint que o RoadS mostra como concluído (`done`, dentro do limite da
    sprint) e que ainda não foi registrado entra no plano como "concluída", com a data da **sincronização** (não a da
    entrega), no `ROADMAP.md` e no arquivo da sprint dele. Isso vem só do `done` do estado, nunca de a issue estar
    fechada, não existe na fila do RoadS e por isso nunca é confirmado ao RoadS: um plano só de conclusões termina
@@ -297,6 +296,9 @@ Configure o bloco `roadmapSync` no `.frontlights/config.json` do projeto (veja
   início e fim de cada sprint vêm do RoadS; o `ROADMAP.md` usa o ano da semana atual. `{yyyy}` vem
   do início da sprint. Em cada padrão, o primeiro `{dd_MM}` é o início e o seguinte, o fim;
 - `maxSprintItems` é o limite local, usado só quando o RoadS não informa o dele (4);
+- `markCompleted` é opcional (padrão `true`): registra como "concluída" os itens de sprint que o RoadS mostra em `done`,
+  uma vez cada, com a data da sincronização; um registro nunca é retirado (se o cartão sair de Done, o `.md` continua
+  "concluída"). `false` desliga;
 - `issueTargets` diz, para cada produto do RoadS, o repositório e o quadro onde a issue nasce.
   Produto sem destino não gera issue.
 

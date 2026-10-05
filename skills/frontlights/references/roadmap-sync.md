@@ -84,8 +84,8 @@ their language; quote the helper's English messages only when useful.
 - Put each change in the roadmap and, for every name in `change.sprintTargets`, in that sprint's
   file. A sprint gets a file when one of its items within the limit lists the change in
   `pendingChangeIds`, when `removedPending` puts the removal in that sprint's lane, or when a
-  `move_lane` leaves that sprint's lane (`payload.from`, so the sprint the item left records its
-  exit) or enters it (`payload.to`, when no item of that sprint lists it); these are the only links
+  `move_lane` leaves that sprint's lane (`payload.from_lane_id`, so the sprint the item left records its
+  exit) or enters it (`payload.lane_id`, when no item of that sprint lists it); these are the only links
   from a queued change to a sprint (a completion goes to each sprint that holds its item). A move
   between two sprints therefore reaches both files. A change with an empty `sprintTargets` goes in
   the roadmap only.

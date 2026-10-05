@@ -747,6 +747,47 @@ class SafetyTests(CompletedTestCase):
         self.assertNotIn('declinedCompletions', applied)
 
 
+class ReviewFindingsTests(CompletedTestCase):
+    """The third review: the reserved id, and a plan of completions nobody approved."""
+
+    def queued(self, change_id):
+        payload = fixture()
+        payload['changes'][0]['id'] = change_id
+        return payload
+
+    def test_a_queued_change_whose_id_starts_with_the_reserved_prefix_is_refused(self):
+        for change_id in ('done-' + ITEM_B, 'done-anything-else', 'done-'):
+            with self.subTest(change_id=change_id):
+                rs._SECRETS.clear()
+                result, _ = self.approve_and_fetch(self.queued(change_id), state=state_fixture(), discard_staged=True)
+                self.assertFalse(result['ok'])
+                self.assertIn('done-', result['message'])
+                self.assertFalse((self.sync_dir / 'plan.json').exists())
+
+    def test_with_the_marks_turned_off_the_prefix_is_not_reserved(self):
+        self.write_config(markCompleted=False)
+        result, _ = self.approve_and_fetch(self.queued('done-anything-else'), state=state_fixture())
+        self.assertTrue(result['ok'], result['message'])
+
+    def test_a_plan_of_completions_nobody_approved_does_not_block_rotating_the_markers(self):
+        result, _ = self.only_completions()
+        self.assertTrue(result['ok'], result['message'])
+        rotated = self.run_op('rotate-markers')
+        self.assertTrue(rotated['ok'], rotated)
+        stale = self.run_op('apply', Transport())
+        self.assertFalse(stale['ok'])                       # the old plan carries the old markers: it is finished
+        again = self.fetch_again(NO_CHANGES, done_state(), discard_staged=True)
+        self.assertTrue(again['ok'], again['message'])
+        self.assertEqual(again['completed']['new'], 1)
+
+    def test_a_plan_with_queued_changes_still_blocks_rotating_the_markers(self):
+        result, _ = self.approve_and_fetch(state=done_state())
+        self.assertTrue(result['ok'], result['message'])
+        refused = self.run_op('rotate-markers')
+        self.assertFalse(refused['ok'])
+        self.assertIn('not been acknowledged', refused['message'])
+
+
 class ExistingFlowsTests(CompletedTestCase):
     def test_nothing_pending_without_a_done_item_is_unchanged(self):
         result, _ = self.approve_and_fetch({'asOf': None, 'changes': []})

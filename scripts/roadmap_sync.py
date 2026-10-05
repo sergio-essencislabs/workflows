@@ -83,6 +83,7 @@ GAPS_TITLE_LIMIT = 200
 ISSUE_URL = re.compile(r'https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/issues/([1-9][0-9]{0,8})')
 ACTIONS = ('add', 'modify', 'remove', 'move_lane')
 COMPLETED_ACTION = 'completed'
+COMPLETION_PREFIX = 'done-'
 COMPLETED_ON_MEANS = 'sync date'
 SAO_PAULO = dt.timezone(dt.timedelta(hours=-3))  # no daylight saving time since 2019 (docs/roads-contract.md)
 MAX_BODY_BYTES = 5 * 1024 * 1024
@@ -931,8 +932,9 @@ def marker_report(plan, nonce):
 
 
 def plan_finished(plan):
-    """A plan is finished once it was acknowledged, or once it was found to hold nothing to acknowledge."""
-    return 'ackedAt' in plan or 'ackNotNeededAt' in plan
+    """A plan is finished once it was acknowledged, found to hold nothing to acknowledge, or discarded because
+    nothing in the RoadS queue depended on it (a plan of completions only, when the markers were rotated)."""
+    return 'ackedAt' in plan or 'ackNotNeededAt' in plan or 'discardedAt' in plan
 
 
 def has_queued_changes(plan):
@@ -1203,10 +1205,10 @@ def read_state(ctx, transport):
 def completion_id(item_id):
     """The stable id of the completion of one item: `done-<itemId>`, or `done-` and a hash of the item id when
     that would not fit ID_PATTERN (a colon is not allowed in a marker, and the pattern caps the length)."""
-    candidate = 'done-' + item_id
+    candidate = COMPLETION_PREFIX + item_id
     if re.fullmatch(ID_PATTERN, candidate):
         return candidate
-    return 'done-' + hashlib.sha256(item_id.encode('utf-8')).hexdigest()[:40]
+    return COMPLETION_PREFIX + hashlib.sha256(item_id.encode('utf-8')).hexdigest()[:40]
 
 
 def completion_changes(state, today, taken):
@@ -1273,7 +1275,7 @@ def sprint_targets(ctx, state, changes):
     """Each sprint of the state with a pending change gets its own file. The link is the
     service's: a change belongs to a sprint when an item of that sprint lists it in
     pendingChangeIds, when removedPending puts its removal in that sprint's lane, or when a
-    move_lane leaves that sprint's lane (payload.from) or enters it (payload.to) without any
+    move_lane leaves that sprint's lane (payload.from_lane_id) or enters it (payload.lane_id) without any
     item of that sprint listing it. The laneId is positional: it is the lane of the state read
     by this fetch. A change reaching a sprint only through an item past the limit (overLimit) is
     listed apart and not written into that sprint file. A completion belongs to the sprints that
@@ -1356,6 +1358,11 @@ def _fetch(root, today, transport, since, discard_staged, result):
     queued = len(changes)
     fresh, recorded, untitled = [], 0, 0
     if ctx.mark_completed:
+        reserved = [c['id'] for c in changes if c['id'].startswith(COMPLETION_PREFIX)]
+        if reserved:   # the message names the first one, so it is built only when there is one
+            raise Refusal(f'RoadS returned a change with the id {reserved[0]}: the prefix {COMPLETION_PREFIX} is reserved '
+                          'to the completions this helper records, so nothing was written or acknowledged. '
+                          'Take it to the RoadS owner, or turn roadmapSync.markCompleted off.')
         found, untitled = completion_changes(state, today, {c['id'] for c in changes})
         fresh, recorded = unrecorded_completions(ctx, state, found, roadmap_path)
     completed = {'enabled': ctx.mark_completed, 'new': len(fresh), 'alreadyRecorded': recorded,
@@ -1578,7 +1585,13 @@ def op_rotate(root, today):
             pending = read_json(ctx.plan_path)
         except (OSError, ValueError):
             pending = None
-        require(not pending or plan_finished(pending), 'Refusing to rotate: a plan has not been acknowledged. Finish or discard it first.')
+        require(not pending or plan_finished(pending) or not has_queued_changes(pending),
+                'Refusing to rotate: a plan has not been acknowledged. Finish or discard it first.')
+        if pending and not plan_finished(pending):
+            # Only completions, which are not in the RoadS queue: nothing there waits for this plan, and its
+            # markers are about to be replaced. It is finished; the next fetch makes a new one.
+            pending['discardedAt'] = now_iso()
+            write_json_atomic(pending, ctx.plan_path)
     paths = targets(ctx, today)
     fresh = new_nonce()
     rewritten, backups, rotated = [], [], []

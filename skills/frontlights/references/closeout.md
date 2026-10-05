@@ -14,7 +14,8 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/closeout.py" candidates --config <config> 
 ```
 
 By default the scope is the issues this project worked on with Frontlights (the folders of
-`.frontlights/issues/`, the `issue_ids` of the authorizations and the ids of `plan.json`) plus all
+`.frontlights/issues/`, the `issue_ids` of the authorizations and the ids of the issues of `plan.json` that are already published in this
+repository: a plan still in proposal does not count) plus all
 their sub-issues, down the tree. `--issues` names an explicit list. `--all` sweeps every open issue of the
 repository and is used only when the user asks for it. With no repository or no `gh`, say in one line that
 the check could not run and go on.

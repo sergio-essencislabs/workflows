@@ -106,7 +106,9 @@ Uma mudança sem `id` utilizável, com `id` repetido ou sem título (exceto um `
 `add` traz `lane_id` e `title`; `modify` traz os campos alterados; `remove` traz `item_id`, `lane_id` e `title` (essa
 parte é contrato); `move_lane` traz `lane_id` (a lane de destino) e `from_lane_id` (a de origem), as duas contrato desde
 05/10/2026, mais `title` e `reason` informativos (e pode vir `github_issue_url`). Um `move_lane` feito por uma
-pessoa e enfileirado antes dessa data pode não ter `from_lane_id`. Um `remove` chega com `item` e `itemId` nulos. O plugin lê de um `move_lane` o
+pessoa e enfileirado antes dessa data pode não ter `from_lane_id`. Um `remove` chega com `item` e `itemId` nulos. O prefixo `done-` nos ids de mudança da fila é reservado ao plugin (as
+conclusões que ele registra); uma mudança da fila com esse prefixo faz o plugin recusar a busca, então o RoadS não
+deve usá-lo. O plugin lê de um `move_lane` o
 `from_lane_id` e o `lane_id` para saber que sprints ele atinge (`from` e `to` são a grafia antiga, só usada quando a
 chave nova falta); sem eles (uma fila antiga, ou um desvio futuro), o plugin vê só o destino, pelo que `pendingChangeIds` de
 `roadmap-state` já diz. O `asOf` vem do servidor,
