@@ -16,15 +16,19 @@ Operations (each prints one JSON object on stdout):
             every collector and push command, timeouts and file names). Run only after an explicit
             yes in the conversation.
   window    GET <endpoint>/<progress.path>; print the period to collect (`from`/`to` as YYYY-MM-DD
-            in the offset of the window's start), whether a draft already exists and the last
+            in the Sao Paulo calendar, whatever offset the answer uses), the presentation Monday
+            (`weekMeeting`, the route's own when it sent one for this window, else computed) and
+            `summaryFolder` (`dd_MM` of the last day), whether a draft already exists and the last
             period sent.
   collect   run every configured collector, in order, from the project root, with --from and --to
             substituted into `{from}` and `{to}`. Stops at the first failure.
-  shots     with `weekShots`: resolve the prints folder of the week (`--from` is the window's first day;
-            the folder is the one of the next Monday, under scrumRoot) and create it when missing.
+  shots     with `weekShots`: resolve the folder of this summary's prints (`--to` is the last day of
+            the period; the folder is `<week of the next Monday>/<weekShots>/<dd_MM of --to>` under
+            scrumRoot, one per summary; `--meeting` only for the window of the last `window` answer)
+            and create it when missing.
   push      run the configured push command with `{draft}` substituted (plus --shot/--caption when the
             config names no `shotsDir` nor `weekShots`; the project's push command reads `shotsDir`
-            itself). With `weekShots` (and `--from`), first check the week folder's `captions.json` and
+            itself). With `weekShots` (and `--to`), first check the summary folder's `captions.json` and
             images and that every visible delivery not in `proximo` has a print, then substitute
             `{shotsDir}` with that folder.
 
@@ -218,6 +222,8 @@ class Progress:
         the service sent for this same period; without it the plugin computes the day itself. Returns the Monday,
         the `<weekShots>` folder (where the prints were saved before the day folder existed) and the day folder."""
         last = parse_date(date_to, '--to')
+        if meeting is not None:
+            check_meeting(meeting, last, '--meeting')
         monday = presentation_monday(last) if meeting is None else meeting
         folder = rs.expand_pattern(self.week_pattern, monday, monday + dt.timedelta(days=4))
         parent = folder.rstrip('/\\') + '/' + self.week_shots
@@ -335,6 +341,22 @@ def presentation_monday(last_day):
     return last_day - dt.timedelta(days=last_day.weekday()) + dt.timedelta(days=7)
 
 
+SAO_PAULO = dt.timezone(dt.timedelta(hours=-3))   # no daylight saving since 2019
+MEETING_LATEST_WEEKS = 8
+
+
+def check_meeting(meeting, last, flag):
+    """A presentation Monday must come after the last day of its period and not later than a few weeks after the
+    usual one: a stale value (a `--meeting` kept from an earlier summary) would otherwise pick a folder far from
+    the week, outside the project, and nothing would complain."""
+    usual = presentation_monday(last)
+    require(meeting > last, f'{flag} {meeting.isoformat()} is not after the last day of the period ({last.isoformat()}): '
+                            'it looks like a stale value')
+    require(meeting <= usual + dt.timedelta(weeks=MEETING_LATEST_WEEKS),
+            f'{flag} {meeting.isoformat()} is more than {MEETING_LATEST_WEEKS} weeks after the usual presentation Monday '
+            f'({usual.isoformat()}): it looks like a stale value')
+
+
 def parse_meeting(value, flag):
     """A presentation Monday, as the service's `weekMeeting` or the caller's `--meeting`."""
     day = parse_date(value, flag)
@@ -429,10 +451,10 @@ def op_window(root, transport):
     start = parse_instant(body['window'].get('start'), 'window.start')
     end = parse_instant(body['window'].get('end'), 'window.end')
     require(end > start, 'the progress route sent an empty or inverted window')
-    local_end = end.astimezone(start.tzinfo)
+    first_local, local_end = start.astimezone(SAO_PAULO), end.astimezone(SAO_PAULO)
     midnight = local_end.time() == dt.time(0, 0)
     last_day = local_end.date() - dt.timedelta(days=1) if midnight else local_end.date()
-    require(last_day >= start.date(), 'the progress route sent a window shorter than one calendar day')
+    require(last_day >= first_local.date(), 'the progress route sent a window shorter than one calendar day')
     draft, last_sent = body.get('draft'), body.get('lastSent')
     require(draft is None or isinstance(draft, dict), 'the progress route sent an unexpected draft')
     require(last_sent is None or isinstance(last_sent, dict), 'the progress route sent an unexpected lastSent')
@@ -443,19 +465,20 @@ def op_window(root, transport):
     # `weekMeeting` describes only the window of this answer. The plugin computes the same day itself and, when
     # the service sent one, it wins for this window; a difference is reported, never hidden.
     local_meeting, meeting, warnings = presentation_monday(last_day), None, []
-    if 'weekMeeting' in body:
+    if body.get('weekMeeting') is not None:
         meeting = parse_meeting(body['weekMeeting'], 'the weekMeeting sent by the route')
+        check_meeting(meeting, last_day, 'the weekMeeting sent by the route')
         if meeting != local_meeting:
             warnings.append(f'weekMeeting {meeting.isoformat()} from the route differs from {local_meeting.isoformat()}, '
                             'the Monday after the week of the last day; the route value is used for this window. '
                             'Tell the user before saving the prints.')
     meeting = meeting or local_meeting
     result = {'ok': True, 'exitCode': 0, 'start': start.isoformat(), 'end': end.isoformat(),
-              'from': start.date().isoformat(), 'to': last_day.isoformat(), 'draftExists': draft is not None,
+              'from': first_local.date().isoformat(), 'to': last_day.isoformat(), 'draftExists': draft is not None,
               'draftPushedAt': pushed_at[:64] if isinstance(pushed_at, str) else None, 'lastSentPeriod': period,
               'weekMeeting': meeting.isoformat(), 'weekMeetingLocal': local_meeting.isoformat(),
               'summaryFolder': f'{last_day.day:02d}_{last_day.month:02d}',
-              'message': f'Collect {start.date().isoformat()} to {last_day.isoformat()}.'}
+              'message': f'Collect {first_local.date().isoformat()} to {last_day.isoformat()}.'}
     if warnings:
         result['warnings'] = warnings
     return result
@@ -575,14 +598,15 @@ def op_shots(root, date_to, date_from=None, meeting=None):
 
 
 def prints_folder(progress, parent, day):
-    """The day folder, or the flat `weekShots` folder of the prints saved before the day folder existed when only
-    that one has a captions.json (with a warning). Links and paths leaving scrumRoot are refused either way."""
+    """The day folder, or the flat `weekShots` folder of the prints saved before the day folder existed, but only when
+    the day folder does not exist and the flat one has a captions.json (with a warning). Once the day folder exists it
+    is the only one read. Links and paths leaving scrumRoot are refused either way."""
     day_full = rs.contained_path(progress.scrum_root, day)
     flat_full = rs.contained_path(progress.scrum_root, parent)
-    if not os.path.isfile(os.path.join(day_full, 'captions.json')) and os.path.isfile(os.path.join(flat_full, 'captions.json')):
+    if not os.path.isdir(day_full) and os.path.isfile(os.path.join(flat_full, 'captions.json')):
         return rs.safe_folder(progress.scrum_root, parent), [
-            'Used the flat folder of the week, where the prints were saved before each summary had its own day folder; '
-            'move them into the day folder (shots) for the next summary.']
+            'Used the flat folder of the week, where the prints were saved before each summary had its own day folder '
+            '(this summary has none yet); run shots and save the prints there for the next summary. Tell the user.']
     return rs.safe_folder(progress.scrum_root, day), []
 
 

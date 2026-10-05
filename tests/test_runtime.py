@@ -328,6 +328,15 @@ class PlanningTests(unittest.TestCase):
         frontlights.validate_plan(p, project)   # no board field is asked of a sub-issue
         self.assertEqual(frontlights.board_resolution(p, project), None)
 
+    def test_parent_external_cannot_name_an_issue_of_the_plan_and_null_means_absent(self):
+        p = plan()
+        p['issues'][0]['parent_external'] = 2       # 2 is an issue of this plan: use parent
+        with self.assertRaisesRegex(ValueError, 'parent_external'):
+            frontlights.validate_plan(p)
+        p = plan()
+        p['issues'][0]['parent_external'] = None
+        frontlights.validate_plan(p)
+
     def test_parent_external_is_validated_and_exclusive(self):
         bad = {'text': '50', 'zero': 0, 'negative': -1, 'boolean': True, 'self': 1, 'float': 1.5}
         for label, value in bad.items():

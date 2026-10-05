@@ -371,7 +371,7 @@ def validate_plan(plan, project=None):
             require(number(issue['parent']),
                     f'{issue["id"]}: parent precisa ser o id (inteiro positivo) de uma issue deste plano')
             require(issue['parent'] != issue['id'], f'{issue["id"]}: parent não pode ser a própria issue')
-        if 'parent_external' in issue:
+        if issue.get('parent_external') is not None:
             require(number(issue['parent_external']) and issue['parent_external'] != issue['id'],
                     f'{issue["id"]}: parent_external precisa ser o número (inteiro positivo, diferente da própria issue) '
                     'de uma issue já publicada fora deste plano')
@@ -383,6 +383,9 @@ def validate_plan(plan, project=None):
             require(plan['repository'] is not None, 'a local plan cannot reference GitHub issue URLs')
             require(issue['url'] == f'https://github.com/{plan["repository"]}/issues/{issue["id"]}',
                     'issue URL does not match repository/id')
+    for issue in issues:   # a parent that is in the plan is `parent`: its links, depth and limits are checked offline
+        require(issue.get('parent_external') not in ids,
+                f'{issue["id"]}: parent_external {issue.get("parent_external")} é uma issue deste plano: use parent')
     graph = {i['id']: i['dependencies'] for i in issues}
     visited, visiting = set(), set()
     def visit(node):
@@ -583,7 +586,9 @@ def review_gate(saved, current):
     edit or new file is never reported as reviewed."""
     if isinstance(saved, dict) and not all(key in saved for key in REVIEW_KEYS):
         saved = saved.get('evidence') if isinstance(saved.get('evidence'), dict) else saved.get('git')
-    require(isinstance(saved, dict) and all(isinstance(saved.get(key), str) and saved[key] for key in REVIEW_KEYS),
+    # `branch` is empty on a detached HEAD; the other three always carry a hash.
+    require(isinstance(saved, dict) and all(isinstance(saved.get(key), str) and (saved[key] or key == 'branch')
+                                            for key in REVIEW_KEYS),
             'the review file needs the saved evidence: head, branch, diff_sha256 and files_sha256 '
             '(the output of the evidence command taken when the review was bound)')
     changed = [key for key in REVIEW_KEYS if saved[key] != current[key]]
@@ -692,9 +697,7 @@ def validate_test_blocks(config, path):
             checks.require_maskable_user_secrets(path)
             if not serve.load_block(path, need_processes=False):
                 warnings.append('browserTest.processes não está declarado: o serve não tem o que subir, então o ambiente precisa '
-                                'estar no ar antes do teste (só as contas e a baseUrl foram conferidas).'
-                                if isinstance(browser, dict) and 'processes' not in browser else
-                                'browserTest.processes está vazio.')
+                                'estar no ar antes do teste (só as contas e a baseUrl foram conferidas).')
             checks.require_local_declarations(path)
         if block is not None:
             if not isinstance(block, dict):

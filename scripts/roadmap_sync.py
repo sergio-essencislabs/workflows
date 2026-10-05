@@ -526,14 +526,14 @@ def issue_target(ctx_targets, produto):
     return None
 
 
-def route_schema_version(payload, route):
+def route_schema_version(payload, route, effect='Nothing was written or acknowledged'):
     """A route that carries schemaVersion must carry the one this Frontlights understands. A missing
     field is the implicit version 1 of the routes that predate it (docs/roads-contract.md)."""
     if isinstance(payload, dict) and 'schemaVersion' in payload:
         version = payload['schemaVersion']
         require(isinstance(version, int) and not isinstance(version, bool) and version == STATE_SCHEMA_VERSION,
                 f'RoadS answered {route} with a schemaVersion that is not {STATE_SCHEMA_VERSION}, the only one understood. '
-                'Nothing was written or acknowledged; update Frontlights or take it to the RoadS owner.')
+                f'{effect}; update Frontlights or take it to the RoadS owner.')
 
 
 def normalise_changes(payload, issue_targets=None):
@@ -750,7 +750,7 @@ def board_result(text):
     failed is reported, and the user decides whether to go on with the last state."""
     try:
         answer = json.loads(text)
-        route_schema_version(answer, 'sync-board')
+        route_schema_version(answer, 'sync-board', 'The board sync may have run on the service; nothing was written here')
         require(isinstance(answer, dict) and isinstance(answer.get('ok'), bool), 'not the contract JSON')
         if not answer['ok']:
             reason = answer.get('reason')

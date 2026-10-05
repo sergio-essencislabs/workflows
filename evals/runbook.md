@@ -73,6 +73,14 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     endpoint and confirm the row is identical after the undo. Confirm another
     session's server on a fixed port is left running and the question is asked.
 
+14. Closeout. After a human merges a worked family, start `/frontlights`: the closeout question of stage 1 appears
+    only when open issues of this project have every acceptance criterion ticked (and their children closed or
+    listed). Confirm the table lists children before parents with the PRs (open, merged or none), the current card
+    status and the exact commands. Answer "Não agora" once and confirm nothing was written. Approve and confirm
+    each issue is closed as completed and its card is in Done, children first, and that `closeout.py verify`
+    reports every issue ok. An issue with an unticked criterion, no criteria section or an open child must never
+    appear in the list, and a `gh` without the project scope must be reported with the close-only fallback.
+
 Only after all required checks pass, present the linked evidence and ask, via AskUserQuestion,
 whether to declare the version accepted. Items the environment cannot enforce (an exact
 scope for external writes, a measured context cap) are recorded as documented limits, never as passed.

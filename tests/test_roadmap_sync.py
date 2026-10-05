@@ -1,9 +1,11 @@
 import datetime as dt
 import http.client
+import http.server
 import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -837,7 +839,12 @@ class ContractVersionTests(RoadmapSyncTestCase):
                 result, transport = self.approve_and_fetch(payload=self.pending(schemaVersion=version), discard_staged=True)
                 self.assertFalse(result['ok'])
                 self.assertIn('schemaVersion', result['message'])
-                self.assertNotIn('ack', [c['url'].rsplit('/', 1)[1] for c in transport.calls])
+                self.assertEqual([c['url'].rsplit('/', 1)[1] for c in transport.calls],
+                                 ['sync-board', 'roadmap-state', 'pending-changes'])
+                state = self.project / '.frontlights' / 'roadmap-sync'
+                self.assertFalse((state / 'plan.json').exists())
+                self.assertEqual(list((state / 'staging').glob('*')) if (state / 'staging').exists() else [], [])
+                self.assertEqual(self.sprint.read_text(encoding='utf-8').count('Item já planejado.'), 10)
 
     def test_sync_board_with_another_schema_version_is_reported_and_the_fetch_goes_on(self):
         result, _ = self.approve_and_fetch(board=self.board(schemaVersion=2))
@@ -845,6 +852,7 @@ class ContractVersionTests(RoadmapSyncTestCase):
         self.assertTrue(result['syncBoardFailed'])
         self.assertEqual(result['syncBoard']['reason'], 'invalid_response')
         self.assertIn('schemaVersion', result['syncBoard']['message'])
+        self.assertIn('may have run on the service', result['syncBoard']['message'])
 
     def test_sync_board_with_schema_version_one_is_accepted(self):
         result, _ = self.approve_and_fetch(board=self.board(schemaVersion=1))
@@ -857,6 +865,29 @@ class ContractVersionTests(RoadmapSyncTestCase):
         transport = Transport((200, {'acked': 4, 'schemaVersion': 2}))
         applied = self.run_op('apply', transport)
         self.assertTrue(applied['ok'], applied.get('message'))
+
+    def test_the_real_transport_sends_the_versioned_user_agent(self):
+        seen = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(self.headers.get('User-Agent'))
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(b'{}')
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(('127.0.0.1', 0), Handler)
+        self.addCleanup(server.server_close)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        status, _ = rs.http_default('GET', f'http://127.0.0.1:{server.server_address[1]}/x', {}, None)
+        self.assertEqual(status, 200)
+        self.assertEqual(seen, [rs.user_agent()])
+        self.assertRegex(seen[0], r'^frontlights-roadmap-sync/\d+\.\d+\.\d+$')
 
     def test_the_user_agent_names_the_plugin_and_its_version(self):
         plugin = json.loads((Path(__file__).resolve().parents[1] / '.claude-plugin' / 'plugin.json')

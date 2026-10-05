@@ -270,7 +270,8 @@ class AccountsOnlyBrowserTestTests(unittest.TestCase):
 
     def test_declared_but_empty_or_malformed_processes_are_still_refused(self):
         for value in ([], 'web', None):
-            with self.subTest(processes=value), tempfile.TemporaryDirectory() as root,                     self.assertRaises(ValueError) as caught:
+            with self.subTest(processes=value), tempfile.TemporaryDirectory() as root, \
+                    self.assertRaises(ValueError) as caught:
                 inspect_file(self.accounts_only(processes=value), root)
             self.assertIn('browserTest.processes', str(caught.exception))
 

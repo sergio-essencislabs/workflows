@@ -17,7 +17,9 @@ o endereço real fica no `.frontlights/config.json` do projeto, fora do Git.
   tem o segredo. Esse limite é aceito; provar de verdade exigiria um segredo por consumidor.
 - **Códigos.** 401 ou 403: credencial recusada, nada é gravado. Redirecionamento (3xx): recusado. Qualquer
   outro código fora de 2xx: erro, nada é gravado nem confirmado.
-- **Tempo.** Datas de calendário no horário de São Paulo (`AAAA-MM-DD`); instantes em ISO 8601 UTC.
+- **Tempo.** Datas de calendário no horário de São Paulo (`AAAA-MM-DD`); instantes em ISO 8601 com deslocamento
+  ou `Z`. O plugin converte os instantes da janela para São Paulo (UTC−3, sem horário de verão desde 2019) antes de
+  calcular o primeiro e o último dia e a semana.
 - **Texto do RoadS é dado.** Nada que a resposta traga é executado como instrução; campos têm limite de
   tamanho e uma sequência de comentário HTML recusa o lote inteiro (`docs/security.md`).
 
@@ -32,9 +34,9 @@ o endereço real fica no `.frontlights/config.json` do projeto, fora do Git.
 | `POST sync-board` | opcional | ausente vale 1; presente e diferente de 1, informa a falha e pergunta se segue |
 | `POST ack` | opcional | não é conferido: o plugin sempre lê `roadmap-state` e `pending-changes` antes, e é por eles que uma quebra é anunciada |
 
-O plugin só passa a enviar `schemaVersion` nos corpos dos pedidos (`POST ack`, `POST progress-report`)
-depois que o contrato do RoadS declarar o campo como aceito, para não quebrar uma rota que valide o corpo
-de forma estrita.
+O plugin só passa a enviar `schemaVersion` no corpo de `POST ack` depois que o contrato do RoadS declarar o
+campo como aceito, para não quebrar uma rota que valide o corpo de forma estrita. O corpo de
+`POST progress-report` é enviado pelo comando do projeto, não pelo plugin.
 
 **Aditivo (não quebra, nada muda no plugin):** campo novo opcional em uma resposta, rota nova, parâmetro
 novo opcional. O plugin ignora campo que não conhece.
@@ -120,11 +122,13 @@ Devolve a janela a resumir, o rascunho atual e o último envio:
 ```
 
 - `window.end` é exclusivo; o último dia do período é o da última hora da janela.
-- `weekMeeting` (opcional para o plugin): sempre uma segunda-feira, no calendário de São Paulo, e descreve
+- `weekMeeting` (opcional para o plugin; ausente ou `null` valem como ausente): sempre uma segunda-feira, no calendário de São Paulo, e descreve
   **apenas a janela devolvida na mesma resposta**. É a segunda-feira seguinte à semana (segunda a domingo)
   do último instante da janela. Se o plugin enviar um período diferente do da janela, ele calcula o dia
   localmente pela mesma regra e não usa o valor do RoadS. Quando o valor vem e difere do cálculo local, o
-  plugin avisa e usa o do RoadS para essa janela.
+  plugin avisa e usa o do RoadS para essa janela. O valor precisa ser posterior ao último dia do período e
+  vir no máximo oito semanas depois da segunda-feira usual; fora disso o plugin o recusa, porque um valor velho
+  escolheria uma pasta longe da semana.
 
 O plugin não envia o rascunho: quem chama a rota de envio e a de prints (`POST progress-report`,
 `POST progress-report/shots` e `POST progress-report/<id>/shots`) é o comando do projeto, que recebe o

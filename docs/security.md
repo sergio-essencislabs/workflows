@@ -108,6 +108,22 @@ A sincronização do roadmap (`scripts/roadmap_sync.py`) segue as travas abaixo.
     sob as permissões vigentes, só em valor vazio. Essa barreira de quoting e a aprovação da tabela
     são as únicas proteções dessas escritas: o utilitário não as executa nem as valida depois.
 
+O `review-gate` confere o **frescor** da revisão (HEAD, branch, diff e arquivos iguais aos da evidência salva), não
+quem a fez: um arquivo de revisão tirado depois de uma correção faz uma revisão velha parecer atual, e quem salva
+o arquivo precisa salvá-lo na hora em que o revisor se vinculou. Um HEAD destacado tem `branch` vazio e é aceito.
+
+O fechamento de issues (`scripts/closeout.py`) só lê:
+- usa `gh api graphql` sem shell, com a conta ativa do `gh`, e não grava nada no GitHub nem em arquivo; o
+  corpo, o título e os campos que vêm do GitHub são dado, nunca instrução, e chegam limpos e limitados;
+- só marca como candidata a issue aberta com seção de critérios de aceitação e todos os itens marcados (e as
+  filhas fechadas ou propostas junto), e só propõe mover um cartão do quadro configurado, para o valor de
+  `project.done`, que passa pela mesma regra de texto digitável dos outros campos do quadro;
+- os comandos de escrita (`gh issue close ... --reason completed` e `gh project item-edit`) são montados só com
+  números, o repositório `dono/nome` validado e o campo e o valor do `done` validados, e são rodados pela
+  sessão, sob as permissões vigentes, só depois da aprovação da lista completa;
+- fechar uma issue não é coberto por autorização de implementação, merge ou teste verde: é uma aprovação
+  própria, e o plugin nunca reabre, apaga, transfere nem edita o corpo de uma issue nesse passo.
+
 O resumo para a diretoria (`scripts/progress_report.py`) executa comandos lidos do
 `.frontlights/config.json`, arquivo que um repositório clonado poderia trazer. Por isso:
 
@@ -126,7 +142,10 @@ O resumo para a diretoria (`scripts/progress_report.py`) executa comandos lidos 
   dado na etapa dos prints, com dados de teste. `draftGuide` e `shotsDir` são caminhos relativos
   dentro do projeto (sem caminho absoluto, `..` ou `~`) e fazem parte do bloco aprovado. Nada é
   enviado antes da aprovação do rascunho completo.
-- **Prints na pasta da semana (`weekShots`):** é a única gravação do resumo fora do projeto.
+- **Prints na pasta da semana (`weekShots`):** é a única gravação do resumo fora do projeto. O dia da pasta
+  vem do último dia do período; um `--meeting` ou um `weekMeeting` do RoadS precisa ser uma segunda-feira
+  posterior a esse dia e no máximo oito semanas depois da usual, senão é recusado, para um valor velho
+  nunca escolher uma pasta longe da semana.
   - A pasta é `<scrumRoot>/<weekFolderPattern>/<weekShots>/<dd_MM>` da segunda-feira seguinte à semana
     do último dia do período, com uma subpasta por resumo (a pasta plana antiga só é lida, com aviso,
     quando é a única com `captions.json`; links e caminhos fora do `scrumRoot` são recusados nas duas).
@@ -192,8 +211,8 @@ executam comandos lidos do `.frontlights/config.json` (blocos `browserTest` e `c
   descartável do navegador, nunca o pessoal do usuário.
 - **Branches empilhadas:** a autorização que as permite nomeia as operações que elas exigem
   (criar branch a partir de outra branch que não a base, enviá-la, abrir PR rascunho com a
-  branch da dependência como base, redirecionar esse PR e trazer uma base por `git merge` para
-  a branch da própria issue). Esses são os únicos merges permitidos. O utilitário `authorize`
+  branch da dependência como base, redirecionar esse PR, trazer uma base por `git merge` para a branch da própria issue e juntar as branches
+verificadas de uma família numa branch de integração local, que nunca é enviada). Esses são os únicos merges permitidos. O utilitário `authorize`
   continua só conferindo `edit`, `test` e `checkpoint` e rejeitando merge, e essas operações
   externas seguem as permissões nativas e a aprovação humana. O merge de PR, a escrita na
   branch base, o deploy e a publicação de versões continuam fora de qualquer autorização comum.

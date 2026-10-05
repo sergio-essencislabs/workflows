@@ -11,6 +11,7 @@
 | Plano de issues | Propor entregas e dependências | Plano e corpos das issues mostrados; aprovação das gravações específicas |
 | Publicação | Somente criações e atualizações aprovadas | Nova leitura dos links, conteúdos e dependências reais |
 | Desenvolvimento | Somente issues e operações autorizadas | Testes, alterações, integração e revisão independente |
+| Fechamento | Somente fechar e mover para Done o que a pessoa aprovou na lista mostrada | Lista e comandos mostrados na íntegra, aprovação própria e nova leitura do GitHub |
 
 O bloco `monitoring` da autorização registra `mode` (`phone`, `local` ou
 `alternative`), `confirmed_by`, a identidade da sessão e o horário. Em `phone`,
@@ -32,6 +33,12 @@ guiada de energia para tampa fechada ou PC bloqueado. Com `host.known`, o regist
 `phone_connected: true` só vale se o usuário afirmar, por conta própria na sessão
 atual, que o celular recebeu e respondeu. Na etapa 6, a verificação é refeita e
 relatada em uma linha, sem pergunta.
+
+O fechamento (`scripts/closeout.py`, só leitura) propõe fechar toda issue aberta, e toda sub-issue, com a seção
+de critérios de aceitação e todos os itens marcados (e as filhas fechadas ou propostas junto, filhas antes dos
+pais) e mover o cartão para o valor `project.done` (padrão `Status` / `Done`); uma issue já fechada com o cartão
+fora de Done só é movida. Quem escreve é a sessão, com o `gh` dela e depois da aprovação da lista, e a
+conferência relê o GitHub. Nenhuma outra autorização cobre essa escrita.
 
 Nenhuma aprovação vale sem que o usuário tenha visto o conteúdo completo na sessão.
 Antes da pergunta, o texto integral vai para a conversa, o arquivo é enviado pela

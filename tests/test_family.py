@@ -187,7 +187,8 @@ class FamilyRulesTextTests(unittest.TestCase):
                 self.assertLessEqual(len(label.split()), 5)
 
     def test_the_merge_rule_names_the_only_merges_stacking_allows(self):
-        allowed = "the only merges allowed are the ones the stacking authorization names, of a base into an issue's own branch"
+        allowed = ("the only merges allowed are the ones the stacking authorization names: of a base into an issue's own branch, "
+                   "and of a family's verified branches into a local integration branch that is never pushed")
         for name in (('skills', 'frontlights', 'SKILL.md'), ('skills', 'frontlights', 'references', 'development.md')):
             with self.subTest(file=name[-1]):
                 text = flat(read(*name))

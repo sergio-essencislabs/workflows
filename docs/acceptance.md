@@ -19,7 +19,8 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 - `python -m compileall -q scripts tests`: passou (não há verificador de tipos externo).
 - `claude plugin validate .`: passou; `claude --plugin-dir . plugin details frontlights` carrega uma skill,
   sem agentes, hooks nem servidores MCP.
-- Integração contínua no GitHub Actions: Windows, Python 3.11 e 3.14.
+- Integração contínua no GitHub Actions: configurada para Windows, Python 3.11 e 3.14; localmente só o 3.14 foi rodado,
+  então o resultado da integração contínua desta versão só existe depois da publicação.
 - Os testes usam transporte e datas simulados e **não** homologam o RoadS real; os dados dele estão na seção própria.
 
 ## Matriz do roteiro (sessões reais de 25/09 a 05/10/2026, num projeto de produto real)
@@ -31,7 +32,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 | 3. Entrevista, PRD, plano, publicação | Parcial | PRD aprovado numa revisão exata, planos com 4 e 7 issues publicados e relidos no GitHub | a recusa de uma publicação só foi vista em ensaio local, sem GitHub |
 | 4. Tickets horizontais corrigidos | Parcial | ensaio local de 25/09: a proposta horizontal virou fatias verticais sem pergunta extra | não repetido numa sessão com GitHub |
 | 5. Concorrência com worktrees | Comprovado, com ressalva | `schedule` devolveu a onda, duas issues rodaram em paralelo em worktrees distintas e a dependente esperou | a concorrência foi de subagentes da mesma sessão; sobreposição de arquivos não apareceu |
-| 6. Red/green, revisão independente | Comprovado no caminho feliz | red real antes do green, suíte ampla, revisão do diff exato | uma correção feita depois da revisão não exigiu nova revisão em duas sessões: corrigido nesta versão com `review-gate` |
+| 6. Red/green, revisão independente | Parcial | red real antes do green, suíte ampla, revisão do diff exato | a re-revisão depois de uma mudança falhou em duas sessões reais; o `review-gate` desta versão só foi exercitado em teste automatizado, não numa sessão real |
 | 7. Renovação de contexto | Parcial | retomada por handoff com `resume` em sessão nova, mudança de escopo tratada | o teto de contexto **não** é imposto nem medido de forma confiável (veja os limites) |
 | 8. Celular (Remote Control) | Parcial | respostas do usuário confirmando que o celular recebeu e respondeu, em testes de setembro | sem confirmação vigente nem prompt nativo de permissão respondido pelo celular |
 | 9. Escritas não autorizadas | Parcial | o classificador do modo automático e as regras do GitHub barraram merge, push e fechamento de issues | sem simulação planejada; o `authorize` nunca foi chamado numa sessão real; o escopo exato não é imposto |
@@ -39,6 +40,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 | 11. Modo aprendizado | Parcial | ligado e desligado, explicação antes de decidir, "Ficou claro?" com até 3 decisões, 3 abordagens mais "Explicar antes de decidir" | duas reexplicações em sequência e "Seguir a recomendação" nunca apareceram |
 | 12. Família de issues e branches empilhadas | Parcial | aplicado à mão na 0.16.0: sub-issues lidas, `needs-decision` no grilling, worktrees das filhas saindo da branch do pai | PR de filha com a base do pai e o retarget depois do merge nunca foram exercitados; falta uma sessão real com esta versão |
 | 13. Teste de navegador assistido | Parcial | aplicado à mão na 0.16.0: pergunta antes da janela, Chrome visível, ANTES e DEPOIS, cada caso 2 vezes, janela aberta 45 s, perfil restrito real movido e devolvido; o resultado real passou | os auxiliares `serve` e `checks` não foram usados; falta uma sessão real com esta versão |
+| 14. Fechamento de issues e cartões em Done | Pendente | implementado e testado com `gh` simulado: só propõe issue aberta com todos os critérios marcados, filhas antes dos pais, aprovação própria da lista e releitura do GitHub | falta uma sessão real em que uma pessoa mescle uma família e responda à pergunta |
 
 ## RoadS em produção
 
@@ -65,6 +67,8 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
   resumos da mesma semana dividiam o `captions.json`: a pasta segue o último dia do período, com uma subpasta
   por resumo.
 - O plugin só conferia `schemaVersion` em uma rota do RoadS.
+- Depois de uma atuação completa, o plugin não perguntava se podia fechar as issues e sub-issues com todos
+  os critérios marcados e mover os cartões para Done: nova etapa 7, com aprovação própria da lista.
 
 ## Limites declarados (não são pendências desta versão)
 

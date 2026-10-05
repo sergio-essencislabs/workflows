@@ -95,6 +95,15 @@ class WeekFolderTests(WeekShotsTestCase):
         self.assertEqual(Path(result['shotsDir']), self.out / '2026' / '19_10' / 'summary' / '07_10')
         self.assertEqual(result['presentedOn'], '2026-10-19')
 
+    def test_a_meeting_outside_the_plausible_range_never_picks_the_folder(self):
+        self.approved()
+        for bad in ('2020-01-06', '2026-09-28', '2026-10-05', '2027-01-04'):
+            with self.subTest(bad=bad):
+                result = self.run_op('shots', date_to='2026-10-07', meeting=bad)
+                self.assertFalse(result['ok'])
+                self.assertIn('--meeting', result['message'])
+        self.assertFalse((self.out / '2020').exists())
+
     def test_a_meeting_that_is_not_a_monday_or_not_a_date_is_refused(self):
         self.approved()
         for bad in ('2026-10-13', '12/10/2026', '2026-02-30'):
@@ -109,6 +118,10 @@ class WeekFolderTests(WeekShotsTestCase):
         self.assertFalse(result['ok'])
         self.assertIn('--to', result['message'])
         self.assertIn('last day', result['message'])
+        pushed = self.run_op('push', draft=str(self.draft), date_from='2026-09-30')
+        self.assertFalse(pushed['ok'])
+        self.assertIn('--to', pushed['message'])
+        self.assertFalse((self.out / 'push.json').exists())
 
     def test_the_folder_is_created_when_missing_and_kept_when_present(self):
         self.approved()
@@ -185,7 +198,7 @@ class LegacyFlatFolderTests(WeekShotsTestCase):
             (folder / item['file']).write_bytes(PNG)
         (folder / 'captions.json').write_text(json.dumps(captions), encoding='utf-8')
 
-    def test_the_flat_folder_is_used_with_a_warning_when_the_day_folder_has_no_captions(self):
+    def test_the_flat_folder_is_used_with_a_warning_when_the_day_folder_does_not_exist(self):
         self.approved()
         self.put_flat([{'file': 'a.png', 'caption': 'A'}])
         result = self.push()
@@ -201,6 +214,15 @@ class LegacyFlatFolderTests(WeekShotsTestCase):
         self.assertTrue(result['ok'], result)
         self.assertEqual(Path(self.pushed()['argv'][-1]), self.folder())
         self.assertNotIn('warnings', result)
+
+    def test_an_existing_day_folder_without_captions_is_never_replaced_by_the_flat_one(self):
+        self.approved()
+        self.put_flat([{'file': 'old.png', 'caption': 'Old'}])
+        self.folder().mkdir(parents=True)
+        result = self.push()
+        self.assertFalse(result['ok'])
+        self.assertIn('captions.json', result['message'])
+        self.assertFalse((self.out / 'push.json').exists())
 
     def test_with_neither_folder_the_push_is_refused_before_the_command_runs(self):
         self.approved()
@@ -236,11 +258,38 @@ class WindowWeekMeetingTests(WeekShotsTestCase):
         self.assertTrue(any('weekMeeting' in warning for warning in result['warnings']))
 
     def test_an_invalid_service_value_is_refused(self):
-        for value in ('2026-10-13', '12/10/2026', 20261012, None, True, '2026-02-30'):
+        for value in ('2026-10-13', '12/10/2026', 20261012, True, '2026-02-30'):
             with self.subTest(value=value):
                 result = self.window(weekMeeting=value)
                 self.assertFalse(result['ok'])
                 self.assertIn('weekMeeting', result['message'])
+
+    def test_a_null_service_value_counts_as_absent(self):
+        result = self.window(weekMeeting=None)
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(result['weekMeeting'], '2026-10-12')
+        self.assertNotIn('warnings', result)
+
+    def test_a_meeting_that_is_implausible_for_the_period_is_refused(self):
+        # Wednesday 07/10 is presented on 12/10; a Monday before the period's end, or months away, is a stale value.
+        for value in ('2026-10-05', '2026-09-28', '2020-01-06', '2027-01-04'):
+            with self.subTest(value=value):
+                result = self.window(weekMeeting=value)
+                self.assertFalse(result['ok'])
+                self.assertIn('weekMeeting', result['message'])
+        for value in ('2026-10-19', '2026-12-07'):   # later is allowed, up to eight weeks after the usual Monday
+            with self.subTest(value=value):
+                self.assertTrue(self.window(weekMeeting=value)['ok'])
+
+    def test_the_window_is_read_in_the_Sao_Paulo_calendar_whatever_offset_the_answer_uses(self):
+        self.approved()
+        # 2026-10-03 03:00Z to 2026-10-08 03:00Z is Saturday 03/10 00:00 to Thursday 08/10 00:00 in Sao Paulo.
+        self.roads.answer = (200, state(start='2026-10-03T03:00:00Z', end='2026-10-08T03:00:00Z'))
+        result = self.run_op('window')
+        self.assertEqual((result['from'], result['to'], result['weekMeeting']), ('2026-10-03', '2026-10-07', '2026-10-12'))
+        self.roads.answer = (200, state(start='2026-10-05T03:00:00Z', end='2026-10-12T03:00:00Z'))
+        result = self.run_op('window')
+        self.assertEqual((result['from'], result['to'], result['weekMeeting']), ('2026-10-05', '2026-10-11', '2026-10-12'))
 
     def test_a_window_that_ends_on_a_monday_midnight_belongs_to_the_week_that_ended(self):
         self.approved()

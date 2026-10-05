@@ -127,9 +127,8 @@ quote the helper's English messages only when useful.
      project's own instructions for running it. Use only test data, never real person or customer
      data, and never production. Crop out the browser chrome and the identity of the signed-in user.
      JPEG or PNG, at most 1 MB and about 1920 px wide each, at most 40 in total.
-   - Save the images in that folder and write `captions.json` there, from scratch on every run, never
-     appending to an earlier one: the week folder also holds the prints of an earlier summary of the
-     same week. It is a JSON list in the order wanted,
+   - Save the images in that folder and write `captions.json` there, from scratch on every run, never appending to an earlier one: the week folder holds one folder per summary, and this one is the
+     folder of this summary only. It is a JSON list in the order wanted,
      `[{"file": "101-tela.png", "caption": "one plain sentence", "issue": 101}]`: `file` is a plain
      name in that folder, `caption` plain Portuguese, `issue` the integer number of the delivery's
      issue (leave `issue` out for a print that belongs to no delivery; it goes at the end of the
@@ -153,7 +152,8 @@ quote the helper's English messages only when useful.
    as `{shotsDir}` (which the config must give as a whole argument). A refusal names the missing issues; go back to step 6 for them. Add
    `--shot <file> --caption <text>` only when the config has neither `shotsDir` nor `weekShots`, once
    per screenshot the user approved. The sign-in line of the e-mail comes from the project's local files, never from the
-   conversation: do not write it, ask for it or put it in the texts file. After `push`:
+   conversation: do not write it, ask for it or put it in the texts file. After `push`, tell the user every entry of `warnings` in its result (for example that the flat folder of
+   an earlier layout was read):
    - Exit 0: give the user the review link the push command printed in `stdoutTail` (quote only what
      it printed; never build one yourself) and say that reviewing, editing, checking the numbers,
      copying to e-mail and marking as sent are done in RoadS, and that nothing was e-mailed.

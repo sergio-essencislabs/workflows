@@ -102,6 +102,13 @@ class GateDecisionTests(ReviewGateTestCase):
                 self.reviewed(wrap)
                 self.assertEqual(self.gate()['status'], 'current')
 
+    def test_a_detached_head_has_an_empty_branch_and_still_compares(self):
+        self.git('checkout', '--detach')
+        self.reviewed()
+        self.assertEqual(self.gate()['status'], 'current')
+        (self.root / 'app.txt').write_text('two', encoding='utf-8')
+        self.assertEqual(self.gate()['status'], 'stale')
+
     def test_a_review_without_evidence_is_refused(self):
         for saved in ({}, {'head': 'abc'}, {'evidence': {'head': 1}}, [], 'text'):
             with self.subTest(saved=saved), self.assertRaises(ValueError):

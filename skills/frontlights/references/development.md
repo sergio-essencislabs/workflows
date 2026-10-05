@@ -61,8 +61,8 @@ hunks the child shares with it, and that merging the parent PR with a merge comm
 avoids that; how to merge stays with the human. Record the answer verbatim in the
 authorization, with the repository operations it needs: branch from a branch that is
 not the base, push it (and the dependency's branch), open a draft PR whose base is the
-dependency's branch, retarget that PR, and `git merge` of a base into the issue's own
-branch. Those are the only merges it allows: it never covers merging a PR, writing
+dependency's branch, retarget that PR, `git merge` of a base into the issue's own branch, and `git merge` of a family's verified
+branches into a local integration branch that is never pushed. Those are the only merges it allows: it never covers merging a PR, writing
 the base branch, deploying or releasing. Without the stacking answer, a dependent
 stays parked until its dependency is in the approved base.
 
@@ -256,10 +256,13 @@ checks reported numbers, not the host's actual token meter. If the host cannot
 enforce renewal, explicitly report that hard-cap AFK acceptance is unproven.
 
 Update GitHub checkpoints/status only if authorized and supported by current
-evidence. Draft PRs also require charter permission and native approval. Never
+evidence; tick an acceptance criterion in the issue body only with evidence for it
+(a test, a measured result, a reviewed diff), because the closeout of stage 7 trusts
+the ticks. Closing an issue and moving its card are never part of this: they have
+their own approval (`references/closeout.md`). Draft PRs also require charter permission and native approval. Never
 merge a pull request, write the base branch, deploy, release, delete data or close
-issues as routine AFK work; the only merges allowed are the ones the stacking
-authorization names, of a base into an issue's own branch. Park
+issues as routine AFK work; the only merges allowed are the ones the stacking authorization names: of a base into an issue's own
+branch, and of a family's verified branches into a local integration branch that is never pushed. Park
 blocked issues with the precise pending question and continue independent ones.
 Report each issue's state, branch/PR, exact tests/results, review evidence,
 remaining risk and next action. Leave worktrees and evidence intact for recovery.

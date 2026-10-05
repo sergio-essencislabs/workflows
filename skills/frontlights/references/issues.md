@@ -220,4 +220,5 @@ A parent is reported complete only when every child is closed
 (`subIssuesSummary.completed` equal to `total`); otherwise list the open children.
 A late finding, after the parent was merged or closed, still becomes a sub-issue of
 it: say that the parent must be reopened for its progress to count, and leave that
-decision to the user; never reopen, close, move or archive an issue yourself.
+decision to the user; never reopen, delete or archive an issue yourself, and close or move one
+only through the closeout approval of `references/closeout.md`.

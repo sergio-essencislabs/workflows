@@ -46,6 +46,10 @@ the ports. Exit `0` done, `1` refused or failed; the JSON `category` says:
 
 Either way, ask (see below).
 
+A project whose `browserTest` declares only the accounts (`inspect` warns about it) starts its own
+environment: skip `serve start` and `serve stop`, confirm with the user that the environment is up and on
+the issue's own branch, and never start or stop a process this session did not start.
+
 Ports. A process with `"port": "auto"` gets a free port reserved per process in the
 repository's Git common directory, shared by every worktree, and receives it in
 `PORT`, `FRONTLIGHTS_PORT_<NAME>` and `{port}` in its argv. Its health must carry
@@ -159,7 +163,7 @@ failure.
 **Real back first.** Prefer the real back end and real data. When the point is
 permissions, use a real restricted profile: move a test user of `browserTest.users`
 to that profile through the product's own endpoint, called with a login of
-`browserTest.users`, and never write to the database directly. Before the move, make
+`browserTest.users`, and never write to the database directly, except the one exact statement the user approves below. Before the move, make
 sure the database behind the server is disposable: the host check only covers
 `baseUrl` and `health`, and a local back end can still point at a shared remote
 database, so ask the user to confirm it in the question above when the project does

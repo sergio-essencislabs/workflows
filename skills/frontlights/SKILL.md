@@ -1,6 +1,6 @@
 ---
 name: frontlights
-description: Starts a single planning and delivery session for whatever the user asks, from discovery through approved vertical GitHub issues and bounded implementation, right-sized to the request. First tells the user to keep `claude rc` running in a PowerShell window when no Remote Control host is detected, without asking, then always asks whether to update the sprint and roadmap files from RoadS, and, when the project configures a progress block, whether to also prepare the progress summary in RoadS. RoadS observations are an optional input when configured.
+description: Starts a single planning and delivery session for whatever the user asks, from discovery through approved vertical GitHub issues and bounded implementation, right-sized to the request. First tells the user to keep `claude rc` running in a PowerShell window when no Remote Control host is detected, without asking, then always asks whether to update the sprint and roadmap files from RoadS, and, when the project configures a progress block, whether to also prepare the progress summary in RoadS, and, when issues it worked on have every acceptance criterion ticked, whether to close them and move their cards to Done. RoadS observations are an optional input when configured.
 disable-model-invocation: true
 user-invocable: false
 ---
@@ -17,6 +17,7 @@ before execution. The references are `references/grilling.md` (stage 3),
 `references/prd.md` (stage 4), `references/issues.md` (stage 5),
 `references/development.md` (stage 6, with `tdd-tests.md`, `tdd-mocking.md` and
 `browser-testing.md`),
+`references/closeout.md` (stage 7 and the closeout question of stage 1),
 `references/roadmap-sync.md` (the roadmap question of stage 1, when the user
 says yes), `references/progress-report.md` (the progress question that follows it,
 when the user says yes) and `references/remote-control.md`, read only when the user asks for
@@ -187,6 +188,15 @@ On yes, read `references/progress-report.md` and follow it, then come back to th
 request. On no, make no call to RoadS and run nothing. When `ask` is false (no block,
 or a disabled one), say nothing about it, ask nothing and go on exactly as before.
 
+**Closeout question, right after the progress question.** When `.frontlights/config.json`
+exists with a `repository`, run the read-only `python "${CLAUDE_PLUGIN_ROOT}/scripts/closeout.py"
+candidates --config <config> --root <project>` (a GitHub read through `gh`; if it cannot run, say so
+in one line and go on). Only when it reports `ask` true, ask with `AskUserQuestion`: "Fechar as
+issues que já têm todos os critérios marcados e mover os cartões para Done?" Put in the question text
+how many there are and which, and what `board.status` allows. Options: "Sim, mostrar a lista" and
+"Não, seguir com o pedido". On yes, read `references/closeout.md` and follow it (stage 7), then come
+back to the request. On no, write nothing. When `ask` is false, say nothing and go on exactly as before.
+
 The user's own request is the starting point and the authority on scope. Accept
 any kind of work: a product feature, a bug, a refactor, research, a one-off
 script, a document, operating an external system. Never tell the user the
@@ -237,7 +247,8 @@ Use `python "${CLAUDE_PLUGIN_ROOT}/scripts/frontlights.py" inspect --config
 <config-path> --root <project>`. `repository: null` is a supported local project
 without a remote: GitHub reads as `unconfigured`, plans use `repository: null`
 and `url: null`, and issue snapshots carry `source: "local"`. The helper reports
-npm scripts, Python verification candidates and `path_risk`. Inspect other
+npm scripts, Python verification candidates, `path_risk` and, in `warnings`, anything the config
+leaves open (a `browserTest` with only accounts, say): tell the user in one line. Inspect other
 build files and CI for actual verification commands. Never echo credentials or
 full settings.
 
@@ -332,10 +343,19 @@ the stacking authorization that base is the dependency's own branch, so a child
 starts once its parent is verified there, without waiting for the merge. Park
 blocked work, continue independent work, and route worker questions to this
 session's tool. Do not merge pull requests, write the base branch, deploy, release,
-close issues or expand scope under this charter; the only merges allowed are the
-ones the stacking authorization names, of a base into an issue's own branch.
+close issues or expand scope under this charter; the only merges allowed are the ones the stacking authorization names: of a base into an issue's own
+branch, and of a family's verified branches into a local integration branch that is never pushed.
 
 At each material boundary reconcile GitHub, preserve evidence and check context.
 Finish with per-issue state, branch/PR, changes, measured commands/results,
 independent review against the exact diff, risks and next action. Never present
 fixture tests as live integration, human confirmation or independent review.
+
+## 7. Closeout of finished issues (its own approval)
+
+Read `references/closeout.md`. It runs when the stage 1 closeout question is answered yes, when a family
+worked in stage 6 is reported merged, or when the user asks to close or move finished issues. It proposes
+closing every open issue and sub-issue whose acceptance criteria are all ticked (children before parents) and
+moving their board cards to Done, shows the table and the exact commands in full, and writes only after an
+explicit approval of that list, then rereads GitHub to verify. No implementation authorization, merged PR or
+green test covers it, and it never merges, deploys, reopens or edits an issue body.

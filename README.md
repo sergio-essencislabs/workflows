@@ -11,9 +11,9 @@ referência por etapa. Não depende do GuardianS nem altera sua instalação.
 O plugin se chamava Workflows e foi renomeado para não colidir com os workflows
 do próprio Claude Code.
 
-**Situação:** versão candidata à 1.0, para **uso supervisionado no Windows**. O núcleo do fluxo,
-o teste de navegador assistido e a integração com o RoadS foram exercitados em sessões reais de um
-projeto de produto; as [evidências de aceitação](docs/acceptance.md) dizem o que está provado, o que
+**Situação:** versão candidata à 1.0, para **uso supervisionado no Windows**. O núcleo do fluxo, o
+teste de navegador assistido (aplicado à mão na versão anterior) e a integração com o RoadS foram
+exercitados em sessões reais de um projeto de produto; as [evidências de aceitação](docs/acceptance.md) dizem o que está provado, o que
 falta e os limites. A 1.0 sai depois de uma sessão real que cumpra os itens 12 e 13 do
 [roteiro](evals/runbook.md) com esta versão. **Não** são garantidos: a execução sem supervisão (o
 plugin não instala hooks, então o teto de contexto e o escopo exato das permissões não são impostos
@@ -145,6 +145,9 @@ e é relida para conferir:
   trocá-lo com `issue_type`. `assignee` usa `@me` para quem está autenticado no `gh`.
 - `python scripts/frontlights.py validate-plan --plan plan.json --config .frontlights/config.json`
   recusa o plano enquanto faltar valor para algum campo.
+- `done` é opcional e diz qual campo e valor significam "concluída": `{"field": "Status", "value": "Done"}`
+  é o padrão. O fechamento de issues move o cartão para esse valor; o campo precisa ser de escolha única
+  e o valor precisa existir entre as opções.
 - O token do `gh` precisa do escopo `project` (`gh auth refresh -s project`).
 - Um campo do quadro sem nenhuma opção cadastrada não aceita valor: não o declare em `fields`,
   que passaria a recusar todo plano.
@@ -328,7 +331,7 @@ pergunta não aparece. Com a resposta "sim", o Frontlights:
    está logado; JPEG ou PNG, até 1 MB e cerca de 1920 px de largura, no máximo 40). Grava as imagens
    na pasta dos prints e reescreve o `captions.json` a cada execução, nunca acrescentando ao anterior
    (imagens que não estão nele são ignoradas). Cada item é `{"file", "caption", "issue"}`, com
-   `issue` opcional: o número inteiro da issue da entrega. Com `weekShots`, a pasta é a da semana e
+   `issue` opcional: o número inteiro da issue da entrega. Com `weekShots`, a pasta é a do resumo (`<semana>/<weekShots>/<dd_MM do último dia>`) e
    os prints são obrigatórios (veja abaixo); sem ele, a skill pergunta se o resumo leva prints;
 6. mostra o rascunho completo, com cada print e sua legenda, e, com a sua aprovação, envia ao RoadS
    com `push --draft <arquivo>` (mais `--to <último dia do período>` com `weekShots`); o comando do
@@ -354,16 +357,18 @@ O bloco fica dentro de `roadmapSync` (veja `examples/config.json`) e reaproveita
   que o projeto descreve o arquivo de textos, e `shotsDir` é a pasta dos prints e do `captions.json`.
   Os dois entram na aprovação do bloco: mudar qualquer um pede nova aprovação.
 - `weekShots` é opcional e substitui `shotsDir` (os dois juntos são recusados). Ele guarda os prints
-  na pasta da semana, fora do projeto: `<scrumRoot>/<weekFolderPattern>/<weekShots>`, por exemplo
+  na pasta do resumo, fora do projeto: `<scrumRoot>/<weekFolderPattern>/<weekShots>/<dd_MM>`, por exemplo
   `"weekShots": "summary"`. É um único nome de pasta (letras, dígitos, `-` e `_`).
   - **Qual semana:** a pasta é a da segunda-feira seguinte à semana do ÚLTIMO dia do período, o dia em que
     o resumo é apresentado, e cada resumo tem a sua subpasta, nomeada pelo dia em que o período termina:
     o resumo de 28/09 a 02/10 vai para `05_10/summary/02_10`, e o de sáb 03/10 a qua 07/10 para
     `12_10/summary/07_10`. Dois resumos da mesma semana (quarta e sexta) nunca dividem o `captions.json`.
-    O `window` informa `weekMeeting` e `summaryFolder`; se o RoadS mandar o campo `weekMeeting` e ele
-    divergir do cálculo do plugin, o do RoadS vale para essa janela e o plugin avisa. Prints salvos antes
-    da subpasta, direto em `weekShots`, ainda são lidos pelo `push` (com aviso) quando só a pasta plana tem
-    `captions.json`.
+    O `window` informa `weekMeeting` e `summaryFolder`, lendo a janela no calendário de São Paulo; se o RoadS
+    mandar o campo `weekMeeting` e ele divergir do cálculo do plugin, o do RoadS vale para essa janela e o
+    plugin avisa. Um `weekMeeting` ou `--meeting` fora do intervalo plausível (depois do último dia e até oito
+    semanas depois da segunda-feira usual) é recusado. Prints salvos antes
+    da subpasta, direto em `weekShots`, ainda são lidos pelo `push` (com aviso) quando a subpasta do dia não existe e só a pasta plana tem
+    `captions.json`; com a subpasta do dia criada, só ela vale.
   - **Como chega ao comando:** `shots --to <último dia>` cria a pasta quando falta e informa o caminho
     (`--meeting <weekMeeting>` só quando o período é o da janela do `window`; `--from` não nomeia mais a pasta).
     O `pushCommand` precisa trazer `{shotsDir}` como argumento inteiro, que vira esse caminho, por
@@ -439,6 +444,17 @@ execução, antes de qualquer processo subir. Um `browserTest` que declara só a
 `baseUrl`), porque o projeto sobe o próprio ambiente, é válido: o `inspect` mostra um aviso em
 `warnings` e segue, e o `serve` recusa subir sem `processes`, dizendo o que fazer.
 
+### Fechar o que terminou
+
+Depois da pergunta do roadmap e da do resumo, o Frontlights lê o GitHub (só leitura) e, quando acha issues
+que ele trabalhou neste projeto e que já têm **todos os critérios de aceitação marcados**, pergunta se pode
+fechá-las e mover os cartões para Done. A lista vem completa, com as sub-issues antes dos pais, os PRs
+ligados (aberto, mesclado ou nenhum), o status atual do cartão e os comandos exatos; só depois da sua
+aprovação dessa lista ele fecha (`gh issue close --reason completed`) e move, e relê o GitHub para conferir.
+Uma issue sem a seção de critérios, com critério desmarcado ou com filha ainda aberta nunca entra na lista.
+Nenhuma autorização de implementação, merge ou teste verde substitui essa aprovação. O utilitário é
+`python scripts/closeout.py candidates|verify --config <config> [--issues 12,13] [--all]` e só lê.
+
 ## Fluxo de trabalho e utilitários
 
 Verificação do host do Remote Control (sem pergunta; orienta `claude rc` quando falta)
@@ -499,6 +515,11 @@ python -m compileall -q scripts tests
 claude plugin validate . --json
 claude --plugin-dir . plugin details frontlights
 ```
+
+Uma sub-issue de uma issue já publicada que não está no plano leva `parent_external` (o número do
+pai) no lugar de `parent`. `python scripts/frontlights.py review-gate --root <worktree> --review <arquivo>`
+compara a evidência salva na hora da revisão independente com a atual e sai com código 2 quando houve
+commit, edição ou arquivo novo depois dela.
 
 O exemplo seleciona `[1, 2]`; a issue 3 depende da issue 1, e a issue 4, sub-issue da 3
 (`parent: 3`), ainda é só proposta. O planejador escolhe o
