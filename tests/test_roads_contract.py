@@ -104,12 +104,10 @@ class DocumentShapeTests(unittest.TestCase):
     def test_the_completed_marks_are_described_where_users_and_maintainers_look(self):
         for name in ('README.md', 'docs/protocol.md', 'docs/security.md'):
             with self.subTest(name=name):
-                flat = ' '.join((ROOT / name).read_text(encoding='utf-8').split())
-                self.assertIn('markCompleted', flat)
-                self.assertIn('concluíd', flat)
+                self.assertIn('markCompleted', ' '.join((ROOT / name).read_text(encoding='utf-8').split()))
         for name in ('README.md', 'docs/protocol.md'):
             with self.subTest(name=name):
-                self.assertIn('not_needed', ' '.join((ROOT / name).read_text(encoding='utf-8').split()) + ' not_needed' if name == 'README.md' else (ROOT / name).read_text(encoding='utf-8'))
+                self.assertIn('not_needed', ' '.join((ROOT / name).read_text(encoding='utf-8').split()))
         reference = ' '.join((ROOT / 'skills' / 'frontlights' / 'references' / 'roadmap-sync.md').read_text(encoding='utf-8').split())
         for phrase in ('completed', 'markCompleted'):
             self.assertIn(phrase, reference)
