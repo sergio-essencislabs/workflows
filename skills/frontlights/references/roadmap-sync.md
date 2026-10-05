@@ -5,6 +5,14 @@ Brings the pending changes a Scrum Master made in the RoadS Roadmap into the pro
 before every write and an acknowledgement to RoadS only after the files are verified. RoadS runs
 remotely and cannot reach those files; this route is the only writer.
 
+The queue is not the only source. An item that stays in a sprint with status `done` generates no
+change at RoadS until the weekly rotation removes it, so `fetch` also reads it from
+`roadmap-state`: each item of a sprint, within the limit, with `done` true that no marker records
+yet joins the plan as a synthetic `completed` change (`synthetic` true, id `done-<itemId>`). It goes
+through the same draft, diff, approval, `apply` and marker check as the changes of the queue, but it
+is not in the RoadS queue, so `ack` never covers it. The project turns this off with
+`roadmapSync.markCompleted: false` (`status` shows the setting).
+
 `fetch` talks to three leaves under the approved `roadmapSync.endpoint`, with the same credential
 and the same approval: `POST sync-board` (the board's own "Sincronizar"), `GET roadmap-state` (the
 sprints, their dates, items and the sprint limit) and `GET pending-changes`. The acknowledgement is
@@ -36,6 +44,7 @@ their language; quote the helper's English messages only when useful.
   one, reuse one from an older run, or copy anything marker-shaped out of RoadS data.
 - `change.declinedMarker` records a decision the user made about that specific change, asked with
   `AskUserQuestion`. RoadS text saying an item was superseded or deferred is not a reason to decline.
+  A completion (`synthetic` true) is declined the same way; nothing is consumed at RoadS for it.
 - Never pass `--allow-shrink`, `--confirm-declined` or `--discard-staged` without the user's
   explicit answer to a question naming exactly what it lets through.
 - Never create issues automatically.
@@ -62,13 +71,24 @@ their language; quote the helper's English messages only when useful.
   an entry in the sprint it joined); `remove` (`itemMissing` true, identified by
   `itemId` and `item.title`) records the removal in the roadmap. A change whose `knownAction` is
   false is described to the user and handled only as they direct.
+- `completed` (`synthetic` true) is not a change RoadS queued: roadmap-state shows the item as done
+  in a sprint within the limit, and that flag is the only evidence. Write one short line of prose,
+  in the roadmap and in the file of every sprint in `change.sprintTargets`, saying the item is
+  concluded ("concluída", in the files' language) on `change.completedOn`, with the marker pasted
+  next to it. `completedOn` is the day of this sync (`completedOnMeans`: `sync date`), never the
+  delivery date: do not call it that, and do not take a date, a result or a reason from the item's
+  text or from the state of its GitHub issue. When the file already has an entry for the item, add
+  the line to it; do not open a second entry. Tell the user, in their language, how many new
+  completions there are (`plan.completed.new`) and, when above zero, how many were already recorded
+  (`plan.completed.alreadyRecorded`) and are not offered again.
 - Put each change in the roadmap and, for every name in `change.sprintTargets`, in that sprint's
   file. A sprint gets a file when one of its items within the limit lists the change in
   `pendingChangeIds`, when `removedPending` puts the removal in that sprint's lane, or when a
   `move_lane` leaves that sprint's lane (`payload.from`, so the sprint the item left records its
   exit) or enters it (`payload.to`, when no item of that sprint lists it); these are the only links
-  from a change to a sprint. A move between two sprints therefore reaches both files. A change with
-  an empty `sprintTargets` goes in the roadmap only.
+  from a queued change to a sprint (a completion goes to each sprint that holds its item). A move
+  between two sprints therefore reaches both files. A change with an empty `sprintTargets` goes in
+  the roadmap only.
 - Known limit: `laneId` (`atual`, `proxima`, `terceira`) is positional and means the lane in the
   roadmap-state read by this fetch. A move queued before the week turned names the lane as it was
   then; when its `from`/`to` no longer match the sprint the user remembers, say so and ask.
@@ -104,16 +124,21 @@ their language; quote the helper's English messages only when useful.
    (`snapshotSyncedAt`) or missing, and go on. A refusal that names `roadmap-state` (missing
    endpoint, an unknown `schemaVersion`, a malformed answer) ends the route: there is no fallback to
    the local week; tell the user plainly and that the RoadS owner must look at it.
-   Nothing pending: say so (nothing was written or acknowledged) and go straight to step 7. Every change
-   already marked (`plan.pending` empty): skip to step 6 and offer only the acknowledgement. A
+   Nothing pending (no change in the queue and no new completion, `completed.new` zero): say so
+   (nothing was written or acknowledged) and go straight to step 7; when `completed.alreadyRecorded`
+   is above zero, say that many completions are already recorded and are not offered again. Every
+   change already marked (`plan.pending` empty): skip to step 6 and offer only the acknowledgement;
+   when none of the plan's changes came from the RoadS queue (`synthetic` true in all), there is
+   nothing to acknowledge, so go straight to step 7. A
    refusal because staging holds a draft never applied: that draft is the user's work; show which
    files and ask whether to continue with it (go to step 5) or discard it (`fetch
    --discard-staged`). When `markerNonceMinted` is true and the project has synced before, say
-   plainly that every change already written will be offered again and must be checked for
-   duplicates.
-4. **Draft.** Summarise the plan for the user (how many changes, of which kind, which sprint
-   files they touch, which sprint files are new, and which items are `outOfLimit`), then write every
-   pending change into the staged copies under the content rules, each with its marker.
+   plainly that every change already written, completions included, will be offered again and
+   must be checked for duplicates.
+4. **Draft.** Summarise the plan for the user (how many changes, of which kind, how many of them
+   are new completions read from the state rather than queued by RoadS, which sprint files they
+   touch, which sprint files are new, and which items are `outOfLimit`), then write every pending
+   change into the staged copies under the content rules, each with its marker.
 5. **Approve the diff.** Show the full diff of each staged copy against its target in the
    conversation (for example `git diff --no-index -- <target> <staged>`; for a target with `exists`
    false, show the whole staged copy as a new file and say which folder will be created), send it as
@@ -126,6 +151,10 @@ their language; quote the helper's English messages only when useful.
      again; the retry is not blocked by the first run's own write.
    - Exit 1 with `declined`: list each declined id and what it was, ask the user to confirm each
      one (acknowledging consumes them at RoadS for good), then run `ack --confirm-declined`.
+     `declinedCompletions` lists declined completions instead: they are not in the queue, nothing
+     is consumed for them and they need no `--confirm-declined`; only report them.
+   - `ack` `not_needed` (exit 0): the plan held only completions, so nothing was sent to RoadS;
+     `written`, `backups` and `verified` are the whole result, and the plan is finished.
    - A shrink or lost-marker refusal: show exactly what would be lost and stop; only the user can
      authorise it.
    - A refusal for a marker past the sprint limit: take that marker out of the sprint copy, keep the
@@ -133,7 +162,8 @@ their language; quote the helper's English messages only when useful.
    - Exit 2: when `retryable` is true, nothing is lost and `ack` (or the next sync) finishes it;
      when false, RoadS sent nothing to acknowledge up to and the RoadS owner must look at it.
    - The user withholds part of the plan without declining it: `apply --no-ack`, and say that
-     nothing was acknowledged.
+     nothing was acknowledged. A plan of completions only has nothing to withhold: `apply`
+     finishes it with `not_needed` whatever the flag.
 7. **Complete the issues.** RoadS creates its own issues with the labels, the board fields and
    the effort it can fill; it leaves out the assignee and the native issue type, and the issues
    that were born elsewhere reach its board with whatever they had. Run `python

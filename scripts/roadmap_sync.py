@@ -15,9 +15,11 @@ Operations (each prints one JSON object on stdout):
   fetch           POST <endpoint>/sync-board (its failure is reported, never fatal), GET
                   <endpoint>/roadmap-state (required: no fallback) and GET <endpoint>/pending-changes,
                   then write the plan and a staged copy of the roadmap and of each sprint file with a
-                  pending change (a sprint file that does not exist yet is staged empty).
+                  pending change (a sprint file that does not exist yet is staged empty). Each item of a
+                  sprint that roadmap-state shows as done (`done` true, within the sprint limit) that is
+                  not recorded yet joins the plan as a synthetic `completed` change.
   apply           move the staged copies into place, re-read, verify every marker, then ack
-                  (unless --no-ack).
+                  (unless --no-ack). A plan that holds only completions needs no ack: `not_needed`.
   ack             verify every marker in the targets, then POST <endpoint>/ack with the plan's asOf.
   rotate-markers  mint a fresh marker nonce and rewrite every marker in the roadmap and the current
                   week's sprint file. No network.
@@ -26,6 +28,15 @@ Operations (each prints one JSON object on stdout):
                   against the project's board rules: `fill` is what the configuration settles by itself,
                   `choose` what needs a person. Writes nothing anywhere; --only-sprints skips the backlog
                   groups.
+
+Completions come from the state only: the `done` flag of a sprint item, never the open or closed state
+of its issue and never a text. They are not in the RoadS queue, so the ack never covers them and only the
+queued changes can be "consumed": a declined completion needs no --confirm-declined. A completion has the
+stable id `done-<itemId>` (a hash when that would not fit ID_PATTERN) and `completedOn` is the day of the
+sync in Sao Paulo, not the day of the delivery. It is proposed while no marker of the local nonce records it in
+the roadmap or in the sprint file; rotate-markers rewrites those markers with the others, and a lost nonce
+offers it again, with the diff, like any other change already written. `roadmapSync.markCompleted` (default
+true) turns the whole thing off.
 
 Exit codes: 0 done; 1 nothing was acknowledged (apply validates every target before it writes any,
 so a refusal from validation wrote nothing; a missing marker or an unconfirmed decline is raised
@@ -71,6 +82,9 @@ GAPS_BATCH = 20
 GAPS_TITLE_LIMIT = 200
 ISSUE_URL = re.compile(r'https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/issues/([1-9][0-9]{0,8})')
 ACTIONS = ('add', 'modify', 'remove', 'move_lane')
+COMPLETED_ACTION = 'completed'
+COMPLETED_ON_MEANS = 'sync date'
+SAO_PAULO = dt.timezone(dt.timedelta(hours=-3))  # no daylight saving time since 2019 (docs/roads-contract.md)
 MAX_BODY_BYTES = 5 * 1024 * 1024
 BACKUP_GENERATIONS = 5
 SHRINK_RATIO = 0.9
@@ -102,6 +116,14 @@ def require(condition, message):
 
 def now_iso():
     return dt.datetime.now().astimezone().isoformat()
+
+
+def sao_paulo_today(now=None):
+    """The calendar day in Sao Paulo, whatever the clock of the machine says: the roadmap's calendar and the
+    day a completion is recorded as of. `now`, when given, must carry a timezone."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    require(now.tzinfo is not None, 'internal error: sao_paulo_today needs a timezone-aware instant')
+    return now.astimezone(SAO_PAULO).date()
 
 
 def protect(text):
@@ -217,6 +239,8 @@ class Context:
         self.max_sprint_items = sync.get('maxSprintItems', 4)
         require(isinstance(self.max_sprint_items, int) and self.max_sprint_items > 0,
                 'roadmapSync.maxSprintItems must be a positive integer')
+        self.mark_completed = sync.get('markCompleted', True)
+        require(isinstance(self.mark_completed, bool), 'roadmapSync.markCompleted must be true or false')
         self.issue_targets = validate_issue_targets(sync.get('issueTargets') or {})
         self.state_dir = self.config_path.parent / 'roadmap-sync'
         self.plan_path = self.state_dir / 'plan.json'
@@ -597,7 +621,7 @@ def normalise_changes(payload, issue_targets=None):
         produto = field('produto')
         changes.append({
             'id': change_id, 'itemId': item_id, 'action': action,
-            'knownAction': action in ACTIONS,
+            'knownAction': action in ACTIONS, 'synthetic': False,
             'createdAt': created[0] if created else None,
             'payload': safe_string(change.get('payload'), f'change {change_id} payload', FIELD_LIMITS['payload']) or None,
             'needsIssue': action in ('add', 'modify', 'move_lane') and not issue_url,
@@ -610,6 +634,8 @@ def normalise_changes(payload, issue_targets=None):
             '_created': created,
             # The lanes a move_lane leaves and enters, compared with the state's sprint laneIds.
             '_move': move_lanes(payload, change_id) if action == 'move_lane' else (None, None),
+            # Only a completion is tied to sprints by the sprints that hold its item.
+            '_sprints': [],
         })
     return changes
 
@@ -904,12 +930,31 @@ def marker_report(plan, nonce):
     return missing, declined
 
 
+def plan_finished(plan):
+    """A plan is finished once it was acknowledged, or once it was found to hold nothing to acknowledge."""
+    return 'ackedAt' in plan or 'ackNotNeededAt' in plan
+
+
+def has_queued_changes(plan):
+    return any(not c.get('synthetic') for c in plan['changes'])
+
+
+def split_declined(plan, declined):
+    """(declined changes of the RoadS queue, declined completions). Only the first kind is consumed by the
+    acknowledgement; a completion is not in the queue, so nothing of it is consumed anywhere."""
+    synthetic = {c['id'] for c in plan['changes'] if c.get('synthetic')}
+    return [i for i in declined if i not in synthetic], [i for i in declined if i in synthetic]
+
+
 def do_ack(ctx, transport, plan, result, nonce, confirm_declined):
     missing, declined = marker_report(plan, nonce)
     if missing:
         result.update(ack='refused', missingMarkers=missing, retryable=True,
                       message='Not acknowledged: these changes have no marker in the roadmap or sprint file: ' + ', '.join(missing))
         return 1
+    declined, declined_completions = split_declined(plan, declined)
+    if declined_completions:
+        result['declinedCompletions'] = declined_completions
     # A declined change is consumed by the acknowledgement exactly like an applied one, so the
     # decline must be the user's, confirmed separately, never a conclusion drawn from service text.
     if declined:
@@ -920,6 +965,14 @@ def do_ack(ctx, transport, plan, result, nonce, confirm_declined):
                 + ', '.join(declined) + '. Show the user each one and, only after they confirm each id, run ack with --confirm-declined.'))
             return 1
         result['declinedConfirmed'] = True
+    if not has_queued_changes(plan):
+        # Completions are read from roadmap-state, not from the queue: RoadS has nothing to consume for them.
+        plan['ackNotNeededAt'] = now_iso()
+        write_json_atomic(plan, ctx.plan_path)
+        result.update(ack='not_needed', message=(
+            'Written and verified. No acknowledgement is needed: this plan holds only completions read from roadmap-state, '
+            'which are not in the RoadS queue, so there is nothing to consume. Nothing was sent to RoadS.'))
+        return 0
     if not plan.get('asOf'):
         result.update(ack='skipped', retryable=False, message=(
             'Nothing acknowledged: RoadS sent no asOf and no change carried a usable createdAt, so there is no point to '
@@ -1080,7 +1133,8 @@ def op_status(root, today):
                   secret='present' if secret_present(ctx.secret_env) else 'absent',
                   approval=state, endpoint=pair['endpoint'],
                   scrumRoot='exists' if os.path.isdir(ctx.scrum_root) else 'missing',
-                  maxSprintItems=ctx.max_sprint_items, issueTargets=sorted(ctx.issue_targets))
+                  maxSprintItems=ctx.max_sprint_items, markCompleted=ctx.mark_completed,
+                  issueTargets=sorted(ctx.issue_targets))
     paths = targets(ctx, today)
     start, end = paths['week']
     result['week'] = {'start': start.isoformat(), 'end': end.isoformat()}
@@ -1146,6 +1200,75 @@ def read_state(ctx, transport):
     return normalise_state(payload)
 
 
+def completion_id(item_id):
+    """The stable id of the completion of one item: `done-<itemId>`, or `done-` and a hash of the item id when
+    that would not fit ID_PATTERN (a colon is not allowed in a marker, and the pattern caps the length)."""
+    candidate = 'done-' + item_id
+    if re.fullmatch(ID_PATTERN, candidate):
+        return candidate
+    return 'done-' + hashlib.sha256(item_id.encode('utf-8')).hexdigest()[:40]
+
+
+def completion_changes(state, today, taken):
+    """The sprint items roadmap-state shows as done, as synthetic `completed` changes, and how many were left
+    out for lack of a title. Only the `done` flag of the state decides: never the open or closed state of the
+    issue and never a text. Groups are not read, and an item past the sprint limit is not in the sprint. One
+    item is one change, whatever the number of sprints that list it; every sprint that does is a target. The
+    text of an item has already been through safe_string when the state was read. A change of the queue that
+    already has the id of a completion is refused: the two kinds are told apart by that id."""
+    found, untitled = {}, 0
+    for sprint in state['sprints']:
+        for item in sprint['items']:
+            if item['overLimit'] or item['done'] is not True:
+                continue
+            if not item['title'].strip():
+                untitled += 1
+                continue
+            change_id = completion_id(item['id'])
+            require(change_id not in taken, f'RoadS returned a change with the id {change_id}, which this helper reserves for the '
+                                            f'completion of item {item["id"]}; nothing was written or acknowledged')
+            if change_id in found:
+                if sprint['sprintId'] not in found[change_id]['_sprints']:
+                    found[change_id]['_sprints'].append(sprint['sprintId'])
+                continue
+            effort = next((e for e in EFFORTS if e.casefold() == item['effort'].strip().casefold()), None)
+            found[change_id] = {
+                'id': change_id, 'itemId': item['id'], 'action': COMPLETED_ACTION, 'knownAction': True, 'synthetic': True,
+                'createdAt': None, 'payload': None, 'needsIssue': False, 'issueTarget': None,
+                'completedOn': today.isoformat(), 'completedOnMeans': COMPLETED_ON_MEANS,
+                'item': {'title': item['title'], 'description': item['description'], 'produto': item['produto'],
+                         'prioridade': item['prioridade'], 'effort': effort, 'effortRaw': item['effort'],
+                         'githubIssueUrl': item['githubIssueUrl'], 'lane': sprint['title'] or sprint['laneId'],
+                         'laneId': sprint['laneId'] or None},
+                'itemMissing': False,
+                '_created': None, '_move': (None, None), '_sprints': [sprint['sprintId']]}
+    return list(found.values()), untitled
+
+
+def unrecorded_completions(ctx, state, completions, roadmap_path):
+    """(completions no marker records yet, how many are recorded). A completion is recorded, applied or
+    declined, when a marker of the local nonce for its id is in the roadmap or in the file of a sprint that
+    holds the item: the same evidence `alreadyApplied` uses for the queued changes. Without a stored nonce no
+    marker can vouch for anything, so every completion is new. Reading a sprint file here is the read the plan
+    would make anyway, with the same path checks."""
+    record = marker_record(ctx)
+    if not completions or not record:
+        return completions, 0
+    dates = {sprint['sprintId']: sprint['_dates'] for sprint in state['sprints']}
+    texts = {'roadmap': read_text(roadmap_path)}
+    fresh, recorded = [], 0
+    for change in completions:
+        for sprint_id in change['_sprints']:
+            if sprint_id not in texts:
+                texts[sprint_id] = read_text(safe_target(ctx.scrum_root, sprint_relative(ctx, *dates[sprint_id])))
+        names = ['roadmap', *change['_sprints']]
+        if any(marker_state(texts[name], change['id'], record['nonce']) for name in names):
+            recorded += 1
+        else:
+            fresh.append(change)
+    return fresh, recorded
+
+
 def sprint_targets(ctx, state, changes):
     """Each sprint of the state with a pending change gets its own file. The link is the
     service's: a change belongs to a sprint when an item of that sprint lists it in
@@ -1153,8 +1276,11 @@ def sprint_targets(ctx, state, changes):
     move_lane leaves that sprint's lane (payload.from) or enters it (payload.to) without any
     item of that sprint listing it. The laneId is positional: it is the lane of the state read
     by this fetch. A change reaching a sprint only through an item past the limit (overLimit) is
-    listed apart and not written into that sprint file."""
-    change_ids = {c['id'] for c in changes}
+    listed apart and not written into that sprint file. A completion belongs to the sprints that
+    hold its item (`_sprints`) and to no other: the links above are made only for the changes of
+    the queue, so a state cannot send a completion to a sprint by naming it in pendingChangeIds or
+    in removedPending."""
+    change_ids = {c['id'] for c in changes if not c['synthetic']}
     sprints, files = [], {}
     for sprint in state['sprints']:
         within = [i for i in sprint['items'] if not i['overLimit']]
@@ -1166,6 +1292,7 @@ def sprint_targets(ctx, state, changes):
         lane = sprint['laneId']
         write |= {c['id'] for c in changes if lane and c['_move'][0] == lane != c['_move'][1]}
         write |= {c['id'] for c in changes if lane and c['_move'][1] == lane and c['id'] not in listed}
+        write |= {c['id'] for c in changes if sprint['sprintId'] in c['_sprints']}
         left_out = {cid for item in over for cid in item['pendingChangeIds'] if cid in change_ids} - write
         name = 'sprint:' + sprint['sprintId'] if write else None
         public = {key: value for key, value in sprint.items() if key != '_dates'}
@@ -1226,9 +1353,23 @@ def _fetch(root, today, transport, since, discard_staged, result):
     except ValueError:
         raise Refusal('RoadS answered with a body that is not JSON')
     changes = normalise_changes(payload, ctx.issue_targets)
+    queued = len(changes)
+    fresh, recorded, untitled = [], 0, 0
+    if ctx.mark_completed:
+        found, untitled = completion_changes(state, today, {c['id'] for c in changes})
+        fresh, recorded = unrecorded_completions(ctx, state, found, roadmap_path)
+    completed = {'enabled': ctx.mark_completed, 'new': len(fresh), 'alreadyRecorded': recorded,
+                 'completedOn': today.isoformat(), 'completedOnMeans': COMPLETED_ON_MEANS}
+    if untitled:
+        completed['withoutTitle'] = untitled
+        notes.append(f' {untitled} done item(s) of roadmap-state have no title and were left out of the completions; tell the user.')
+    result['completed'] = completed
+    changes = changes + fresh
     if not changes:
-        result.update(ok=True, exitCode=0, pending=0,
-                      message='Nothing pending. No file was written and nothing was acknowledged.' + ''.join(notes))
+        message = 'Nothing pending. No file was written and nothing was acknowledged.'
+        if recorded:
+            message += f' {recorded} completion(s) read from roadmap-state are already recorded in the files.'
+        result.update(ok=True, exitCode=0, pending=0, message=message + ''.join(notes))
         return result
     sprints, files, left_out = sprint_targets(ctx, state, changes)
     if left_out:
@@ -1251,7 +1392,7 @@ def _fetch(root, today, transport, since, discard_staged, result):
         change['marker'] = marker_text(change['id'], nonce)
         change['declinedMarker'] = marker_text(change['id'], nonce, True)
         change['sprintTargets'] = [name for name, info in files.items() if change['id'] in info['changeIds']]
-        del change['_created'], change['_move']
+        del change['_created'], change['_move'], change['_sprints']
     run = secrets.token_hex(8)
     staging_new = ctx.staging_dir.with_name(ctx.staging_dir.name + '.new-' + run)
     staging_previous = ctx.staging_dir.with_name(ctx.staging_dir.name + '.previous-' + run)
@@ -1280,14 +1421,26 @@ def _fetch(root, today, transport, since, discard_staged, result):
                           changeIds=info['changeIds'], outOfLimitChangeIds=info['outOfLimitChangeIds'])
         plan_targets[name] = target
     pending = [c['id'] for c in changes if not c['alreadyApplied']]
+    # A completion that turned out to be marked after all (a marker in a file the first look did not cover) is recorded.
+    completed.update(new=sum(1 for c in changes if c['synthetic'] and not c['alreadyApplied']),
+                     alreadyRecorded=recorded + sum(1 for c in changes if c['synthetic'] and c['alreadyApplied']))
     start, end = paths['week']
     plan = {'schemaVersion': 1, 'project': ctx.name, 'markerNonceId': nonce_id(nonce), 'asOf': stamp, 'asOfSource': source,
             'stateAsOf': state['asOf'], 'week': {'start': start.isoformat(), 'end': end.isoformat()},
             'maxSprintItems': state['maxSprintItems'] or ctx.max_sprint_items, 'sprints': sprints,
-            'targets': plan_targets, 'pending': pending, 'changes': changes}
+            'targets': plan_targets, 'pending': pending, 'completed': completed, 'changes': changes}
     write_json_atomic(plan, ctx.plan_path)
-    message = (f'{len(pending)} change(s) to apply; {len(changes) - len(pending)} already marked.' if pending
-               else 'Every returned change is already marked in the files; run ack to acknowledge them.')
+    if pending:
+        message = f'{len(pending)} change(s) to apply; {len(changes) - len(pending)} already marked.'
+        if completed['new']:
+            message += (f' {completed["new"]} completion(s) among them come from the done items of roadmap-state: they are not '
+                        'in the RoadS queue and need no acknowledgement.')
+    elif queued:
+        message = 'Every returned change is already marked in the files; run ack to acknowledge them.'
+    else:
+        message = 'Every completion is already marked in the files; there is nothing to acknowledge.'
+    if recorded:
+        message += f' {recorded} completion(s) read from roadmap-state are already recorded in the files and are not offered again.'
     message += ''.join(notes)
     if minted:
         message += (' This run minted a new marker nonce, so no existing marker counts any more. If this project has synced '
@@ -1315,7 +1468,7 @@ def _apply(root, transport, no_ack, allow_shrink, confirm_declined, result):
     ctx = Context(root)
     result['project'] = ctx.name
     plan = read_plan(ctx)
-    require('ackedAt' not in plan, 'This plan was already acknowledged; run fetch again.')
+    require(not plan_finished(plan), 'This plan was already acknowledged (or needed no acknowledgement); run fetch again.')
     nonce = marker_record(ctx)['nonce']
     plan_ids = {c['id'] for c in plan['changes']}
     planned, seen = [], set()
@@ -1387,14 +1540,18 @@ def _apply(root, transport, no_ack, allow_shrink, confirm_declined, result):
             + '. Add the markers to the staged copies and run apply again; this run\'s own write does not block the retry.'))
         return result
     result['verified'] = True
-    if no_ack:
+    # A plan with nothing but completions has nothing to withhold: --no-ack leaves it open for no reason.
+    if no_ack and has_queued_changes(plan):
+        declined, declined_completions = split_declined(plan, declined)
         if declined:
             result['declined'] = declined
+        if declined_completions:
+            result['declinedCompletions'] = declined_completions
         result.update(ok=True, exitCode=0, ack='not requested', message='Written and verified; not acknowledged (--no-ack).')
         return result
     code = do_ack(ctx, transport, plan, result, nonce, confirm_declined)
     result.update(ok=code == 0, exitCode=code)
-    if code == 0:
+    if code == 0 and result.get('ack') == 'sent':
         result['message'] = f'Written, verified and acknowledged up to {plan["asOf"]}.'
     return result
 
@@ -1405,7 +1562,7 @@ def op_ack(root, transport, confirm_declined=False):
     plan = read_plan(ctx)
     code = do_ack(ctx, transport, plan, result, marker_record(ctx)['nonce'], confirm_declined)
     result.update(ok=code == 0, exitCode=code)
-    if code == 0:
+    if code == 0 and result.get('ack') == 'sent':
         result['message'] = f'Acknowledged up to {plan["asOf"]}.'
     return result
 
@@ -1421,7 +1578,7 @@ def op_rotate(root, today):
             pending = read_json(ctx.plan_path)
         except (OSError, ValueError):
             pending = None
-        require(not pending or 'ackedAt' in pending, 'Refusing to rotate: a plan has not been acknowledged. Finish or discard it first.')
+        require(not pending or plan_finished(pending), 'Refusing to rotate: a plan has not been acknowledged. Finish or discard it first.')
     paths = targets(ctx, today)
     fresh = new_nonce()
     rewritten, backups, rotated = [], [], []
@@ -1795,7 +1952,7 @@ def op_gaps(root, transport, gh=None, only_sprints=False):
 
 def run(operation, root='.', today=None, transport=None, since=None, no_ack=False, allow_shrink=False,
         confirm_declined=False, discard_staged=False, gh=None, only_sprints=False):
-    today = today or dt.date.today()
+    today = today or sao_paulo_today()
     transport = transport or http_default
     try:
         if operation == 'status':

@@ -11,6 +11,7 @@
     "weekFolderPattern": "{yyyy}/{dd_MM}",
     "sprintFilePattern": "SPRINT_{dd_MM}_a_{dd_MM}.md",
     "maxSprintItems": 4,
+    "markCompleted": true,
     "issueTargets": {
       "PRODUTO": {"repository": "OWNER/REPOSITORY", "project": {"owner": "OWNER", "number": 1}}
     },
