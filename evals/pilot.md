@@ -54,6 +54,23 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     log records the mode and one row per concept, and the explanations are
     readable on the phone. The textual tests only prove these rules are written
     down; this step proves they are followed.
+12. Issue family and stacked branches. Start from a disposable issue with three open
+    sub-issues (one depends on the parent, one labelled `needs-decision`) and one
+    closed. Confirm the stage 2 line names the open ones, the grilling gives the
+    pending one its own solution round, every body has `## Camadas da fatia`, and the
+    stage 6 call carries the stacking question with the recommended option first and
+    a concurrency equal to the independent children. Authorize stacking and confirm
+    the child worktree starts from the parent's branch (`git merge-base --is-ancestor`),
+    its draft PR has that branch as base, and nothing is merged. After a human merges the
+    parent, confirm the PR is retargeted and the base comes in by merge, with no rebase
+    or force-push.
+13. Watched browser run. On an issue that touches the frontend, confirm the "pronto
+    para assistir?" question comes before any window opens, the window is a visible
+    Chrome, the strip reads "ANTES: main" and then "DEPOIS: branch <name>", each case
+    runs twice, popups stay long enough to read, and the window stays open about
+    45 s at the end. Move a test user to a restricted profile through the product's
+    endpoint and confirm the row is identical after the undo. Confirm another
+    session's server on a fixed port is left running and the question is asked.
 
 Only after all required checks pass, present the linked evidence and separately
 ask about default-workflow switching and GuardianS deactivation via AskUserQuestion.

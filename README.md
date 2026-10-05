@@ -407,6 +407,19 @@ são mascarados em toda saída e registro, e um valor com menos de 4 caracteres 
 navegador ou rede, o teste é relatado como não executado e nunca conta como aprovado. O app de
 exemplo em `examples/browser-app/` mostra o fluxo de ponta a ponta.
 
+Antes de abrir o navegador, o Frontlights pergunta (uma vez por família de issues) se você está
+pronto para assistir. Com o sim, o teste roda em um Chrome de janela visível, nunca oculta e com
+perfil descartável, em duas passagens do mesmo cenário, com a mesma conta: primeiro a base (faixa
+na página "ANTES: main") e depois a branch da issue ("DEPOIS: branch X"). Cada caso roda duas
+vezes, os avisos ficam na tela o tempo necessário para serem lidos e a janela permanece aberta
+cerca de 45 s no fim. Prefere-se o back real e, quando o assunto é permissão, um perfil restrito
+real: o usuário de teste muda de perfil pelo endpoint do próprio produto, depois de você confirmar
+que o banco por trás é descartável, e volta no fim. O valor original fica salvo em disco antes da
+mudança (só o campo de perfil, nunca a linha inteira) e é conferido depois de desfazer. Resposta
+forçada por interceptação de rede só complementa e é declarada no relatório. O servidor de teste
+usa porta própria e o Frontlights encerra só o que ele mesmo subiu. Se a sua resposta for "rodar
+sem assistir", o registro traz `assistido: false`.
+
 Limites: só o Windows foi exercitado (POSIX não). O `inspect` confere nesses blocos as regras do
 `serve` e do `checks` que dependem só do config: formato dos blocos, shell embutido nos argv de
 `checks`, hosts locais, `{port}` com porta `auto` e segredos de teste mascaráveis. Ele recusa o
@@ -426,6 +439,19 @@ plano de issues verticais aprovado e publicado → autorização delimitada de
 implementação → desenvolvimento orientado a testes (TDD), revisão e evidências.
 Uma issue vertical entrega um resultado observável de ponta a ponta, incluindo as
 camadas necessárias, em vez de separar tickets apenas por banco de dados, API ou tela.
+Uma issue e as sub-issues abertas dela andam juntas: ao agir sobre uma issue, o Frontlights
+lê as filhas no GitHub e leva todas na mesma execução (entrevista, plano e implementação),
+nunca só o pai. A fatia vertical é a issue mais as filhas, e juntas elas cobrem todas as
+camadas que o requisito pede (tela, API, banco e migração, testes, integração, documentação e
+as do projeto); a seção `## Camadas da fatia` de cada issue registra as camadas analisadas e,
+para as que não serão tocadas, o motivo. Uma filha com `needs-decision`, ou sem abordagem
+definida, entra na entrevista da mesma sessão. Na etapa 6, quando uma filha depende do pai, a
+pergunta de autorização oferece **branches empilhadas** (recomendada): a filha sai da branch do
+pai assim que ele está verificado nela, o PR dela tem como base a branch do pai e, depois que
+uma pessoa faz o merge do pai, o PR é redirecionado para a base em que o pai entrou, trazendo-a
+por merge (nunca rebase nem push forçado; com squash no pai, conflitos nos trechos que a filha
+divide com ele são esperados e resolvidos nesse merge). A concorrência recomendada é o número de filhas independentes
+cujos arquivos não se sobrepõem. Sem a empilhada, a filha espera o pai estar na base aprovada.
 Na entrevista, depois de confirmar o problema (numa só pergunta quando a issue já
 o define), a skill levanta as convenções do código afetado e propõe ao menos três
 abordagens de implementação realmente diferentes. Cada uma informa se segue ou

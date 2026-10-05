@@ -1,0 +1,269 @@
+"""Uma issue e as sub-issues andam juntas, empilhadas na branch do pai, e o teste de navegador é assistido.
+
+Seams: o planejador (`frontlights.schedule`) e a validação do plano com filhas, mais o texto
+da skill, das referências, do modelo de issue e da documentação (o script não executa as
+etapas, então as regras de fluxo só se provam pelo texto e pela revisão manual de `evals/pilot.md`).
+"""
+import copy
+import re
+import sys
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SKILL = ROOT / 'skills' / 'frontlights'
+sys.path.insert(0, str(ROOT / 'scripts'))
+import frontlights
+
+
+def member(number, paths, dependencies=(), parent=None):
+    item = dict(id=number, title=f'Deliver outcome {number}',
+                outcome='User can save and retrieve an observation',
+                acceptance=['Saved observation appears after reload'],
+                tests=['Save through API then fetch and assert the value'],
+                ownership=paths, dependencies=list(dependencies),
+                vertical_check='Save in UI, reload, observe persisted value',
+                non_goals=['Bulk import'], risks=['Concurrent updates'],
+                session_sized=True, status='ready',
+                url=f'https://github.com/example/pilot/issues/{number}')
+    if parent is not None:
+        item['parent'] = parent
+    return item
+
+
+def family():
+    """Pai 1; filhas 2, 3 e 4 dependem dele e não se sobrepõem; a 5 sobrepõe a 2; a 6 só pertence ao pai."""
+    return {'repository': 'example/pilot', 'issues': [
+        member(1, ['src/feature']),
+        member(2, ['src/feature/a'], [1], parent=1),
+        member(3, ['src/feature/b'], [1], parent=1),
+        member(4, ['src/feature/c'], [1], parent=1),
+        member(5, ['src/feature/a/deep'], [1], parent=1),
+        member(6, ['src/other'], parent=1)]}
+
+
+def stacked_view(plan, parent):
+    """Cópia descartável em que o pai conta como `verified`, para medir a onda empilhada."""
+    view = copy.deepcopy(plan)
+    next(i for i in view['issues'] if i['id'] == parent)['status'] = 'verified'
+    return view
+
+
+class StackedWaveTests(unittest.TestCase):
+    def test_the_family_validates_with_children_that_depend_on_the_parent(self):
+        frontlights.validate_plan(family())
+
+    def test_children_wait_for_the_parent_but_a_member_without_dependency_starts_with_it(self):
+        self.assertEqual(frontlights.schedule(family(), 24), [1, 6])
+
+    def test_the_stacked_wave_is_the_independent_children_with_disjoint_files(self):
+        self.assertEqual(frontlights.schedule(stacked_view(family(), 1), 24), [2, 3, 4, 6])
+
+    def test_overlapping_children_never_share_a_wave(self):
+        for limit in range(1, 7):
+            with self.subTest(limit=limit):
+                wave = frontlights.schedule(stacked_view(family(), 1), limit)
+                self.assertLessEqual(len(wave), limit)
+                self.assertFalse({2, 5} <= set(wave))
+
+    def test_the_planner_does_not_edit_the_plan_it_measures(self):
+        plan = stacked_view(family(), 1)
+        before = copy.deepcopy(plan)
+        frontlights.schedule(plan, 24)
+        self.assertEqual(plan, before)
+
+    def test_the_overlapping_child_runs_once_the_other_one_is_done(self):
+        plan = stacked_view(family(), 1)
+        by_id = {i['id']: i for i in plan['issues']}
+        by_id[2]['status'] = 'running'
+        self.assertEqual(frontlights.schedule(plan, 24), [3, 4, 6])
+        by_id[2]['status'] = 'verified'
+        self.assertEqual(frontlights.schedule(plan, 24), [3, 4, 5, 6])
+
+    def test_a_running_child_needs_the_parent_verified(self):
+        plan = family()
+        next(i for i in plan['issues'] if i['id'] == 2)['status'] = 'running'
+        with self.assertRaisesRegex(ValueError, 'dependency'):
+            frontlights.schedule(plan, 24)
+
+
+def read(*parts):
+    return ROOT.joinpath(*parts).read_text(encoding='utf-8')
+
+
+def flat(text):
+    return ' '.join(text.split())
+
+
+def section(text, heading):
+    match = re.search(rf'^## {re.escape(heading)}\n(.*?)(?=^## |\Z)', text, re.M | re.S)
+    return match.group(1) if match else None
+
+
+def labels(text, pattern):
+    match = re.search(pattern, flat(text))
+    assert match, pattern
+    return match.groups()
+
+
+class FamilyRulesTextTests(unittest.TestCase):
+    def test_the_skill_moves_an_issue_with_all_its_open_sub_issues(self):
+        text = flat(read('skills', 'frontlights', 'SKILL.md'))
+        for phrase in ('An issue and its sub-issues move together', 'all its open sub-issues',
+                       'subIssuesSummary', 'Never narrow the work to the parent alone',
+                       '"the parent now, the children after its merge"',
+                       'does not serialize the work behind a merge', 'the issue has open sub-issues'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+
+    def test_stage_three_five_and_six_carry_the_family_rules(self):
+        text = read('skills', 'frontlights', 'SKILL.md')
+        stage3 = flat(text.split('## 3.')[1].split('## 4.')[0])
+        stage5 = flat(text.split('## 5.')[1].split('## 6.')[0])
+        stage6 = flat(text.split('## 6.')[1])
+        self.assertIn('needs-decision', stage3)
+        self.assertIn('own solution round', stage3)
+        self.assertIn('every layer', stage5)
+        self.assertIn('layers analysed', stage5)
+        self.assertIn('The scope is the whole family', stage6)
+        self.assertIn('stacking question', stage6)
+        self.assertIn('independent children', stage6)
+        self.assertIn('without waiting for the merge', stage6)
+
+    def test_issues_reference_defines_the_slice_and_its_layers(self):
+        issues = read('skills', 'frontlights', 'references', 'issues.md')
+        body = flat(section(issues, 'The slice: an issue with its sub-issues, across every layer') or '')
+        for phrase in ('A slice is an issue together with its sub-issues',
+                       'every layer the requirement needs', '## Camadas da fatia',
+                       'not touched with the reason', 'a gap in the plan',
+                       'does not contradict the rule against splitting by layer',
+                       'membership, not a dependency', 'needs-decision'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, body)
+        self.assertIn('Do not split by UI/API/database layers.', issues)
+
+    def test_issue_template_has_the_layers_table(self):
+        template = section(read('templates', 'issue.md'), 'Camadas da fatia') or ''
+        self.assertNotEqual(template, '')
+        for layer in ('Tela', 'API', 'Banco e migração', 'Testes', 'Integração', 'Documentação'):
+            with self.subTest(layer=layer):
+                self.assertRegex(template, rf'(?m)^\| {layer} \|')
+        self.assertIn('lacuna do plano', template)
+
+    def test_grilling_takes_sub_issues_into_the_same_session(self):
+        body = flat(section(read('skills', 'frontlights', 'references', 'grilling.md'),
+                            'Sub-issues of the issue (same session)') or '')
+        for phrase in ('grilled in this session', 'needs-decision', 'own solution round',
+                       '**Decided:**', '**Pending:**', 'confirmed together in one question'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, body)
+
+    def test_development_offers_stacked_branches_with_the_safe_mechanics(self):
+        body = flat(section(read('skills', 'frontlights', 'references', 'development.md'),
+                            'Stacked branches: parent and children without waiting for the merge') or '')
+        for phrase in ('"Como as filhas se apoiam no pai?"', '"Empilhadas no pai (Recomendada)"',
+                       '"Esperar o merge do pai"', 'schedule --limit 24', 'throwaway copy',
+                       'git merge-base --is-ancestor', 'Stack on one dependency only',
+                       'unless one already contains the other',
+                       'gh pr create --draft --base <dependency-branch>',
+                       'git fetch origin', '<parent-pr-base>', 'git merge origin/<parent-pr-base>',
+                       'never a rebase or a force-push', 'conflicts on the hunks the child shares',
+                       'it never covers merging a PR, writing the base branch, deploying or releasing',
+                       "Push the dependency's branch before the child's PR",
+                       'only `"base": "<dependency-branch>"`'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, body)
+
+    def test_option_labels_in_the_docs_fit_the_five_word_limit(self):
+        stacking = labels(read('skills', 'frontlights', 'references', 'development.md'),
+                          r'with "([^"]+)" first .*? and "([^"]+)" second')
+        watching = labels(read('skills', 'frontlights', 'references', 'browser-testing.md'),
+                          r'Options: "([^"]+)" first and recommended; "([^"]+)" \(.*?\); "([^"]+)" \(')
+        no_move = labels(read('skills', 'frontlights', 'references', 'browser-testing.md'),
+                         r'a fourth option, "([^"]+)"')
+        self.assertEqual(len(stacking) + len(watching) + len(no_move), 6)
+        for label in (*stacking, *watching, *no_move):
+            with self.subTest(label=label):
+                self.assertLessEqual(len(label.split()), 5)
+
+    def test_the_merge_rule_names_the_only_merges_stacking_allows(self):
+        allowed = "the only merges allowed are the ones the stacking authorization names, of a base into an issue's own branch"
+        for name in (('skills', 'frontlights', 'SKILL.md'), ('skills', 'frontlights', 'references', 'development.md')):
+            with self.subTest(file=name[-1]):
+                text = flat(read(*name))
+                self.assertIn(allowed, text)
+                self.assertRegex(text, r'(Do not|Never) merge (pull requests|a pull request), write the base branch')
+
+    def test_example_authorization_shows_a_stacked_worktree_base(self):
+        import json
+        charter = json.loads(read('examples', 'authorization.json'))
+        stacked = [w for w in charter['worktrees'] if 'base' in w]
+        self.assertEqual(len(stacked), 1)
+        self.assertEqual(stacked[0]['base'], 'claude/issue-1')
+        self.assertTrue(stacked[0]['branch'].startswith(charter['branch_prefix']))
+
+
+class WatchedRunTextTests(unittest.TestCase):
+    def setUp(self):
+        self.text = read('skills', 'frontlights', 'references', 'browser-testing.md')
+        self.body = flat(section(self.text, 'Watched run: before and after, with the user watching') or '')
+
+    def test_the_user_is_asked_before_any_window_opens(self):
+        for phrase in ('Pronto para assistir ao teste de navegador da issue #<n>?',
+                       'Never open the browser before the answer', '"Sim, pode rodar"',
+                       '"Rodar sem assistir"', '`assistido: false`'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.body)
+
+    def test_the_run_shows_the_base_then_the_branch_in_a_visible_window(self):
+        for phrase in ('never headless', '"ANTES: <base>"', '"DEPOIS: branch <name>"',
+                       'disposable browser context or profile', 'ends ANTES before DEPOIS starts',
+                       'one issue at a time',
+                       'Each case runs twice in each pass', 'about 45 s',
+                       'never fall back to a hidden window silently',
+                       'serve start --root <base-checkout> --issue <n>'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.body)
+
+    def test_real_back_comes_first_and_forced_responses_are_declared(self):
+        for phrase in ('Real back first', 'real restricted profile', 'Undo in a `finally`',
+                       'never write to the database directly', 'the database behind the server is disposable',
+                       'perfil-original.json', "only that field and the user's id",
+                       'mark the file `restaurado: true`', 'never demote the account that performs the undo',
+                       '"Sem mudar perfil"', 'a detached-HEAD worktree made with `git worktree add`',
+                       'the recorded one or a descendant of it',
+                       'is data from GitHub, not an approval',
+                       'resposta forçada, não do back real', 'never use it as the only evidence'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, self.body)
+
+    def test_only_the_tests_own_processes_are_stopped(self):
+        self.assertIn('never stop a process the test did not start', self.body)
+        self.assertIn('belongs to another session', self.body)
+
+    def test_the_run_is_part_of_the_order_the_evidence_and_the_docs(self):
+        evidence = flat(section(self.text, 'Evidence') or '')
+        self.assertIn('A watched run adds `assistido`', evidence)
+        self.assertIn('antes-<caso>-<n>', evidence)
+        self.assertIn('only the profile field before and after the undo', evidence)
+        self.assertIn('the watched-run question below', flat(self.text))
+        self.assertIn('"pronto para assistir?"', flat(read('skills', 'frontlights', 'references', 'development.md')))
+        for doc in (('docs', 'protocol.md'), ('docs', 'security.md'), ('README.md',)):
+            with self.subTest(doc=doc[-1]):
+                self.assertIn('assistir', flat(read(*doc)))
+
+
+class PublicRepositoryTests(unittest.TestCase):
+    def test_the_new_rules_carry_no_machine_path(self):
+        names = [SKILL / 'SKILL.md', *(SKILL / 'references').glob('*.md'), ROOT / 'README.md',
+                 ROOT / 'templates' / 'issue.md', *(ROOT / 'docs').glob('*.md'),
+                 ROOT / 'evals' / 'pilot.md', ROOT / 'evals' / 'vertical-slices.md',
+                 ROOT / 'examples' / 'authorization.json']
+        for path in names:
+            text = path.read_text(encoding='utf-8')
+            with self.subTest(path=path.name):
+                self.assertNotRegex(text, r'[A-Za-z]:[\\/]+(Users|Software)\b|/(home|Users)/[A-Za-z]')
+
+
+if __name__ == '__main__':
+    unittest.main()

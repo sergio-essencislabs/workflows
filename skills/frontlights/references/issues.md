@@ -15,6 +15,48 @@ with UI/API/storage/tests in one slice, then "edit with conflict feedback", then
 tickets, correct it yourself before presenting it; no extra user prompt needed.
 A genuine prerequisite must expose a working seam tested by a named consumer.
 
+## The slice: an issue with its sub-issues, across every layer
+
+A slice is an issue together with its sub-issues, planned as one unit. When the
+work starts from, or adopts, an existing issue, the family read in stage 2 (its
+open sub-issues, down the tree) enters the plan: each sub-issue with `parent` set
+to the id of its parent (a published issue keeps its GitHub number as id). A
+closed sub-issue stays out of the plan; an open one that depends on it only cites
+it. A family of more than 24 open issues passes the plan limit of `validate-plan`,
+so ask with `AskUserQuestion` how to cut it into batches, never drop sub-issues
+silently. Every batch carries the parent, and `parent` and `dependencies` must stay
+inside the same plan: a child in another batch cannot cite a dependency there. Sub-issues still waiting for a decision (label `needs-decision`, or no
+approach in the body) stay in the plan and go through the grilling of this same
+session before their bodies are final (stage 3).
+
+The slice as a whole, not each issue alone, must leave the requirement completely
+met, so it must cover **every layer the requirement needs**. Name the candidate
+layers from the code, not from a fixed list: at least screen, API, database and
+migration, tests, integration and documentation, plus the project's own (for
+example permissions, configuration, translation, observability, background
+jobs). For each layer decide one of: handled in this issue, handled in
+sub-issue #n, or not touched with the reason. Record it in the body of the parent
+under `## Camadas da fatia` (`templates/issue.md`), where it covers the whole slice,
+and show it in the approval table. A layer nobody analysed is a gap in the plan,
+never an implicit "not touched". Each sub-issue carries the same section with only
+the rows it covers.
+
+This does not contradict the rule against splitting by layer: no issue or
+sub-issue exists to deliver one layer alone. Each carries a behavior across the
+layers it needs, and the layers of the whole slice add up to the full
+requirement. A planned sub-issue that is only "the API part" or "the screen part"
+goes back for correction before the plan is presented; one already published is
+corrected by an update of stage 5, never by a silent rewrite. A finding from review
+or tests (Follow-ups below) is narrow by nature and is exempt: it lists only the
+layers it touches.
+
+A parent/child link is membership, not a dependency. A child that needs its
+parent's code lists the parent in `Depends on` as well; one that only belongs to
+the same outcome has `Parent` alone and is free to start with the parent. A
+dependency is satisfied at stage 6 either by the merge or, under the stacking
+authorization, by the parent being verified on its own branch
+(`references/development.md`); the plan never assumes the merge.
+
 Seams under test name the public interfaces where each acceptance behavior is
 observed (an HTTP endpoint, a CLI command, a module's exported function, a UI
 action), never internals. Favor critical paths and complex logic over every edge
@@ -98,7 +140,8 @@ you found with `gh project list --owner <owner>`, "no board", free text). Record
 the answer in `.frontlights/config.json` as `project` (or `"project": null`) before
 publishing, so later sessions do not ask again. A local project has no board.
 
-Put `Depends on: #N, #M` and `Parent: #P` in each canonical issue body (or `none`);
+Put `Depends on: #N, #M` and `Parent: #P` in each canonical issue body (or `none`), and
+the `## Camadas da fatia` table of the slice;
 verify dependency IDs, parent and content after publication. Link local snapshots to returned issue URLs.
 An issue update preserves user text outside the approved plan. Surface divergence
 between approved draft and GitHub rather than overwriting it silently. Return
@@ -123,7 +166,10 @@ its proposed destination with the reason, and the full text of every checklist i
 and sub-issue body) under the show-before-approval rule, then decide it in a
 single `AskUserQuestion`: one option approves the proposed destinations and their named
 writes, others adjust them. Approving the batch approves exactly those writes; it
-is not an implementation authorization for the new work.
+is not an implementation authorization for the new work. The new sub-issues join the
+slice of their parent (with the `## Camadas da fatia` rows they cover); to implement
+them in the same execution, ask the extended authorization in a new `AskUserQuestion`,
+stacked on the parent's branch when they depend on it.
 
 Record each sub-issue in `plan.json` with `parent` set to the id of the source issue,
 which must be in the same plan (a published issue keeps its GitHub number as id), so

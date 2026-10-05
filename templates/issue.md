@@ -26,11 +26,28 @@ Only these seams receive tests. A missing or wrong seam goes back to the user.
 
 Focused regression, broader integration and actual type-check commands.
 
+## Camadas da fatia
+
+A fatia é esta issue mais as sub-issues dela, e juntas cobrem todas as camadas que
+o requisito pede. Liste as camadas lidas do código (no mínimo as seis abaixo, mais as
+do projeto, como permissões, configuração, tradução, observabilidade, tarefas em
+segundo plano). Uma camada que ninguém analisou é lacuna do plano, não "não tocada".
+Uma sub-issue copia só as linhas que ela cobre.
+
+| Camada | Situação | Onde ou motivo |
+| --- | --- | --- |
+| Tela | tratada / não tocada | esta issue, #<filha>, ou o motivo |
+| API | | |
+| Banco e migração | | |
+| Testes | | |
+| Integração | | |
+| Documentação | | |
+
 ## Navegador e testes ligados
 
 - Toca o frontend: <sim | não>
 - Conta: <conta 1 | contas 1 e 2>
-- Fluxo: <telas e ações a exercitar, com o resultado esperado>
+- Fluxo: <telas e ações a exercitar, com o resultado esperado; se mover um usuário de teste de perfil pelo endpoint do produto, diga qual e que será desfeito>
 - Testes ligados: <navegador, integração, regressão, permissões entre contas, smoke>; casos extras: <nenhum>
 
 Contas e processos vêm de `browserTest` no `.frontlights/config.json` do projeto,
@@ -43,9 +60,11 @@ Parent: none
 
 Replace `none` with canonical #issue links after approved publication.
 
-`Parent` é a issue de origem de uma sub-issue (achado de revisão ou conferência);
-`none` numa issue de topo. Toda issue de topo entra no quadro; sub-issue entra só
-pelo pai, que mostra o progresso das filhas.
+`Parent` é a issue de origem de uma sub-issue (parte da mesma fatia, achado de revisão
+ou de conferência); `none` numa issue de topo. Toda issue de topo entra no quadro;
+sub-issue entra só pelo pai, que mostra o progresso das filhas. `Parent` é
+pertencimento, não dependência: uma filha que precisa do código do pai também o lista
+em `Depends on`, e na etapa 6 ela pode ser empilhada na branch dele, sem esperar o merge.
 
 ## Ownership and contention
 

@@ -9,8 +9,12 @@ where applicable; they are advisory preflight, not sandbox enforcement.
 
 ## Dispatch and ownership
 
-Inspect Git status/remotes/worktrees and current issue acceptance criteria.
-Create one isolated branch/worktree per issue from the approved base using native
+Inspect Git status/remotes/worktrees and current issue acceptance criteria. The
+scope of a dispatch is the family: the issue and all its open sub-issues
+(`SKILL.md`, "An issue and its sub-issues move together"), each with its own branch
+and worktree; the parent never goes alone unless the user chose that. Create one
+isolated branch/worktree per issue from its approved base (the approved base
+branch, or its dependency's branch when stacked, see below) using native
 Git tooling; verify the resolved path, actual branch and common repository before
 editing. Never reuse a dirty shared checkout, discard changes or write a protected
 branch. Recheck branch/worktree identity before each mutation boundary.
@@ -34,8 +38,81 @@ as well as Git. Recompute readiness and refill free slots after each completion.
 
 An issue is `verified` for dependency readiness only when its acceptance evidence
 is current and its required changes are present in the dependent issue's approved
-base. An unmerged PR alone does not meet this condition. Stacked bases/cherry-picks
-need the recorded repository-operation authorization; otherwise park dependents.
+base. An unmerged PR alone does not meet this condition, unless the dependent's
+approved base is that very branch (stacking, below). Cherry-picks and stacked bases
+need the recorded repository-operation authorization; without it, park the
+dependents. `schedule` only reads `status`, so it cannot see an issue that depends
+on two unmerged branches: that check is manual (below). With many ready issues that
+share ownership or use `*`, its exact search can take minutes (about 150 s for 23
+issues), so give the command a longer timeout.
+
+## Stacked branches: parent and children without waiting for the merge
+
+Making children wait for the parent's merge serializes the family behind a human
+step. So, whenever an issue of the family depends on another one (a child that
+lists its parent in `Depends on`, or a sibling chain), stage 6 offers to **stack**
+the dependent on its dependency's branch, in the same `AskUserQuestion` call as
+the concurrency and the authorization. The question is "Como as filhas se apoiam
+no pai?", with "Empilhadas no pai (Recomendada)" first (each child branches from the
+parent's branch and its PR targets that branch) and "Esperar o merge do pai" second
+(each child starts from the approved base once the parent is merged). Its text warns
+that a squash-merge of the parent makes the later merge of the base conflict on the
+hunks the child shares with it, and that merging the parent PR with a merge commit
+avoids that; how to merge stays with the human. Record the answer verbatim in the
+authorization, with the repository operations it needs: branch from a branch that is
+not the base, push it (and the dependency's branch), open a draft PR whose base is the
+dependency's branch, retarget that PR, and `git merge` of a base into the issue's own
+branch. Those are the only merges it allows: it never covers merging a PR, writing
+the base branch, deploying or releasing. Without the stacking answer, a dependent
+stays parked until its dependency is in the approved base.
+
+**Concurrency.** Recommend as ceiling the number of independent children whose
+`ownership` does not overlap, and never less than the first wave. Read the stacked
+wave from `schedule --limit 24` run on a throwaway copy of the plan in which the
+parent is marked `verified`; the real plan is not edited. Children whose
+ownership overlaps do not run together: `schedule` serializes them, and the
+question says so.
+
+**Rules.**
+
+- A child leaves its dependency's branch once the dependency is `verified` on it
+  (acceptance evidence current for that branch's HEAD, tests green); an independent
+  review still pending does not hold it back. Create the child's worktree from that
+  exact commit (`git worktree add -b <branch_prefix><name> <path> <sha>`), record the
+  `<sha>` in the handoff and in the plan, and only `"base": "<dependency-branch>"` in
+  its worktree entry of the authorization (the commit does not exist when the
+  authorization is approved, so it never goes there). Confirm with `git merge-base
+  --is-ancestor <sha> HEAD`.
+- Stack on one dependency only. An issue that depends on two unmerged branches, unless
+  one already contains the other (a sibling stacked on the parent, say), is
+  parked and the question goes to the user; `schedule` does not detect it, so read
+  each dependent's `Depends on` yourself. Children of one parent stack on the
+  parent, never on each other; a child that needs a sibling's code lists it in
+  `Depends on` and stacks on that sibling's branch.
+- Push the dependency's branch before the child's PR: the base must exist on the
+  remote and be current, or the child's diff would carry the dependency's unpushed
+  commits. The child's draft PR has that branch as base (`gh pr create --draft --base
+  <dependency-branch>`) and names in its body the PR it is stacked on, so the review
+  sees only the child's own diff. Draft PRs keep the permission and native approval of
+  the charter.
+- When the dependency's branch moves after the child started (review fixes), the
+  child brings it in with `git merge <dependency-branch>`, reruns its tests and
+  refreshes the evidence; the new hashes invalidate the earlier review. Check
+  `git merge-base --is-ancestor` at each material boundary.
+- After a human merges the parent PR, run `git fetch origin` and retarget each child
+  PR to the base the parent's PR merged into (`<parent-pr-base>`, which is the
+  approved base branch and not always the default one). GitHub usually does it when
+  the parent branch is deleted on merge; reread the PR's base to confirm, otherwise
+  `gh pr edit <child-pr> --base <parent-pr-base>`. Then bring the base in with `git
+  merge origin/<parent-pr-base>` and rerun the tests. Use a merge, never a rebase or a
+  force-push. A merge commit of the parent merges cleanly; a squash or rebase merge
+  rewrites its commits, so conflicts on the hunks the child shares with the parent are
+  expected: resolve them in the merge commit, keeping the child's own changes on top of
+  the parent's content that the base already has, and show those hunks to the reviewer.
+  The merge changes HEAD, so refresh the evidence and have the reviewer look again; what
+  remains to review is the child's own diff.
+- A conflict on anything beyond the parent's own content already in the base, or a
+  dependency closed without being merged, is a stop condition: park the child and ask.
 
 ## Test-driven development
 
@@ -124,8 +201,8 @@ acceptance coverage. Tests may execute arbitrary code; native permission and
 sandbox controls still apply. Unexpected effects stop the affected issue.
 
 When the issue's `## Navegador e testes ligados` turns tests on, follow
-[browser-testing.md](browser-testing.md) before review; its records join the
-evidence below.
+[browser-testing.md](browser-testing.md) before review, starting with its question
+"pronto para assistir?"; its records join the evidence below.
 
 ## Review, checkpoints and renewal
 
@@ -159,7 +236,9 @@ enforce renewal, explicitly report that hard-cap AFK acceptance is unproven.
 
 Update GitHub checkpoints/status only if authorized and supported by current
 evidence. Draft PRs also require charter permission and native approval. Never
-merge, deploy, release, delete data or close issues as routine AFK work. Park
+merge a pull request, write the base branch, deploy, release, delete data or close
+issues as routine AFK work; the only merges allowed are the ones the stacking
+authorization names, of a base into an issue's own branch. Park
 blocked issues with the precise pending question and continue independent ones.
 Report each issue's state, branch/PR, exact tests/results, review evidence,
 remaining risk and next action. Leave worktrees and evidence intact for recovery.

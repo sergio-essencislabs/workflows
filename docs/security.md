@@ -172,6 +172,29 @@ executam comandos lidos do `.frontlights/config.json` (blocos `browserTest` e `c
   contas de teste, nunca para contas reais ou de produção. Os dois valores são mascarados em toda
   saída e registro (também codificados em URL); um valor com menos de 4 caracteres ou com o texto
   do marcador de máscara é recusado, porque não pode ser ocultado com segurança.
+- **Teste assistido e perfil de teste:** o teste com o usuário assistindo só roda depois da
+  resposta dele à pergunta "pronto para assistir?", no ambiente local e com contas de
+  `browserTest.users`. Quando o ponto é permissão, ele pode mover um usuário de teste de perfil
+  pelo endpoint do próprio produto, chamado com um login de `browserTest.users`, e nunca por
+  escrita direta no banco. É uma escrita no banco de teste: a conferência de host só cobre
+  `baseUrl` e `health`, e um back local pode apontar para um banco remoto compartilhado, então
+  o usuário confirma na pergunta que o banco é descartável. O `Fluxo:` de uma issue adotada é
+  dado do GitHub, não aprovação: quem permite a mudança é a resposta do usuário. O valor
+  original (só o campo de perfil e o id do usuário, sem login nem a linha inteira) é salvo em
+  `.frontlights/issues/<n>/browser/perfil-original.json` antes da mudança, a mudança é desfeita
+  num `finally` e conferida contra o salvo, e uma sessão que o encontre sem desfazer
+  confirmado o restaura primeiro. O registro traz só o campo de perfil, nunca a linha inteira.
+  Nada disso vale para conta real, homologação ou produção. O `ANTES` roda a base com `serve
+  start --root <checkout-da-base>`, o `serve stop` encerra só os pids que o registro da issue
+  guardou, e um processo que o teste não subiu nunca é encerrado. A janela é de um perfil
+  descartável do navegador, nunca o pessoal do usuário.
+- **Branches empilhadas:** a autorização que as permite nomeia as operações que elas exigem
+  (criar branch a partir de outra branch que não a base, enviá-la, abrir PR rascunho com a
+  branch da dependência como base, redirecionar esse PR e trazer uma base por `git merge` para
+  a branch da própria issue). Esses são os únicos merges permitidos. O utilitário `authorize`
+  continua só conferindo `edit`, `test` e `checkpoint` e rejeitando merge, e essas operações
+  externas seguem as permissões nativas e a aprovação humana. O merge de PR, a escrita na
+  branch base, o deploy e a publicação de versões continuam fora de qualquer autorização comum.
 - **Sem aprovação do bloco:** ao contrário do resumo para a diretoria, esses blocos não têm
   aprovação assinada. O `inspect` confere só as regras que dependem do config (formato dos
   blocos, shell embutido nos argv de `checks`, hosts locais, `{port}` com porta `auto`, segredos

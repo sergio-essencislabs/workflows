@@ -129,9 +129,34 @@ Ask: "Supondo que isto falhe em produção, o motivo mais provável é <Z>. Como
 tratamos?" with three options, for example mitigate now, accept and monitor, or
 change the approach.
 
+## Sub-issues of the issue (same session)
+
+When the work comes from an issue with open sub-issues (`SKILL.md`, "An issue and
+its sub-issues move together"), they are grilled in this session, after the
+parent's problem and solution rounds. Never leave one out to "decide later".
+
+- Triage each by reading its body and the code. **Decided:** the body names an
+  approach and its conventions, and they fit the parent's chosen approach.
+  **Pending:** labelled `needs-decision`, no approach in the body, or an approach
+  the code or the parent's approach contradicts.
+- Decided ones are confirmed together in one question ("As filhas #a, #b já
+  definem a abordagem; confirmamos?"), with each one's approach in one line in
+  the `preview`. Any the user questions becomes pending.
+- Pending ones each get their own solution round (section 3: at least three
+  genuinely different approaches, pattern fit, recommended first) and the
+  decision-tree branches that change their implementation. Batch the questions of
+  up to four sub-issues per call. The parent's chosen approach and the decisions
+  already taken are inputs: offer approaches consistent with them, and when a
+  sub-issue's decision would change the parent's approach, say so and ask.
+- Depth and learning mode are asked once, in section 0, for the whole family.
+- When a round settles a `needs-decision` sub-issue, propose removing the label
+  and filling its approach as part of the stage 5 update of that issue (a write on
+  an existing issue, under the stage 5 approval); never change it on the spot.
+
 ## 6. Closing
 
-Never decide alone that the interview is over. End with one question whose
+Never decide alone that the interview is over. The open branches of sub-issues
+count as open branches. End with one question whose
 options are "Seguir para o plano/PRD", "Aprofundar <the most uncertain open
 branch>" and "Aprofundar <the next one>". Keep going while the user chooses to
 deepen, and do not re-ask settled decisions unless new evidence invalidates them
@@ -147,7 +172,9 @@ with example paths, approaches considered (chosen and rejected, with reasons and
 pattern fit), branch decisions, concepts explained, pre-mortem, unresolved
 questions, approval references and evidence. If a small research/prototype step
 is needed, bound it and obtain permission for any changes beyond existing
-authority. Do not start product implementation here.
+authority. For a family, record the approaches and decisions of each sub-issue in the
+same tables, naming the issue number in the first column. Do not start product
+implementation here.
 
 Carry approved decisions, the chosen approach, the recorded conventions and
 unresolved items into stage 4 (PRD) as the input. Decisions marked "a revisar"

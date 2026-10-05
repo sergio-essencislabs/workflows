@@ -56,6 +56,28 @@ open a backlog GT), treat it as an issue on the configured board, under the
 same approvals, and say so in one line. Existing `GT-NNNN` files are history:
 cite them, never rename or delete them.
 
+**An issue and its sub-issues move together.** Whenever the session acts on an
+existing issue (adopting it in stage 2, grilling it, planning it, implementing it
+in stage 6), it acts on the issue **and all its open sub-issues, down the whole
+tree, in the same execution**: one grilling, one plan, one authorization. Read
+them from GitHub as soon as the repository is known (stage 2 at the latest, and
+before choosing the path when the request already names the issue): `gh issue view
+<n> --repo <repo> --json subIssuesSummary`, then `gh api --paginate
+repos/<owner>/<repo>/issues/<n>/sub_issues`, repeated for each child. Say in one line
+how many there are and which. Closed
+sub-issues are history; one in another repository is listed but left out, because
+the authorization binds one repository. The unit of delivery is the **vertical
+slice**: the issue plus its sub-issues, which together cover every layer the
+requirement needs (`references/issues.md`). Never narrow the work to the parent
+alone, and never propose "the parent now, the children after its merge" as the
+default; only an explicit choice of the user narrows it, and a family too large for
+one plan (more than 24 open issues) is cut by asking the user how, with
+`AskUserQuestion`. A parent/child dependency
+does not serialize the work behind a merge: children may be stacked on the
+parent's branch (stage 6). Sub-issues born during stage 6, from review or tests,
+follow the Follow-ups ladder of `references/issues.md` and are implemented only
+under an authorization that names them.
+
 **Show before approval.** Never ask the user to approve a document or plan they
 have not been shown in full in this session. Before each approval: write the
 complete text in the conversation, send the file with the host's file-sending
@@ -171,7 +193,8 @@ why in one sentence:
 
 - **Direct.** A small, well-understood, low-risk change with a single obvious
   implementation that follows the project's existing pattern, or a question you
-  can answer. If two or more reasonable implementations exist, it is not Direct. Skip stages 3 to 5 entirely. Confirm the intent, do the work, report
+  can answer. If two or more reasonable implementations exist, or the issue has open
+  sub-issues (they need their approach confirmed), it is not Direct. Skip stages 3 to 5 entirely. Confirm the intent, do the work, report
   what you measured. Do not manufacture a PRD or an issue for it.
 - **Short.** A bounded piece of work whose shape is clear but whose details are
   not, including work that starts from an existing issue. Grill (stage 3, with
@@ -240,7 +263,10 @@ implementation approaches with their pattern fit, walk the chosen approach's
 decision tree and let the user decide when to stop. An issue settles what is
 wanted, not how: starting from one never skips the solution round. Follow the
 existing code pattern unless it is concretely worse for the problem, and say so
-when it is. Keep facts, inferences and assumptions separate. Optional
+when it is. Sub-issues join the same interview instead of being left out: one
+labelled `needs-decision`, or whose body names no approach, gets its own solution
+round in this session; the ones that already settle theirs are confirmed together
+in one question (`references/grilling.md`). Keep facts, inferences and assumptions separate. Optional
 research/prototypes are driven by uncertainty and do not authorize product
 mutations.
 
@@ -252,8 +278,10 @@ This approval does not authorize live issue writes.
 
 ## 5. Issue-plan approval and publication
 
-Read `references/issues.md`. Propose vertical slices and the dependency graph,
-show the complete plan and every issue body under the show-before-approval rule,
+Read `references/issues.md`. Propose vertical slices and the dependency graph.
+Each slice (an issue with its sub-issues) covers every layer the requirement
+needs, and records the layers analysed and, for each one not touched, why. Show
+the complete plan and every issue body under the show-before-approval rule,
 then ask approval for the plan and the named GitHub writes. Publish only after
 approval and verify returned issue links, bodies and dependencies by rereading
 GitHub. If permissions block writes, preserve the approved draft and identify
@@ -270,13 +298,19 @@ section of `references/issues.md`, decided as one batch.
 ## 6. Bounded development
 
 Read `references/development.md`, and `references/browser-testing.md` for each
-issue whose plan turns on browser or other tests. If the user intends to be away, rerun the
+issue whose plan turns on browser or other tests (a browser test is first asked
+as a watched run, before it starts). The scope is the whole family: the issue and
+its open sub-issues. If the user intends to be away, rerun the
 stage 0 preflight and report it in one line; if the host is gone, repeat the
 `claude rc` guidance. Do not turn this into a question. Inventory hooks,
 permission settings, confirmation requirements and integration access without
 exposing secrets. Do not disable hooks or request bypass mode. Then recommend the
 highest safe parallelism and ask the concurrency question and one bounded
-implementation authorization, batched when practical. Identify exact issue IDs,
+implementation authorization, batched when practical. When a sub-issue depends
+on its parent (or on another issue of the family), the same call carries the
+stacking question and offers branches stacked on the dependency's branch,
+recommended first, with the concurrency set to the number of independent children
+whose files do not overlap (`references/development.md`). Identify exact issue IDs,
 repository, worktree base and branch prefix, verification argv, draft PR
 permission, routine issue updates, expiry and stop conditions. Record the answer
 verbatim with a reference; do not self-sign. Local files record consent but
@@ -284,9 +318,13 @@ cannot enforce it.
 
 Start all ready, non-conflicting approved issues up to that limit. Refill slots
 as work completes. Dependency completion requires verified integration into the
-approved base, not just an author's report or unmerged branch. Park blocked work,
-continue independent work, and route worker questions to this session's tool.
-Do not merge, deploy, release, close issues or expand scope under this charter.
+dependent's approved base, not just an author's report or an unmerged branch; under
+the stacking authorization that base is the dependency's own branch, so a child
+starts once its parent is verified there, without waiting for the merge. Park
+blocked work, continue independent work, and route worker questions to this
+session's tool. Do not merge pull requests, write the base branch, deploy, release,
+close issues or expand scope under this charter; the only merges allowed are the
+ones the stacking authorization names, of a base into an issue's own branch.
 
 At each material boundary reconcile GitHub, preserve evidence and check context.
 Finish with per-issue state, branch/PR, changes, measured commands/results,

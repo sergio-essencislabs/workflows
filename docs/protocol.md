@@ -103,7 +103,15 @@ do plugin enquanto ele executa trabalho no projeto consumidor. Estrutura recomen
 O teste de navegador roda no fim de uma issue cujo plano tem a seção `## Navegador e testes
 ligados`, só com o que ela liga e nesta ordem: `checks regression`, `serve start`,
 `checks integration`, navegador e permissões entre contas, `checks smoke`, `serve stop`.
-As reservas de `"port": "auto"` ficam na pasta comum do Git (`frontlights-serve/ports/`),
+O passo do navegador começa com a pergunta "pronto para assistir?"; com o sim, roda em janela
+visível em duas passagens do mesmo cenário e da mesma conta, a base ("ANTES") e depois a branch
+("DEPOIS"), com cada caso duas vezes e a janela aberta cerca de 45 s no fim. O `result.json`
+registra `assistido`, cada passagem com a branch e o `head` servidos, a origem de cada resposta
+(`back real` ou `interceptada`) e, quando um perfil de teste foi movido, só o campo de perfil antes
+e depois de desfazer (nunca a linha inteira); o valor original fica antes em
+`.frontlights/issues/<n>/browser/perfil-original.json`. O `ANTES` sobe a base com `serve start
+--root <checkout-da-base> --issue <n>`, que guarda o registro dele no próprio checkout, e esse
+registro é encerrado com `serve stop` antes do relato. As reservas de `"port": "auto"` ficam na pasta comum do Git (`frontlights-serve/ports/`),
 compartilhada pelas worktrees; fora do Git, em `.frontlights/serve/ports/`, e repositórios
 diferentes não veem as reservas uns dos outros. Os códigos de `checks` são 0 passou, 1 falha de produto, 2
 config recusada e 3 infraestrutura. Toda falha vira pergunta por `AskUserQuestion`; sem
@@ -165,7 +173,14 @@ Os valores técnicos `ready` (pronta), `running` (em execução), `blocked` (blo
 `proposed` (proposta) representam observações locais do estado oficial. Salve também
 o horário da consulta ao GitHub. Uma issue concluída só libera dependentes quando
 suas alterações verificadas estão na base aprovada dessas dependentes; confira o
-histórico e as diferenças reais do Git. Responsabilidade desconhecida usa `*` e
+histórico e as diferenças reais do Git. Com a autorização de **branches empilhadas**, a
+base aprovada de uma dependente é a branch da própria dependência: a filha sai dela quando a
+dependência está `verified` ali, o PR dela tem essa branch como base e, depois do merge feito
+por uma pessoa, o PR é redirecionado para a base em que o pai entrou e traz essa base por merge
+(nunca rebase nem push forçado). O `schedule` só lê `status` e não vê uma issue que depende de
+duas branches sem merge: essa conferência é manual. Uma issue e as sub-issues abertas dela
+entram juntas no plano e na autorização; `Parent` é pertencimento e só `Depends on` impede o
+início. Responsabilidade desconhecida usa `*` e
 conflita com tudo. Represente recursos compartilhados por caminhos de responsabilidade
 comuns ou dependências explícitas. Os validadores conferem caminhos e estrutura de
 dependências; não detectam disputas ocultas por recursos nem validam aprovação humana.

@@ -10,7 +10,8 @@
   "branch_prefix": "claude/",
   "operations": ["edit", "test", "checkpoint"],
   "worktrees": [
-    {"issue": 1, "path": "REPLACE_WITH_ABSOLUTE_WORKTREE_PATH", "branch": "claude/issue-1", "ownership": ["src", "tests", "docs/evidence"]}
+    {"issue": 1, "path": "REPLACE_WITH_ABSOLUTE_WORKTREE_PATH", "branch": "claude/issue-1", "ownership": ["src", "tests", "docs/evidence"]},
+    {"issue": 2, "path": "REPLACE_WITH_ABSOLUTE_WORKTREE_PATH", "branch": "claude/issue-2", "base": "claude/issue-1", "ownership": ["src/edit", "tests/edit"]}
   ],
   "verification_commands": [["python", "-m", "unittest"]],
   "stop_conditions": ["New product decision", "Missing credentials or native permission", "External write", "Changed acceptance criteria", "Expired authorization", "Unknown context usage"]
