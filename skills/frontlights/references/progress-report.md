@@ -47,7 +47,9 @@ quote the helper's English messages only when useful.
      Use the variable name `status` reports as `secretEnvVar`.
 2. **First-use approval.** When `approval` is `unapproved` or `changed`, ask with `AskUserQuestion`,
    showing exactly: the URL (`url`), the variable name (`secretEnvVar`), every collector command
-   (`collectorCommands`) and the push command (`pushCommand`), as argument lists. Say plainly that
+   (`collectorCommands`) and the push command (`pushCommand`), as argument lists, and, when `status`
+   reports `weekShots`, where the prints are written (`scrumRoot`, `weekFolderPattern`, `weekShots`:
+   a synced folder outside the project). Say plainly that
    approving lets Frontlights send the credential in that variable to that URL and run those commands
    on this computer, and that a cloned repository could carry such a file, so the user should read them.
    For `changed`, say that something in the block changed since the last approval. Only after an
@@ -102,20 +104,36 @@ quote the helper's English messages only when useful.
        whom.
      - Next steps: what comes next, in order.
      - Leave out internal items (tooling, refactors, housekeeping) unless the user asks for them.
-6. **Prints.** Needs `shotsDir` from `status`; when it is absent, offer prints only through
-   `--shot`/`--caption` in step 8 and say that the project did not configure a directory. Ask with
-   `AskUserQuestion` whether the summary should carry screenshots and, if so, for which deliveries.
-   - For each chosen delivery, offer to capture it from the product running on this computer,
-     following the project's own instructions for running it. Use only test data, never real person or
-     customer data, and never production. Crop out the browser chrome and the identity of the
-     signed-in user. JPEG or PNG, at most 256 KB and about 1280 px wide each, at most 10 in total.
-   - Save the images in `shotsDir` and write `captions.json` there, from scratch on every run: a JSON
-     list in the order wanted, `[{"file": "name.png", "caption": "one plain sentence"}]`, with the
-     captions in plain Portuguese. Images not listed are ignored, so old ones from a previous period
-     never go out by accident.
+6. **Prints.** Where they go depends on `status`:
+   - `weekShots` reported: the prints live in the week folder. Run `shots --from <from>` with the
+     `from` that `window` printed; it creates the folder when missing and prints it as `shotsDir` (the
+     folder of the Monday after the period, when the summary is presented). Use only that path.
+   - `shotsDir` reported: the prints live in that folder inside the project.
+   - Neither: offer prints only through `--shot`/`--caption` in step 8 and say that the project did
+     not configure a folder.
+
+   With `weekShots`, prints are required: every delivery of the facts file that stays visible (its
+   `hidden` in the texts file when that is `true` or `false`, otherwise the collector's) and whose
+   status is not `proximo` needs at least one print with its issue number. Tell the user which
+   deliveries need one, then ask with `AskUserQuestion` how to get each (capture now, use an image of
+   code or of the database when there is no screen, or hide the delivery in the texts file). Without
+   `weekShots`, ask whether the summary should carry screenshots and, if so, for which deliveries.
+   - For each print, offer to capture it from the product running on this computer, following the
+     project's own instructions for running it. Use only test data, never real person or customer
+     data, and never production. Crop out the browser chrome and the identity of the signed-in user.
+     JPEG or PNG, at most 1 MB and about 1920 px wide each, at most 40 in total.
+   - Save the images in that folder and write `captions.json` there, from scratch on every run, never
+     appending to an earlier one: the week folder also holds the prints of an earlier summary of the
+     same week. It is a JSON list in the order wanted,
+     `[{"file": "101-tela.png", "caption": "one plain sentence", "issue": 101}]`: `file` is a plain
+     name in that folder, `caption` plain Portuguese, `issue` the integer number of the delivery's
+     issue (leave `issue` out for a print that belongs to no delivery; it goes at the end of the
+     e-mail). Images not listed are ignored, so old ones never go out by accident.
    - Look at every image yourself before showing it. Retake the blurry, empty or error ones. Each
      image is shown to the user with its caption in the next step, as part of the complete draft.
-   - When the user declines prints, write `captions.json` as an empty list (`[]`).
+   - When no print is needed and the user declines them, write `captions.json` as an empty list (`[]`).
+   - The week folder is synced by the user's cloud drive: anything saved there leaves this computer,
+     so the test-data and cropping rules above matter even more.
    - Capturing runs the user's own product locally, with the consent given in this step. Nothing is
      sent from here.
 7. **Show the complete draft.** Print the whole draft text in the conversation (title, every delivery
@@ -123,9 +141,12 @@ quote the helper's English messages only when useful.
    the image again when you show it) if any. Revise on request and show it again.
 8. **Approve and push.** Ask with `AskUserQuestion` whether to send this draft to RoadS (send, revise,
    do not send). Only after an explicit "send" run `push --draft <file>` and nothing more: the project's push
-   command picks the prints from `shotsDir` itself (its `captions.json` and the images it lists). Add
-   `--shot <file> --caption <text>` only when the config has no `shotsDir`, once per screenshot the
-   user approved. The sign-in line of the e-mail comes from the project's local files, never from the
+   command picks the prints from `shotsDir` itself (its `captions.json` and the images it lists). With
+   `weekShots`, run `push --draft <file> --from <from>` instead: the helper checks `captions.json`, every
+   image and the rule of one print per visible delivery, and passes the week folder to the push command
+   as `{shotsDir}` (which the config must give as a whole argument). A refusal names the missing issues; go back to step 6 for them. Add
+   `--shot <file> --caption <text>` only when the config has neither `shotsDir` nor `weekShots`, once
+   per screenshot the user approved. The sign-in line of the e-mail comes from the project's local files, never from the
    conversation: do not write it, ask for it or put it in the texts file. After `push`:
    - Exit 0: give the user the review link the push command printed in `stdoutTail` (quote only what
      it printed; never build one yourself) and say that reviewing, editing, checking the numbers,

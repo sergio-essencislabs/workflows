@@ -20,8 +20,13 @@ Operations (each prints one JSON object on stdout):
             period sent.
   collect   run every configured collector, in order, from the project root, with --from and --to
             substituted into `{from}` and `{to}`. Stops at the first failure.
+  shots     with `weekShots`: resolve the prints folder of the week (`--from` is the window's first day;
+            the folder is the one of the next Monday, under scrumRoot) and create it when missing.
   push      run the configured push command with `{draft}` substituted (plus --shot/--caption when the
-            config names no `shotsDir`; the project's push command reads `shotsDir` itself).
+            config names no `shotsDir` nor `weekShots`; the project's push command reads `shotsDir`
+            itself). With `weekShots` (and `--from`), first check the week folder's `captions.json` and
+            images and that every visible delivery not in `proximo` has a print, then substitute
+            `{shotsDir}` with that folder.
 
 Why approval: the block makes this plugin run commands taken from a config file, and a cloned
 repository could carry such a file. Nothing runs, and no request is made, until the user has
@@ -63,7 +68,11 @@ DEFAULT_TIMEOUT = 300
 MAX_TIMEOUT = 24 * 60 * 60
 PATH_PATTERN = r'[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*'
 DATE_PATTERN = r'\d{4}-\d{2}-\d{2}'
-OPERATIONS = ['status', 'approve', 'window', 'collect', 'push']
+OPERATIONS = ['status', 'approve', 'window', 'collect', 'shots', 'push']
+MAX_SHOTS = 40
+MAX_SHOT_BYTES = 1024 * 1024
+MAX_CAPTIONS_BYTES = 256 * 1024
+SHOT_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*\.(?:png|jpe?g)', re.IGNORECASE)
 
 
 # ---------------------------------------------------------------- configuration
@@ -107,6 +116,16 @@ def relative_path(value, field):
     parts = re.split(r'[\\/]', value)
     require(not value.startswith(('/', '\\', '~')) and not re.match(r'^[A-Za-z]:', value) and '..' not in parts,
             f'{field} must stay inside the project: no absolute path, no drive letter, no "..", no leading "~"')
+    return value
+
+
+def week_segment(value):
+    """`weekShots`: one folder name inside the week folder (for example `summary`), never a path."""
+    if value is None:
+        return None
+    require(isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', value),
+            'roadmapSync.progress.weekShots must be one folder name: letters, digits, "-" and "_", '
+            'at most 64 characters (no separator, no "..", no dot or space at the end)')
     return value
 
 
@@ -157,15 +176,52 @@ class Progress:
         self.usage_file = optional_file(block.get('usageFile'), 'roadmapSync.progress.usageFile')
         self.draft_guide = relative_path(block.get('draftGuide'), 'roadmapSync.progress.draftGuide')
         self.shots_dir = relative_path(block.get('shotsDir'), 'roadmapSync.progress.shotsDir')
+        self.week_shots = week_segment(block.get('weekShots'))
+        self.scrum_root = self.week_pattern = None
+        require(all(item == '{shotsDir}' or '{shotsDir}' not in item for item in self.push_command),
+                'roadmapSync.progress.pushCommand must pass {shotsDir} as a whole argument')
+        uses_placeholder = '{shotsDir}' in self.push_command
+        if self.week_shots is None:
+            require(not uses_placeholder, 'roadmapSync.progress.pushCommand uses {shotsDir}, which only weekShots provides')
+        else:
+            # The prints go to the week folder under scrumRoot: the folder, the pattern that names it and the
+            # root all decide where this plugin writes, so they are part of the approved block.
+            require(self.shots_dir is None, 'roadmapSync.progress: use either shotsDir or weekShots, not both')
+            require(uses_placeholder, 'roadmapSync.progress.pushCommand must pass {shotsDir} when weekShots is set')
+            require(self.facts_file, 'roadmapSync.progress.factsFile is required with weekShots: it names the deliveries '
+                                     'that need a print')
+            root = rs.expand_root(sync.get('scrumRoot'))
+            # The same rule roadmap sync applies: a relative root would follow the current directory.
+            require(rs.fully_qualified(root), f'Refusing scrumRoot {root}: it must be a fully qualified path')
+            self.scrum_root = os.path.abspath(root)
+            self.week_pattern = sync.get('weekFolderPattern')
+            require(isinstance(self.week_pattern, str) and self.week_pattern.strip(),
+                    'roadmapSync.weekFolderPattern is required with weekShots')
         self.state_dir = self.config_path.parent / 'progress-report'
         self.approval_path = self.state_dir / 'approval.json'
         self.name = str(config.get('repository') or self.config_path.parent.parent.name)
 
     def block_summary(self):
-        return {'endpoint': rs.canonical_endpoint(self.endpoint), 'url': self.url, 'secretEnvVar': self.secret_env,
-                'path': self.path, 'collectors': self.collectors, 'pushCommand': self.push_command,
-                'pushTimeoutSeconds': self.push_timeout, 'factsFile': self.facts_file, 'usageFile': self.usage_file,
-                'draftGuide': self.draft_guide, 'shotsDir': self.shots_dir}
+        summary = {'endpoint': rs.canonical_endpoint(self.endpoint), 'url': self.url, 'secretEnvVar': self.secret_env,
+                   'path': self.path, 'collectors': self.collectors, 'pushCommand': self.push_command,
+                   'pushTimeoutSeconds': self.push_timeout, 'factsFile': self.facts_file, 'usageFile': self.usage_file,
+                   'draftGuide': self.draft_guide, 'shotsDir': self.shots_dir}
+        if self.week_shots is not None:
+            # Only with weekShots, so a block that does not use the week folder keeps its approval.
+            summary.update(weekShots=self.week_shots, scrumRoot=self.scrum_root, weekFolderPattern=self.week_pattern)
+        return summary
+
+    def week_folder(self, date_from):
+        """`<scrumRoot>/<weekFolderPattern>/<weekShots>` of the Monday after the week of `date_from`: the
+        summary of a week is presented on the next Monday, and its prints live in that week's folder."""
+        first = parse_date(date_from, '--from')
+        monday = first - dt.timedelta(days=first.weekday()) + dt.timedelta(days=7)
+        folder = rs.expand_pattern(self.week_pattern, monday, monday + dt.timedelta(days=4))
+        return monday, folder.rstrip('/\\') + '/' + self.week_shots
+
+    def facts_path(self):
+        path = Path(self.facts_file)
+        return path if path.is_absolute() else self.root / path
 
     def block_hash(self):
         text = json.dumps(self.block_summary(), sort_keys=True, separators=(',', ':'), ensure_ascii=True)
@@ -257,12 +313,9 @@ def execute(argv, cwd, timeout, environment):
 
 
 def substitute(argv, values):
-    result = []
-    for item in argv:
-        for placeholder, value in values.items():
-            item = item.replace('{' + placeholder + '}', value)
-        result.append(item)
-    return result
+    """One pass per argument: a value that itself contains a placeholder is never substituted again."""
+    pattern = re.compile('|'.join(re.escape('{' + name + '}') for name in values)) if values else None
+    return [pattern.sub(lambda match: values[match.group(0)[1:-1]], item) if pattern else item for item in argv]
 
 
 def register_secret(progress):
@@ -313,7 +366,8 @@ def op_status(root):
                   collectorCommands=[{'name': c['name'], 'command': c['command'], 'timeoutSeconds': c['timeoutSeconds']}
                                      for c in progress.collectors],
                   pushCommand=progress.push_command, factsFile=progress.facts_file, usageFile=progress.usage_file,
-                  draftGuide=progress.draft_guide, shotsDir=progress.shots_dir)
+                  draftGuide=progress.draft_guide, shotsDir=progress.shots_dir, weekShots=progress.week_shots,
+                  scrumRoot=progress.scrum_root, weekFolderPattern=progress.week_pattern)
     result['ready'] = secret == 'present' and approval == 'approved'
     result.update(ok=True, exitCode=0,
                   message='The progress step is ready.' if result['ready'] else 'The progress step is not ready; see the fields above.')
@@ -403,13 +457,105 @@ def op_collect(root, date_from, date_to):
             'message': f'{len(reports)} collector(s) finished.'}
 
 
-def op_push(root, draft, shots, captions):
+def read_json_file(path, what):
+    try:
+        with open(path, encoding='utf-8-sig') as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        raise Refusal(f'{what} could not be read as JSON')
+
+
+def validated_captions(folder):
+    """`captions.json` of the prints folder: `[{file, caption, issue?}]`, every file a plain JPEG or PNG
+    name in that folder, at most MAX_SHOTS of them and MAX_SHOT_BYTES each, checked by content."""
+    listing = os.path.join(folder, 'captions.json')
+    tag = rs.reparse_tag(listing)
+    require(tag == 0 or rs.cloud_tag(tag), 'captions.json is missing from the prints folder, or is a link or another reparse point')
+    info = os.stat(listing)
+    require(os.path.isfile(listing) and not getattr(info, 'st_file_attributes', 0) & rs.OFFLINE_MASK,
+            'captions.json is not a file kept on this device')
+    require(info.st_size <= MAX_CAPTIONS_BYTES, 'captions.json is larger than 256 KB')
+    items = read_json_file(listing, 'captions.json in the prints folder')
+    require(isinstance(items, list), 'captions.json must be a list of {file, caption, issue}')
+    require(len(items) <= MAX_SHOTS, f'captions.json lists {len(items)} prints; at most {MAX_SHOTS} go in one summary')
+    seen = set()
+    for index, item in enumerate(items):
+        label = f'captions.json[{index}]'
+        require(isinstance(item, dict) and set(item) <= {'file', 'caption', 'issue'}, f'{label} must be {{file, caption, issue}}')
+        name = item.get('file')
+        require(isinstance(name, str) and SHOT_NAME.fullmatch(name), f'{label}.file must be a plain .png, .jpg or .jpeg '
+                                                                     'name in the prints folder, without a path')
+        require(name.casefold() not in seen, f'{label}.file repeats {name}')
+        seen.add(name.casefold())
+        require(isinstance(item.get('caption'), str) and item['caption'].strip(), f'{label}.caption must be a sentence')
+        issue = item.get('issue')
+        require(issue is None or (type(issue) is int and issue > 0), f'{label}.issue must be a positive integer or absent')
+        path = os.path.join(folder, name)
+        tag = rs.reparse_tag(path)
+        require(tag == 0 or rs.cloud_tag(tag), f'{label}.file {name} is missing, a link or another reparse point')
+        require(os.path.isfile(path), f'{label}.file {name} is not a file in the prints folder')
+        info = os.stat(path)
+        require(not getattr(info, 'st_file_attributes', 0) & rs.OFFLINE_MASK,
+                f'{label}.file {name} is an online-only cloud file; keep it on this device first')
+        require(info.st_size <= MAX_SHOT_BYTES, f'{label}.file {name} is larger than 1 MB')
+        with open(path, 'rb') as handle:
+            head = handle.read(8)
+        require(head.startswith(b'\x89PNG\r\n\x1a\n') or head.startswith(b'\xff\xd8\xff'),
+                f'{label}.file {name} is not a PNG or JPEG image')
+    return items
+
+
+def deliveries_without_prints(facts, texts, captions):
+    """The issues of the deliveries that need a print and have none, by the rule RoadS assembles with:
+    every facts entry with an integer issue is a delivery; the texts file's boolean `hidden` wins over the
+    collector's; a visible delivery whose status is not `proximo` needs a caption with its issue."""
+    require(isinstance(facts, dict) and isinstance(facts.get('entries'), list), 'the facts file has no entries list')
+    text_entries = texts.get('entries') if isinstance(texts, dict) else None
+    require(isinstance(text_entries, list), 'the draft has no entries list')
+    chosen = {entry['issue']: entry['hidden'] for entry in text_entries
+              if isinstance(entry, dict) and type(entry.get('issue')) is int and isinstance(entry.get('hidden'), bool)}
+    shown = {item['issue'] for item in captions if item.get('issue') is not None}
+    missing = []
+    for fact in facts['entries']:
+        if not isinstance(fact, dict) or type(fact.get('issue')) is not int:
+            continue
+        hidden = chosen[fact['issue']] if fact['issue'] in chosen else fact.get('hidden') is True
+        if not hidden and fact.get('status') != 'proximo' and fact['issue'] not in shown and fact['issue'] not in missing:
+            missing.append(fact['issue'])
+    return missing
+
+
+def op_shots(root, date_from):
+    """The week folder the prints go to, created when missing. Run before capturing."""
+    progress = Progress(root)
+    require(progress.week_shots is not None, 'roadmapSync.progress has no weekShots; the prints go to shotsDir')
+    assert_approved(progress)
+    monday, relative = progress.week_folder(date_from)
+    folder = rs.safe_folder(progress.scrum_root, relative, create=True)
+    return {'ok': True, 'exitCode': 0, 'shotsDir': folder, 'presentedOn': monday.isoformat(),
+            'message': f'Save the prints and captions.json in {folder}.'}
+
+
+def op_push(root, draft, shots, captions, date_from=None):
     progress = Progress(root)
     assert_approved(progress)
     require(draft, '--draft is required')
     draft_path = Path(draft).resolve()
     require(draft_path.is_file(), '--draft does not name an existing file')
     shots, captions = list(shots or []), list(captions or [])
+    values = {'draft': str(draft_path)}
+    if progress.week_shots is not None:
+        # The push command reads the prints from the week folder itself; this checks them first, so a summary
+        # that misses a print, or carries a file that is not a small image, never leaves this computer.
+        require(not shots and not captions, 'with weekShots the prints come from the week folder; do not pass --shot or --caption')
+        _, relative = progress.week_folder(date_from)
+        folder = rs.safe_folder(progress.scrum_root, relative)
+        listed = validated_captions(folder)
+        missing = deliveries_without_prints(read_json_file(progress.facts_path(), 'the facts file (factsFile)'),
+                                            read_json_file(draft_path, 'the draft'), listed)
+        require(not missing, 'these visible deliveries need at least one print with their issue in captions.json: '
+                             + ', '.join(f'#{number}' for number in missing))
+        values['shotsDir'] = folder
     require(len(captions) <= len(shots), 'every --caption needs a --shot before it')
     extra = []
     for index, shot in enumerate(shots):
@@ -419,7 +565,7 @@ def op_push(root, draft, shots, captions):
         if index < len(captions):
             extra += ['--caption', captions[index]]
     secret = rs.read_secret(progress.secret_env)
-    argv = substitute(progress.push_command, {'draft': str(draft_path)}) + extra
+    argv = substitute(progress.push_command, values) + extra
     require(not any(secret in item for item in argv), 'the push command would carry the secret in its arguments; refused')
     environment = dict(os.environ)
     environment[progress.secret_env] = secret
@@ -447,8 +593,10 @@ def run(operation, root='.', transport=None, date_from=None, date_to=None, draft
             result = op_window(root, transport)
         elif operation == 'collect':
             result = op_collect(root, date_from, date_to)
+        elif operation == 'shots':
+            result = op_shots(root, date_from)
         elif operation == 'push':
-            result = op_push(root, draft, shots, captions)
+            result = op_push(root, draft, shots, captions, date_from)
         else:
             raise Refusal(f'Unknown operation: {operation}')
     except (Refusal, ValueError, OSError, KeyError, TypeError) as error:
@@ -466,7 +614,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('operation', choices=OPERATIONS)
     parser.add_argument('--root', default='.', help='project whose .frontlights/config.json declares roadmapSync.progress')
-    parser.add_argument('--from', dest='date_from', help='first day to collect, YYYY-MM-DD (collect)')
+    parser.add_argument('--from', dest='date_from', help="first day to collect, YYYY-MM-DD (collect); the window's first day (shots, push with weekShots)")
     parser.add_argument('--to', dest='date_to', help='last day to collect, inclusive, YYYY-MM-DD (collect)')
     parser.add_argument('--draft', help='path of the draft file the push command reads (push)')
     parser.add_argument('--shot', action='append', default=[], help='screenshot to attach; repeatable (push)')

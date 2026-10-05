@@ -1,0 +1,407 @@
+"""The prints of the summary in the week folder (`weekShots`): where they go, what captions.json may
+carry, the rule of one print per visible delivery and what the approval covers."""
+
+import json
+import os
+import sys
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import progress_report as pr
+import roadmap_sync as rs
+from test_progress_report import ProgressTestCase
+
+PNG = b'\x89PNG\r\n\x1a\n' + b'0' * 32
+JPEG = b'\xff\xd8\xff\xe0' + b'0' * 32
+
+
+class WeekShotsTestCase(ProgressTestCase):
+    def setUp(self):
+        super().setUp()
+        self.facts = self.project / '.frontlights' / 'facts.json'
+        self.write_facts([])
+        self.write_config(progress=self.week_block())
+        self.draft = self.out / 'draft.json'
+        self.write_draft([])
+
+    def week_block(self, **overrides):
+        block = self.block(pushCommand=[sys.executable, str(self.tools / 'push.py'), str(self.out / 'push.json'),
+                                        '--draft', '{draft}', '--shots-dir', '{shotsDir}'],
+                           factsFile='.frontlights/facts.json', weekShots='summary')
+        block.update(overrides)
+        return block
+
+    def write_facts(self, entries):
+        self.facts.write_text(json.dumps({'window': {}, 'entries': entries, 'internal': {'count': 0}}), encoding='utf-8')
+
+    def write_draft(self, entries):
+        self.draft.write_text(json.dumps({'headline': 'x', 'entries': entries}), encoding='utf-8')
+
+    def folder(self):
+        return self.out / '2026' / '05_10' / 'summary'
+
+    def prints(self, captions, files=None):
+        folder = self.folder()
+        folder.mkdir(parents=True, exist_ok=True)
+        for name, data in (files if files is not None else {item['file']: PNG for item in captions
+                                                            if isinstance(item, dict) and isinstance(item.get('file'), str)}).items():
+            (folder / name).write_bytes(data)
+        (folder / 'captions.json').write_text(json.dumps(captions), encoding='utf-8')
+
+    def push(self, date_from='2026-09-30', **kwargs):
+        return self.run_op('push', draft=str(self.draft), date_from=date_from, **kwargs)
+
+    def pushed(self):
+        return json.loads((self.out / 'push.json').read_text(encoding='utf-8'))
+
+
+class WeekFolderTests(WeekShotsTestCase):
+    def test_the_folder_is_the_one_of_the_monday_after_the_week_of_the_window(self):
+        self.approved()
+        for day in ('2026-09-28', '2026-09-30', '2026-10-02', '2026-10-03', '2026-10-04'):
+            with self.subTest(day=day):
+                result = self.run_op('shots', date_from=day)
+                self.assertTrue(result['ok'], result)
+                self.assertEqual(Path(result['shotsDir']), self.folder())
+                self.assertEqual(result['presentedOn'], '2026-10-05')
+        result = self.run_op('shots', date_from='2026-10-05')
+        self.assertEqual(Path(result['shotsDir']), self.out / '2026' / '12_10' / 'summary')
+
+    def test_the_folder_is_created_when_missing_and_kept_when_present(self):
+        self.approved()
+        self.assertFalse(self.folder().exists())
+        self.assertTrue(self.run_op('shots', date_from='2026-09-30')['ok'])
+        self.assertTrue(self.folder().is_dir())
+        (self.folder() / 'keep.png').write_bytes(PNG)
+        self.assertTrue(self.run_op('shots', date_from='2026-09-30')['ok'])
+        self.assertTrue((self.folder() / 'keep.png').exists())
+
+    def test_shots_needs_the_approval_a_date_and_weekShots(self):
+        result = self.run_op('shots', date_from='2026-09-30')
+        self.assertFalse(result['ok'])
+        self.assertIn('approve', result['message'])
+        self.assertFalse(self.folder().exists())
+        self.approved()
+        for bad in (None, '30/09/2026', '2026-02-30', '2026-09-30; x'):
+            with self.subTest(bad=bad):
+                self.assertFalse(self.run_op('shots', date_from=bad)['ok'])
+        self.write_config()
+        self.approved()
+        self.assertIn('weekShots', self.run_op('shots', date_from='2026-09-30')['message'])
+
+    def test_a_file_where_the_folder_should_be_is_refused(self):
+        self.approved()
+        self.folder().parent.mkdir(parents=True)
+        self.folder().write_text('x', encoding='utf-8')
+        result = self.run_op('shots', date_from='2026-09-30')
+        self.assertFalse(result['ok'])
+        self.assertIn('is a file', result['message'])
+
+    def test_a_link_on_the_way_is_refused(self):
+        self.approved()
+        elsewhere = self.out / 'elsewhere'
+        elsewhere.mkdir()
+        (self.out / '2026').mkdir()
+        link = self.out / '2026' / '05_10'
+        if sys.platform.startswith('win'):
+            import subprocess
+            made = subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(elsewhere)], capture_output=True)
+            if made.returncode != 0:
+                self.skipTest('cannot create a junction here')
+        else:
+            os.symlink(elsewhere, link, target_is_directory=True)
+        result = self.run_op('shots', date_from='2026-09-30')
+        self.assertFalse(result['ok'])
+        self.assertIn('reparse point', result['message'])
+        self.assertEqual(list(elsewhere.iterdir()), [])
+        # the push refuses the same way, even when the prints are already there
+        (elsewhere / 'summary').mkdir()
+        (elsewhere / 'summary' / 'captions.json').write_text('[]', encoding='utf-8')
+        self.assertIn('reparse point', self.push()['message'])
+        self.assertFalse((self.out / 'push.json').exists())
+
+    def test_a_pattern_that_leaves_the_root_is_refused(self):
+        self.write_config(progress=self.week_block(), weekFolderPattern='../{dd_MM}')
+        self.approved()
+        result = self.run_op('shots', date_from='2026-09-30')
+        self.assertFalse(result['ok'])
+        self.assertFalse((self.out.parent / '05_10').exists())
+
+
+class WeekBlockTests(WeekShotsTestCase):
+    def test_weekShots_is_one_folder_name(self):
+        for bad in ('', ' ', '../x', 'a/b', 'a\\b', '.hidden', 'x.', 'x ', 'C:', '~', 5, 'a' * 65, 'sum mary'):
+            with self.subTest(bad=bad):
+                self.write_config(progress=self.week_block(weekShots=bad))
+                result = self.run_op('status')
+                self.assertFalse(result['valid'])
+                self.assertIn('weekShots', result['message'])
+                self.assertFalse(self.run_op('approve')['ok'])
+
+    def test_shotsDir_and_weekShots_together_are_refused(self):
+        self.write_config(progress=self.week_block(shotsDir='.frontlights/progress/shots'))
+        self.assertIn('not both', self.run_op('status')['message'])
+
+    def test_the_placeholder_and_the_facts_file_go_with_weekShots_only(self):
+        self.write_config(progress=self.week_block(pushCommand=[sys.executable, 'push.py', '{draft}']))
+        self.assertIn('{shotsDir}', self.run_op('status')['message'])
+        self.write_config(progress=self.week_block(factsFile=None))
+        self.assertIn('factsFile', self.run_op('status')['message'])
+        self.write_config(progress=self.block(pushCommand=[sys.executable, 'push.py', '{draft}', '{shotsDir}']))
+        self.assertIn('only weekShots', self.run_op('status')['message'])
+
+    def test_a_root_that_is_not_fully_qualified_is_refused_like_roadmap_sync_does(self):
+        for bad in ('rel', '..\\algo', 'C:pasta', '%FRONTLIGHTS_UNSET_VAR_X%\\Scrum'):
+            with self.subTest(bad=bad):
+                self.write_config(progress=self.week_block(), scrumRoot=bad)
+                result = self.run_op('status')
+                self.assertFalse(result['valid'])
+                self.assertIn('fully qualified', result['message'])
+
+    def test_the_placeholder_must_be_a_whole_argument(self):
+        self.write_config(progress=self.week_block(pushCommand=[sys.executable, 'push.py', '{draft}', '--dir={shotsDir}']))
+        self.assertIn('whole argument', self.run_op('status')['message'])
+
+    def test_the_week_end_follows_the_sprint_week(self):
+        self.write_config(progress=self.week_block(), weekFolderPattern='{yyyy}/{dd_MM}_a_{dd_MM}')
+        self.approved()
+        result = self.run_op('shots', date_from='2026-09-30')
+        self.assertEqual(Path(result['shotsDir']), self.out / '2026' / '05_10_a_09_10' / 'summary')
+
+    def test_status_reports_where_the_prints_go(self):
+        result = self.run_op('status')
+        self.assertTrue(result['valid'], result)
+        self.assertEqual((result['weekShots'], result['weekFolderPattern']), ('summary', '{yyyy}/{dd_MM}'))
+        self.assertEqual(Path(result['scrumRoot']), self.out)
+
+    def test_the_root_the_pattern_and_the_folder_are_part_of_the_approval(self):
+        self.approved()
+        self.assertEqual(self.run_op('status')['approval'], 'approved')
+        other = self.out / 'other'
+        other.mkdir()
+        for change in ({'scrumRoot': str(other)}, {'weekFolderPattern': '{yyyy}/W{dd_MM}'}):
+            with self.subTest(change=change):
+                self.write_config(progress=self.week_block(), **change)
+                self.assertEqual(self.run_op('status')['approval'], 'changed')
+        self.write_config(progress=self.week_block(weekShots='prints'))
+        self.assertEqual(self.run_op('status')['approval'], 'changed')
+
+    def test_a_block_without_weekShots_keeps_its_approval_when_the_root_changes(self):
+        self.write_config()
+        self.approved()
+        other = self.out / 'other'
+        other.mkdir()
+        self.write_config(scrumRoot=str(other))
+        self.assertEqual(self.run_op('status')['approval'], 'approved')
+
+
+class CaptionsTests(WeekShotsTestCase):
+    def setUp(self):
+        super().setUp()
+        self.approved()
+
+    def test_a_valid_set_is_pushed_with_the_folder_and_no_shot_arguments(self):
+        self.prints([{'file': '101-tela.png', 'caption': 'Uma frase.', 'issue': 101},
+                     {'file': 'geral.jpg', 'caption': 'Sem issue.'}],
+                    files={'101-tela.png': PNG, 'geral.jpg': JPEG})
+        result = self.push()
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(self.pushed()['argv'], ['--draft', str(self.draft.resolve()), '--shots-dir', str(self.folder())])
+
+    def test_an_empty_list_is_fine_when_no_delivery_needs_a_print(self):
+        self.prints([])
+        self.assertTrue(self.push()['ok'])
+
+    def test_push_needs_the_date_and_refuses_shot_arguments(self):
+        self.prints([])
+        self.assertFalse(self.push(date_from=None)['ok'])
+        shot = self.out / 'a.png'
+        shot.write_bytes(PNG)
+        result = self.push(shots=[str(shot)])
+        self.assertFalse(result['ok'])
+        self.assertIn('--shot', result['message'])
+        self.assertFalse((self.out / 'push.json').exists())
+
+    def test_a_missing_folder_or_captions_file_is_refused(self):
+        result = self.push()
+        self.assertFalse(result['ok'])
+        self.folder().mkdir(parents=True)
+        self.assertIn('captions.json', self.push()['message'])
+        (self.folder() / 'captions.json').write_text('{not json', encoding='utf-8')
+        self.assertIn('captions.json', self.push()['message'])
+        self.assertFalse((self.out / 'push.json').exists())
+
+    def test_bad_items_are_refused_before_the_command_runs(self):
+        cases = [
+            ({'file': 'a.png'}, {}),
+            ({'file': 'a.png', 'caption': ' '}, None),
+            ({'file': 'a.png', 'caption': 'x', 'issue': '101'}, None),
+            ({'file': 'a.png', 'caption': 'x', 'issue': True}, None),
+            ({'file': 'a.png', 'caption': 'x', 'issue': 0}, None),
+            ({'file': 'a.png', 'caption': 'x', 'issue': 1.5}, None),
+            ({'file': 'a.png', 'caption': 'x', 'extra': 1}, None),
+            ({'file': '../a.png', 'caption': 'x'}, {}),
+            ({'file': 'sub/a.png', 'caption': 'x'}, {}),
+            ({'file': 'a.gif', 'caption': 'x'}, None),
+            ({'file': '.png', 'caption': 'x'}, {}),
+            ({'file': 'nope.png', 'caption': 'x'}, {}),
+            ({'file': 'fake.png', 'caption': 'x'}, {'fake.png': b'GIF89a' + b'0' * 20}),
+            ({'file': 'big.png', 'caption': 'x'}, {'big.png': PNG + b'0' * pr.MAX_SHOT_BYTES}),
+            ('a.png', {}),
+        ]
+        for item, files in cases:
+            with self.subTest(item=item):
+                self.prints([item], files=files)
+                result = self.push()
+                self.assertFalse(result['ok'], result)
+                self.assertIn('captions.json', result['message'])
+                self.assertFalse((self.out / 'push.json').exists())
+
+    def test_at_most_forty_prints_and_no_repeated_file(self):
+        many = [{'file': f'p{n}.png', 'caption': 'x'} for n in range(pr.MAX_SHOTS + 1)]
+        self.prints(many)
+        self.assertIn('at most 40', self.push()['message'])
+        self.prints(many[:pr.MAX_SHOTS])
+        self.assertTrue(self.push()['ok'])
+        self.prints([{'file': 'a.png', 'caption': 'x'}, {'file': 'A.PNG', 'caption': 'y'}], files={'a.png': PNG})
+        self.assertIn('repeats', self.push()['message'])
+
+    def test_the_captions_file_itself_is_checked(self):
+        self.folder().mkdir(parents=True)
+        (self.folder() / 'captions.json').write_text('[' + ' ' * pr.MAX_CAPTIONS_BYTES + ']', encoding='utf-8')
+        self.assertIn('256 KB', self.push()['message'])
+        (self.folder() / 'captions.json').unlink()
+        (self.folder() / 'captions.json').mkdir()
+        self.assertIn('captions.json', self.push()['message'])
+        self.assertFalse((self.out / 'push.json').exists())
+
+    def test_a_folder_named_like_an_image_is_refused(self):
+        self.prints([{'file': 'x.png', 'caption': 'x'}], files={})
+        (self.folder() / 'x.png').mkdir()
+        result = self.push()
+        self.assertFalse(result['ok'])
+        self.assertIn('not a file', result['message'])
+
+    def test_a_value_holding_a_placeholder_is_not_substituted_again(self):
+        self.assertEqual(pr.substitute(['--draft', '{draft}', '{shotsDir}'], {'draft': 'C:/x/{shotsDir}.json', 'shotsDir': 'D:/w'}),
+                         ['--draft', 'C:/x/{shotsDir}.json', 'D:/w'])
+        self.assertEqual(pr.substitute(['a{from}b'], {}), ['a{from}b'])
+
+    def test_exactly_one_megabyte_is_accepted(self):
+        self.prints([{'file': 'edge.png', 'caption': 'x'}], files={'edge.png': PNG + b'0' * (pr.MAX_SHOT_BYTES - len(PNG))})
+        self.assertTrue(self.push()['ok'])
+
+    def test_an_online_only_cloud_file_is_refused(self):
+        self.prints([{'file': 'a.png', 'caption': 'x'}])
+        real = os.stat
+
+        class Offline:
+            def __init__(self, info):
+                self.st_mode, self.st_size, self.st_file_attributes = info.st_mode, info.st_size, rs.OFFLINE_MASK
+
+        with patch.object(pr.os, 'stat', side_effect=lambda path, *a, **k: Offline(real(path)) if str(path).endswith('a.png') else real(path, *a, **k)):
+            result = self.push()
+        self.assertFalse(result['ok'])
+        self.assertIn('online-only', result['message'])
+
+
+class OnePrintPerDeliveryTests(WeekShotsTestCase):
+    def setUp(self):
+        super().setUp()
+        self.approved()
+
+    def fact(self, issue, status='em_andamento', hidden=None):
+        entry = {'issue': issue, 'status': status, 'id': f'x-{issue}', 'sources': []}
+        if hidden is not None:
+            entry['hidden'] = hidden
+        return entry
+
+    def test_a_visible_delivery_without_its_print_is_refused_with_its_number(self):
+        self.write_facts([self.fact(101), self.fact(102, 'concluido'), self.fact(103, 'bloqueado')])
+        self.prints([{'file': 'a.png', 'caption': 'x', 'issue': 102}])
+        result = self.push()
+        self.assertFalse(result['ok'])
+        self.assertIn('#101', result['message'])
+        self.assertIn('#103', result['message'])
+        self.assertNotIn('#102', result['message'])
+        self.assertFalse((self.out / 'push.json').exists())
+
+    def test_every_status_but_proximo_needs_a_print(self):
+        for status in ('concluido', 'em_validacao', 'em_andamento', 'bloqueado'):
+            with self.subTest(status=status):
+                self.write_facts([self.fact(7, status)])
+                self.prints([])
+                self.assertIn('#7', self.push()['message'])
+        self.write_facts([self.fact(7, 'proximo')])
+        self.prints([])
+        self.assertTrue(self.push()['ok'])
+
+    def test_the_texts_file_hidden_wins_over_the_collector(self):
+        self.write_facts([self.fact(1, hidden=True), self.fact(2), self.fact(3, hidden=True)])
+        self.write_draft([{'issue': 1, 'title': 't', 'summary': 's', 'hidden': False},
+                          {'issue': 2, 'title': 't', 'summary': 's', 'hidden': True},
+                          {'issue': 3, 'title': 't', 'summary': 's', 'hidden': 'no'}])
+        self.prints([])
+        result = self.push()
+        self.assertIn('#1', result['message'])
+        self.assertNotIn('#2', result['message'])
+        self.assertNotIn('#3', result['message'])
+
+    def test_only_a_collector_hidden_true_hides_like_the_strict_equality_in_RoadS(self):
+        self.write_facts([self.fact(8, hidden='yes'), self.fact(9, hidden=1), self.fact(10, hidden=True)])
+        self.prints([])
+        result = self.push()
+        self.assertIn('#8', result['message'])
+        self.assertIn('#9', result['message'])
+        self.assertNotIn('#10', result['message'])
+
+    def test_a_print_without_issue_does_not_count_for_a_delivery(self):
+        self.write_facts([self.fact(5)])
+        self.prints([{'file': 'a.png', 'caption': 'x'}])
+        self.assertIn('#5', self.push()['message'])
+
+    def test_entries_without_an_integer_issue_are_ignored_like_RoadS_does(self):
+        self.write_facts([{'issue': '5', 'status': 'em_andamento'}, {'issue': True, 'status': 'concluido'},
+                          {'status': 'concluido'}, 'x'])
+        self.write_draft([{'issue': '5', 'hidden': False}])
+        self.prints([])
+        self.assertTrue(self.push()['ok'])
+
+    def test_malformed_facts_or_draft_are_refused(self):
+        self.prints([])
+        self.facts.write_text('[]', encoding='utf-8')
+        self.assertIn('facts', self.push()['message'])
+        self.facts.unlink()
+        self.assertIn('factsFile', self.push()['message'])
+        self.write_facts([])
+        self.draft.write_text('{"headline": "x"}', encoding='utf-8')
+        self.assertIn('draft', self.push()['message'])
+
+    def test_rule_matches_the_contract_function(self):
+        facts = {'entries': [self.fact(1), self.fact(1), self.fact(2, 'proximo')]}
+        self.assertEqual(pr.deliveries_without_prints(facts, {'entries': []}, []), [1])
+
+
+class ShotsDocumentationTests(unittest.TestCase):
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def read(self, *parts):
+        return self.ROOT.joinpath(*parts).read_text(encoding='utf-8')
+
+    def test_the_reference_describes_the_week_folder_step(self):
+        text = self.read('skills', 'frontlights', 'references', 'progress-report.md')
+        for needle in ('weekShots', 'shots --from', '{shotsDir}', '"issue"', 'proximo', '40', '1 MB', 'push --draft <file> --from'):
+            self.assertIn(needle, text)
+
+    def test_security_and_readme_describe_the_write_outside_the_project(self):
+        self.assertIn('weekShots', self.read('docs', 'security.md'))
+        self.assertIn('weekShots', self.read('README.md'))
+        config = json.loads(self.read('examples', 'config.json'))
+        self.assertNotIn('weekShots', config['roadmapSync']['progress'])
+
+
+if __name__ == '__main__':
+    unittest.main()

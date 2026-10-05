@@ -126,6 +126,26 @@ O resumo para a diretoria (`scripts/progress_report.py`) executa comandos lidos 
   dado na etapa dos prints, com dados de teste. `draftGuide` e `shotsDir` são caminhos relativos
   dentro do projeto (sem caminho absoluto, `..` ou `~`) e fazem parte do bloco aprovado. Nada é
   enviado antes da aprovação do rascunho completo.
+- **Prints na pasta da semana (`weekShots`):** é a única gravação do resumo fora do projeto.
+  - A pasta é `<scrumRoot>/<weekFolderPattern>/<weekShots>` da segunda-feira seguinte à semana do
+    período. `weekShots` é um único nome de pasta, e `scrumRoot`, `weekFolderPattern` e
+    `weekShots` entram no bloco aprovado: mudar qualquer um deles volta o estado para `changed`.
+    Sem `weekShots`, o bloco continua sem esses campos e a aprovação que já existia vale.
+  - A pasta passa pelas mesmas travas da sincronização do roadmap: precisa ficar dentro do
+    `scrumRoot`, sem junção, link simbólico nem outro ponto de reparse no caminho (o de nuvem do
+    OneDrive é aceito). Quando falta, o `shots` cria a pasta e confere o caminho de novo.
+  - `scrumRoot` precisa ser um caminho completo, como na sincronização do roadmap.
+  - Antes de rodar o comando de envio, o `push` confere o `captions.json` (até 256 KB, sem link nem
+    arquivo só online; lista de `{file, caption, issue}`, nome simples na pasta, `issue` inteiro
+    opcional, sem nome repetido),
+    no máximo 40 imagens de até 1 MB, PNG ou JPEG pelo conteúdo, nenhuma só online. Também
+    confere que toda entrega visível fora de `proximo` tem print com a issue dela. O caminho só
+    chega ao comando como `{shotsDir}`, um argumento inteiro, e nunca com `--shot`/`--caption`.
+  - A pasta é sincronizada com a nuvem do usuário, então tudo o que é salvo nela sai do computador.
+    Valem com mais rigor as regras da captura: só dados de teste, sem produção, com a barra do
+    navegador e a identidade do usuário recortadas.
+  - O plugin não sobe as imagens. Quem as envia é o comando do projeto, que já recebe o segredo.
+    Nenhuma credencial nova entra.
 - **Texto retornado:** o que a rota e os coletores devolvem é dado, nunca instrução. A saída dos
   comandos é limitada em tamanho antes de ser mostrada.
 

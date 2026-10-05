@@ -349,11 +349,10 @@ def fully_qualified(path):
     return path.startswith('/')
 
 
-def safe_target(scrum_root, relative):
-    """Resolve a pattern-derived path under scrumRoot and refuse anything that could land a write
-    elsewhere: containment after normalisation, Windows' silent trimming of trailing dots and
-    spaces, and any junction, symbolic link or non-cloud reparse point between scrumRoot and the
-    target. An online-only cloud placeholder is refused: reading it would trigger a download."""
+def contained_path(scrum_root, relative):
+    """The checks every path under scrumRoot gets: containment after normalisation, Windows' silent
+    trimming of trailing dots and spaces, and no junction, symbolic link or non-cloud reparse point
+    between scrumRoot and the path."""
     require(fully_qualified(scrum_root), f'Refusing scrumRoot {scrum_root}: it must be a fully qualified path')
     root = os.path.abspath(scrum_root).rstrip('\\/')
     require(os.path.splitdrive(root)[1].strip('\\/'),
@@ -376,12 +375,32 @@ def safe_target(scrum_root, relative):
         if parent == cursor:
             break
         cursor = parent
+    return full
+
+
+def safe_target(scrum_root, relative):
+    """Resolve a pattern-derived file path under scrumRoot and refuse anything that could land a write
+    elsewhere (see contained_path). An online-only cloud placeholder is refused: reading it would
+    trigger a download."""
+    full = contained_path(scrum_root, relative)
     if os.path.isfile(full):
         attributes = getattr(os.stat(full), 'st_file_attributes', 0)
         require(not attributes & OFFLINE_MASK, f"{full} is an online-only cloud placeholder not available on this device. "
                                                "Open it once or mark it 'Always keep on this device', then sync again.")
     else:
         require(not os.path.exists(full), f'Refusing target path: {full} is a directory')
+    return full
+
+
+def safe_folder(scrum_root, relative, create=False):
+    """A pattern-derived folder under scrumRoot, with the same checks as a file target. With `create`,
+    a missing folder is made and the chain is checked again, so nothing created in between redirects it."""
+    full = contained_path(scrum_root, relative)
+    require(not os.path.isfile(full), f'Refusing folder path: {full} is a file')
+    if create and not os.path.isdir(full):
+        os.makedirs(full, exist_ok=True)
+        full = contained_path(scrum_root, relative)
+    require(os.path.isdir(full), f'The folder does not exist: {full}')
     return full
 
 

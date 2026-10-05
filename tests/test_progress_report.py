@@ -627,7 +627,7 @@ class PluginContractTests(unittest.TestCase):
     def test_reference_covers_the_guide_the_sprint_sources_and_the_prints_step(self):
         text = self.read('skills', 'frontlights', 'references', 'progress-report.md')
         for needle in ('draftGuide', 'shotsDir', 'captions.json', 'roadmap_sync.py', 'status --root', 'current week',
-                       '256 KB', '1280', 'at most 10', 'push --draft <file>', 'sign-in line'):
+                       '1 MB', '1920', 'at most 40', 'push --draft <file>', 'sign-in line'):
             self.assertIn(needle, text)
         self.assertLess(text.index('**Draft.**'), text.index('**Prints.**'))
         self.assertLess(text.index('**Prints.**'), text.index('**Show the complete draft.**'))

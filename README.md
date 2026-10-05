@@ -321,15 +321,17 @@ pergunta não aparece. Com a resposta "sim", o Frontlights:
    (`draftGuide`) e a partir dos fatos coletados, dos registros locais e, quando a sincronização do
    roadmap está configurada, do roadmap e da sprint da semana (que alimentam os próximos passos); o
    próprio projeto monta o rascunho final com fatos, uso, dados de acesso locais e prints;
-5. pergunta se o resumo leva prints e, para cada entrega escolhida, oferece capturar a tela do produto
-   rodando neste computador (só dados de teste, nunca dados reais nem produção, sem a barra do
-   navegador nem a identidade de quem está logado; JPEG ou PNG, até 256 KB e cerca de 1280 px de
-   largura, no máximo 10), grava as imagens em `shotsDir` e reescreve o `captions.json` a cada
-   execução (imagens que não estão nele são ignoradas);
+5. cuida dos prints e, para cada um, oferece capturar a tela do produto rodando neste computador (só
+   dados de teste, nunca dados reais nem produção, sem a barra do navegador nem a identidade de quem
+   está logado; JPEG ou PNG, até 1 MB e cerca de 1920 px de largura, no máximo 40). Grava as imagens
+   na pasta dos prints e reescreve o `captions.json` a cada execução, nunca acrescentando ao anterior
+   (imagens que não estão nele são ignoradas). Cada item é `{"file", "caption", "issue"}`, com
+   `issue` opcional: o número inteiro da issue da entrega. Com `weekShots`, a pasta é a da semana e
+   os prints são obrigatórios (veja abaixo); sem ele, a skill pergunta se o resumo leva prints;
 6. mostra o rascunho completo, com cada print e sua legenda, e, com a sua aprovação, envia ao RoadS
-   com `push --draft <arquivo>`; o comando do projeto escolhe os prints em `shotsDir` e monta a
-   linha de acesso do e-mail a partir dos arquivos locais do projeto, nunca da conversa, e a skill
-   informa o link para revisar.
+   com `push --draft <arquivo>` (mais `--from <início do período>` com `weekShots`); o comando do
+   projeto escolhe os prints na pasta e monta a linha de acesso do e-mail a partir dos arquivos
+   locais do projeto, nunca da conversa, e a skill informa o link para revisar.
 
 Revisar, editar, conferir os números, copiar para o e-mail e marcar como enviado acontece no
 RoadS. O Frontlights não envia e-mail. Reenviar o rascunho atualiza o conteúdo coletado e mantém as
@@ -349,12 +351,28 @@ O bloco fica dentro de `roadmapSync` (veja `examples/config.json`) e reaproveita
   absoluto, letra de unidade, `..` nem `~` no início; até 200 caracteres): `draftGuide` é o guia em
   que o projeto descreve o arquivo de textos, e `shotsDir` é a pasta dos prints e do `captions.json`.
   Os dois entram na aprovação do bloco: mudar qualquer um pede nova aprovação.
+- `weekShots` é opcional e substitui `shotsDir` (os dois juntos são recusados). Ele guarda os prints
+  na pasta da semana, fora do projeto: `<scrumRoot>/<weekFolderPattern>/<weekShots>`, por exemplo
+  `"weekShots": "summary"`. É um único nome de pasta (letras, dígitos, `-` e `_`).
+  - **Qual semana:** a pasta é a da segunda-feira seguinte à semana do período, o dia em que o resumo
+    é apresentado. Os resumos de 28/09 a 02/10 vão para a pasta de 05/10.
+  - **Como chega ao comando:** `shots --from <início>` cria a pasta quando falta e informa o caminho.
+    O `pushCommand` precisa trazer `{shotsDir}` como argumento inteiro, que vira esse caminho, por
+    exemplo `"--shots-dir", "{shotsDir}"` (`"--shots-dir={shotsDir}"` é recusado). O `scrumRoot`
+    precisa ser um caminho completo.
+  - **Exige `factsFile`:** antes do envio, o `push` confere o `captions.json` e as imagens. Também
+    recusa quando uma entrega visível do `factsFile`, com status diferente de `proximo`, não tem
+    print com a issue dela. O `hidden` booleano do arquivo de textos prevalece sobre o do coletor.
+  - **Aprovação:** `scrumRoot`, `weekFolderPattern` e `weekShots` entram no bloco aprovado.
+    Ativar o `weekShots` pede nova aprovação.
+  - **Mesmas travas da sincronização do roadmap:** nada fora do `scrumRoot`, sem junção nem link no
+    caminho.
 
 Como esse bloco faz o plugin executar comandos lidos de um arquivo de configuração, nada roda e
 nenhuma chamada é feita antes de você aprovar o bloco exato (endereço, variável, rota e cada
 comando). Qualquer mudança nele pede nova aprovação. Os coletores não recebem o segredo; só o
 comando de envio o recebe, pela variável de ambiente. Este repositório não traz coletor nenhum. O
-utilitário é `python scripts/progress_report.py status|approve|window|collect|push --root <projeto>`.
+utilitário é `python scripts/progress_report.py status|approve|window|collect|shots|push --root <projeto>`.
 
 ### Teste de navegador e verificações (opcional)
 
