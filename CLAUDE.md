@@ -1,4 +1,4 @@
-# Piloto Frontlights
+# Frontlights
 
 Plugin independente para Claude Code, antes chamado Workflows. Entrada:
 `/frontlights`. O plugin tem uma única skill, `skills/frontlights/SKILL.md`, que

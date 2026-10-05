@@ -105,9 +105,14 @@ quote the helper's English messages only when useful.
      - Next steps: what comes next, in order.
      - Leave out internal items (tooling, refactors, housekeeping) unless the user asks for them.
 6. **Prints.** Where they go depends on `status`:
-   - `weekShots` reported: the prints live in the week folder. Run `shots --from <from>` with the
-     `from` that `window` printed; it creates the folder when missing and prints it as `shotsDir` (the
-     folder of the Monday after the period, when the summary is presented). Use only that path.
+   - `weekShots` reported: the prints live in the folder of this summary. Run `shots --to <to>` with the
+     `to` that `window` printed (the last day of the period, inclusive); add `--meeting <weekMeeting>` with the
+     `weekMeeting` that `window` printed only when the period is the window of that answer, never for a period
+     you chose yourself. It creates the folder when missing and prints it as `shotsDir`: one folder per summary,
+     named by the day the period ends (`<dd_MM>`), inside the folder of the Monday after the week of that last
+     day, when the summary is presented. Use only that path. `--from` no longer names the folder and is refused.
+     Tell the user about any `warnings` that `window` printed (a `weekMeeting` that differs from the plugin's own
+     calculation) before saving the prints.
    - `shotsDir` reported: the prints live in that folder inside the project.
    - Neither: offer prints only through `--shot`/`--caption` in step 8 and say that the project did
      not configure a folder.
@@ -142,8 +147,9 @@ quote the helper's English messages only when useful.
 8. **Approve and push.** Ask with `AskUserQuestion` whether to send this draft to RoadS (send, revise,
    do not send). Only after an explicit "send" run `push --draft <file>` and nothing more: the project's push
    command picks the prints from `shotsDir` itself (its `captions.json` and the images it lists). With
-   `weekShots`, run `push --draft <file> --from <from>` instead: the helper checks `captions.json`, every
-   image and the rule of one print per visible delivery, and passes the week folder to the push command
+   `weekShots`, run `push --draft <file> --to <to>` (and the same `--meeting`, if you used it for `shots`) instead:
+   the helper checks `captions.json`, every
+   image and the rule of one print per visible delivery, and passes the summary folder to the push command
    as `{shotsDir}` (which the config must give as a whole argument). A refusal names the missing issues; go back to step 6 for them. Add
    `--shot <file> --caption <text>` only when the config has neither `shotsDir` nor `weekShots`, once
    per screenshot the user approved. The sign-in line of the e-mail comes from the project's local files, never from the

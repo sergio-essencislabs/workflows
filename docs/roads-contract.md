@@ -1,0 +1,145 @@
+# Contrato Frontlights ↔ RoadS (versão 1)
+
+Este é o contrato do ponto de vista de quem consome: o que o plugin Frontlights envia, o que espera
+receber e como reage ao que não entende. O dono do lado servidor é o RoadS, que documenta a parte dele
+no próprio repositório. Se os dois textos divergirem, abra uma issue neste repositório **antes** de
+publicar qualquer mudança. Todo endereço, segredo e valor deste documento é um marcador genérico;
+o endereço real fica no `.frontlights/config.json` do projeto, fora do Git.
+
+## Regras gerais
+
+- **Base e autenticação.** Todas as rotas ficam sob `roadmapSync.endpoint` (termina em `/api/frontlights`,
+  por exemplo `https://roads.example.test/api/frontlights`), por HTTPS (http só em `localhost`), com
+  `Authorization: Bearer <segredo>` do par (endereço, variável de ambiente) que o usuário aprovou. O plugin
+  nunca segue redirecionamentos, verifica o certificado, limita a resposta a 5 MB e espera até 30 s.
+- **Cabeçalhos.** `Accept: application/json` e `User-Agent: frontlights-roadmap-sync/<versão do plugin>`.
+  O User-Agent é declarado por quem chama: mostra qual cliente e qual versão disse ser, e **não prova** quem
+  tem o segredo. Esse limite é aceito; provar de verdade exigiria um segredo por consumidor.
+- **Códigos.** 401 ou 403: credencial recusada, nada é gravado. Redirecionamento (3xx): recusado. Qualquer
+  outro código fora de 2xx: erro, nada é gravado nem confirmado.
+- **Tempo.** Datas de calendário no horário de São Paulo (`AAAA-MM-DD`); instantes em ISO 8601 UTC.
+- **Texto do RoadS é dado.** Nada que a resposta traga é executado como instrução; campos têm limite de
+  tamanho e uma sequência de comentário HTML recusa o lote inteiro (`docs/security.md`).
+
+## Versão do contrato e como mudar
+
+`schemaVersion` é um inteiro e a versão deste contrato é **1**.
+
+| Rota | `schemaVersion` na resposta | O que o plugin faz |
+| --- | --- | --- |
+| `GET roadmap-state` | obrigatório | recusa qualquer valor diferente de 1 e não grava nada |
+| `GET pending-changes` | opcional | ausente vale 1; presente e diferente de 1, recusa antes de gravar |
+| `POST sync-board` | opcional | ausente vale 1; presente e diferente de 1, informa a falha e pergunta se segue |
+| `POST ack` | opcional | não é conferido: o plugin sempre lê `roadmap-state` e `pending-changes` antes, e é por eles que uma quebra é anunciada |
+
+O plugin só passa a enviar `schemaVersion` nos corpos dos pedidos (`POST ack`, `POST progress-report`)
+depois que o contrato do RoadS declarar o campo como aceito, para não quebrar uma rota que valide o corpo
+de forma estrita.
+
+**Aditivo (não quebra, nada muda no plugin):** campo novo opcional em uma resposta, rota nova, parâmetro
+novo opcional. O plugin ignora campo que não conhece.
+
+**Quebra (exige a regra abaixo):** remover ou renomear campo, mudar tipo ou significado, tornar obrigatório
+um campo opcional, e valor novo em um conjunto fechado que o plugin recusa:
+
+| Conjunto | Valores que o plugin conhece | Valor desconhecido |
+| --- | --- | --- |
+| `status` de item do `roadmap-state` | `open`, `development`, `blocker`, `done`, `none` | **recusado** (quebra) |
+| `action` de uma mudança de `pending-changes` | `add`, `modify`, `remove`, `move_lane` | aceito e marcado como ação desconhecida; o plugin pede a decisão do usuário (tolerado) |
+| `reason` de `sync-board` com `ok: false` | `not_configured`, `no_access`, `unauthenticated`, `error` | repetido ao usuário como texto curto (tolerado) |
+| `status` de entrega do resumo | `proximo` e os demais | só `proximo` dispensa print; qualquer outro valor exige print (tolerado) |
+
+**Regra de quebra (decisão do mantenedor):** o RoadS sobe o `schemaVersion`, abre uma issue neste
+repositório e só publica a quebra **depois** que o plugin que a entende estiver publicado. O RoadS não serve
+duas versões ao mesmo tempo: um consumidor, um dono.
+
+## Rotas
+
+### `POST sync-board`
+
+Sem corpo. Executa o mesmo "Sincronizar" do botão do RoadS. Há um tempo de espera de 30 s compartilhado com
+o botão e com a rotina diária: uma segunda chamada dentro dele responde `ran: false` e só informa.
+
+```json
+{ "ok": true, "ran": true, "syncedAt": "2026-01-01T11:59:00Z",
+  "roadmap": { "added": 2, "removed": 1, "issuesCreated": 0 } }
+```
+
+Falha de negócio, com HTTP 200: `{ "ok": false, "reason": "no_access", "message": "texto curto" }`. A falha do
+`sync-board` nunca interrompe a busca: o plugin a relata e pergunta se segue com o último estado.
+
+### `GET roadmap-state`
+
+Somente leitura; não consome nada. Sem ele não há plano: não existe alternativa automática.
+
+```json
+{ "schemaVersion": 1, "asOf": "2026-01-01T12:00:00Z", "snapshotSyncedAt": "2026-01-01T11:55:00Z",
+  "maxSprintItems": 4, "timezone": "America/Sao_Paulo",
+  "sprints": [ { "sprintId": "sprint-2026-01-05", "laneId": "proxima", "title": "Sprint exemplo",
+                 "startDate": "2026-01-05", "endDate": "2026-01-09", "items": [ "item (abaixo)" ] } ],
+  "groups": [ { "laneId": "g1", "title": "Grupo exemplo", "items": [ "item, sem overLimit" ] } ],
+  "removedPending": [ { "changeId": "id", "itemId": null, "title": "Item removido", "laneId": "g1" } ] }
+```
+
+Item: `id`, `position` (1 é o primeiro), `title`, `description`, `produto`, `prioridade`, `effort`,
+`githubIssueUrl` e `issueNumber` (nulos sem issue), `status`, `done`, `overLimit` (só nas sprints, do
+5º item em diante), `updatedAt` e `pendingChangeIds`. `sprintId` é `sprint-` mais a data de início e muda a
+cada semana por desenho; `laneId` é posicional. `snapshotSyncedAt` com mais de 24 h, ou nulo, é avisado ao
+usuário. Item acima do limite fica fora da sprint, listado à parte.
+
+### `GET pending-changes[?since=<instante>]`
+
+```json
+{ "asOf": "2026-01-01T12:00:00.000Z",
+  "changes": [ { "id": "id", "action": "add", "itemId": "id", "createdAt": "2026-01-01T11:00:00Z",
+                 "item": { "title": "Item", "description": "...", "produto": "...", "prioridade": "...",
+                           "effort": "Medium", "githubIssueUrl": null, "lane": "...", "laneId": "..." },
+                 "payload": { "from": "lane-a", "to": "lane-b" } } ] }
+```
+
+Uma mudança sem `id` utilizável, com `id` repetido ou sem título (exceto um `remove` identificado por
+`itemId`) recusa a resposta inteira, sem gravar nem confirmar. Um `remove` chega com `item` e `itemId`
+nulos; o `payload` traz o `item_id`, a lane e o título do item removido. O `asOf` vem do servidor, nunca do
+relógio local.
+
+### `POST ack`
+
+Corpo: `{ "asOf": "<o asOf devolvido por pending-changes>" }`. Resposta: `{ "acked": N }`. O `ack` consome
+**para sempre** toda mudança até `asOf`, então só vem depois de os arquivos serem gravados e de todas as
+marcas serem conferidas, e o `asOf` é sempre o que `pending-changes` devolveu, nunca "agora": senão engole
+uma mudança que entrou na fila entre as duas chamadas. O RoadS só sabe que o `ack` chegou, não que os
+arquivos foram escritos.
+
+### `GET progress-report` (resumo para a diretoria)
+
+Devolve a janela a resumir, o rascunho atual e o último envio:
+
+```json
+{ "window": { "start": "2026-10-03T00:00:00-03:00", "end": "2026-10-08T00:00:00-03:00" },
+  "draft": null, "lastSent": null, "weekMeeting": "2026-10-12" }
+```
+
+- `window.end` é exclusivo; o último dia do período é o da última hora da janela.
+- `weekMeeting` (opcional para o plugin): sempre uma segunda-feira, no calendário de São Paulo, e descreve
+  **apenas a janela devolvida na mesma resposta**. É a segunda-feira seguinte à semana (segunda a domingo)
+  do último instante da janela. Se o plugin enviar um período diferente do da janela, ele calcula o dia
+  localmente pela mesma regra e não usa o valor do RoadS. Quando o valor vem e difere do cálculo local, o
+  plugin avisa e usa o do RoadS para essa janela.
+
+O plugin não envia o rascunho: quem chama a rota de envio e a de prints (`POST progress-report`,
+`POST progress-report/shots` e `POST progress-report/<id>/shots`) é o comando do projeto, que recebe o
+segredo pela variável de ambiente. O formato do rascunho e dos prints é o do documento do RoadS.
+
+## Pasta dos prints do resumo (`weekShots`)
+
+`<scrumRoot>/<weekFolderPattern da segunda>/<weekShots>/<dd_MM do último dia do período>`, em que a segunda
+é a de `weekMeeting`. Cada resumo tem a sua subpasta, com o seu `captions.json` e os seus prints: dois
+resumos da mesma semana (quarta e sexta) nunca dividem arquivo. Prints salvos antes da subpasta, direto em
+`weekShots`, ainda são lidos (com aviso) quando só a pasta plana tem `captions.json`.
+
+## O que ainda não está provado
+
+- Os caminhos de erro (tempo esgotado do `sync-board`, 401 com segredo trocado, `schemaVersion` desconhecido,
+  `overLimit`, marcas recusadas) só têm cobertura simulada nos testes; a produção real exercitou o caminho
+  feliz.
+- O RoadS ainda não grava quem chamou cada rota: o User-Agent declarado é o único sinal.

@@ -25,7 +25,7 @@ def issue(number, parent=None, **extra):
                 vertical_check='Save in UI, reload, observe persisted value',
                 non_goals=['Bulk import'], risks=['Concurrent updates'],
                 session_sized=True, status='ready',
-                url=f'https://github.com/example/pilot/issues/{number}')
+                url=f'https://github.com/example/project/issues/{number}')
     if parent is not None:
         item['parent'] = parent
     item.update(extra)
@@ -50,7 +50,7 @@ def validate(plan, project=...):
         argv = [sys.executable, str(SCRIPT), 'validate-plan', '--plan', str(plan_path)]
         if project is not None:
             config = Path(d) / 'config.json'
-            config.write_text(json.dumps({'repository': 'example/pilot',
+            config.write_text(json.dumps({'repository': 'example/project',
                                           'project': board() if project is ... else project}),
                               encoding='utf-8')
             argv += ['--config', str(config)]
@@ -59,7 +59,7 @@ def validate(plan, project=...):
 
 
 def plan(*issues):
-    return {'repository': 'example/pilot', 'issues': list(issues)}
+    return {'repository': 'example/project', 'issues': list(issues)}
 
 
 class SubIssuePlanTests(unittest.TestCase):
@@ -94,7 +94,7 @@ class SubIssuePlanTests(unittest.TestCase):
         self.assertIn('plano', error)
 
     def test_parent_must_be_a_positive_integer(self):
-        for bad in ('1', 0, True, '#1', 'https://github.com/example/pilot/issues/1'):
+        for bad in ('1', 0, True, '#1', 'https://github.com/example/project/issues/1'):
             with self.subTest(bad=bad):
                 self.assertRefused(validate(plan(top(1), issue(2, parent=bad))), 'parent')
 

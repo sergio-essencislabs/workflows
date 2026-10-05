@@ -145,7 +145,7 @@ restarting the host brings back the `claude rc` guidance.
 ## After a restart or disconnection
 
 Tell the user to repeat the host command (`claude rc`) in each project folder, as
-in step 4. One pilot on one machine, after closing Claude and restarting Windows
+in step 4. One test on one machine, after closing Claude and restarting Windows
 for an update, showed all three sessions returning synchronized on phone and
 desktop this way; say it is an observation, not a guarantee.
 
@@ -157,5 +157,5 @@ verified here, and never plan around it. Never reuse an earlier confirmation.
 
 The survival figures above (about ninety seconds locked on battery, about twenty
 seconds for hosts started from a scheduled task or background logon) and the
-single-dash behaviour are observations from earlier pilots on one machine, not
+single-dash behaviour are observations from earlier tests on one machine, not
 guarantees. Say so when you cite them.

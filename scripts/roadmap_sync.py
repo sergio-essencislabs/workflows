@@ -526,10 +526,21 @@ def issue_target(ctx_targets, produto):
     return None
 
 
+def route_schema_version(payload, route):
+    """A route that carries schemaVersion must carry the one this Frontlights understands. A missing
+    field is the implicit version 1 of the routes that predate it (docs/roads-contract.md)."""
+    if isinstance(payload, dict) and 'schemaVersion' in payload:
+        version = payload['schemaVersion']
+        require(isinstance(version, int) and not isinstance(version, bool) and version == STATE_SCHEMA_VERSION,
+                f'RoadS answered {route} with a schemaVersion that is not {STATE_SCHEMA_VERSION}, the only one understood. '
+                'Nothing was written or acknowledged; update Frontlights or take it to the RoadS owner.')
+
+
 def normalise_changes(payload, issue_targets=None):
     """Defensive normalisation of the pending-changes answer. Unknown fields are dropped. A change
     without a usable id is refused (it could never be marked and the ack would still consume it),
     and so is one without a title unless it is a remove identified by its itemId."""
+    route_schema_version(payload, 'pending-changes')
     require(isinstance(payload, dict) and isinstance(payload.get('changes'), list), 'RoadS answered without a changes array')
     changes, seen = [], set()
     for change in payload['changes']:
@@ -739,6 +750,7 @@ def board_result(text):
     failed is reported, and the user decides whether to go on with the last state."""
     try:
         answer = json.loads(text)
+        route_schema_version(answer, 'sync-board')
         require(isinstance(answer, dict) and isinstance(answer.get('ok'), bool), 'not the contract JSON')
         if not answer['ok']:
             reason = answer.get('reason')
@@ -756,9 +768,12 @@ def board_result(text):
         if roadmap.get('error'):
             result['error'] = safe_string(roadmap['error'], 'sync-board roadmap.error', FIELD_LIMITS['error'])
         return result
-    except (ValueError, Refusal):
+    except (ValueError, Refusal) as error:
+        # Only our own schemaVersion text is repeated; anything else RoadS sent stays out of the message.
+        version_problem = isinstance(error, Refusal) and 'schemaVersion' in str(error)
         return {'ok': False, 'ran': False, 'reason': 'invalid_response',
-                'message': 'RoadS answered sync-board outside the contract (not JSON, another shape, or an HTML comment sequence)'}
+                'message': str(error) if version_problem else
+                'RoadS answered sync-board outside the contract (not JSON, another shape, or an HTML comment sequence)'}
 
 
 # ---------------------------------------------------------------- transport
@@ -768,12 +783,22 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def user_agent():
+    """`frontlights-roadmap-sync/<plugin version>`, so the service can tell the plugin's calls from any other."""
+    try:
+        manifest = json.loads((Path(__file__).resolve().parents[1] / '.claude-plugin' / 'plugin.json').read_text(encoding='utf-8'))
+        version = manifest.get('version')
+    except (OSError, ValueError):
+        version = None
+    return 'frontlights-roadmap-sync' + (f'/{version}' if isinstance(version, str) and re.fullmatch(r'\d+\.\d+\.\d+', version) else '')
+
+
 def http_default(method, url, headers, body):
     """Redirects are never followed, so the Authorization header cannot reach another host; a 3xx
     comes back as a status and is refused. Certificates are verified; the response is capped."""
     data = body.encode('utf-8') if body is not None else None
     request = urllib.request.Request(url, data=data, method=method,
-                                     headers={**headers, 'Accept': 'application/json', 'User-Agent': 'frontlights-roadmap-sync',
+                                     headers={**headers, 'Accept': 'application/json', 'User-Agent': user_agent(),
                                               **({'Content-Type': 'application/json'} if data is not None else {})})
     opener = urllib.request.build_opener(NoRedirect, urllib.request.HTTPSHandler(context=ssl.create_default_context()))
     try:

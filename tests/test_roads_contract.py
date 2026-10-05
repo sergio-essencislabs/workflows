@@ -1,0 +1,98 @@
+"""`docs/roads-contract.md` descreve o que o plugin realmente faz: os conjuntos fechados e a regra de versão
+do texto batem com o código, e o documento só traz marcadores genéricos (repositório público).
+
+Seam: o texto do contrato contra as constantes e as funções públicas de `roadmap_sync` e `progress_report`.
+"""
+import re
+import sys
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
+import progress_report as pr
+import roadmap_sync as rs
+
+DOC = (ROOT / 'docs' / 'roads-contract.md').read_text(encoding='utf-8')
+
+
+def table_row(label):
+    """The cells of the table row that starts with `label` (backticks stripped)."""
+    for line in DOC.splitlines():
+        cells = [cell.strip().replace('`', '') for cell in line.strip().strip('|').split('|')]
+        if line.startswith('|') and cells and cells[0].replace('`', '').startswith(label):
+            return cells
+    raise AssertionError(f'a linha {label!r} não está no contrato')
+
+
+class ClosedSetsTests(unittest.TestCase):
+    def test_item_statuses_match_the_code_and_an_unknown_one_is_refused(self):
+        cells = table_row('status de item')
+        self.assertEqual(set(re.findall(r'[a-z_]+', cells[1])), set(rs.ITEM_STATUSES))
+        self.assertIn('recusado', cells[2])
+
+    def test_actions_match_the_code_and_an_unknown_one_is_tolerated(self):
+        cells = table_row('action de uma mudança')
+        self.assertEqual(set(re.findall(r'[a-z_]+', cells[1])), set(rs.ACTIONS))
+        self.assertIn('tolerado', cells[2])
+        change = {'id': 'c1', 'action': 'archive', 'item': {'title': 'T'}}
+        self.assertFalse(rs.normalise_changes({'changes': [change]})[0]['knownAction'])
+
+    def test_the_version_is_one_and_the_table_covers_every_route_that_carries_it(self):
+        self.assertEqual(rs.STATE_SCHEMA_VERSION, 1)
+        self.assertIn('versão deste contrato é **1**', DOC)
+        for route, expected in (('GET roadmap-state', 'obrigatório'), ('GET pending-changes', 'opcional'),
+                                ('POST sync-board', 'opcional'), ('POST ack', 'opcional')):
+            with self.subTest(route=route):
+                self.assertEqual(table_row(route)[1], expected)
+
+    def test_the_documented_version_rules_are_the_ones_the_code_applies(self):
+        for payload in ({'changes': [], 'schemaVersion': 1}, {'changes': []}):
+            self.assertEqual(rs.normalise_changes(payload), [])
+        with self.assertRaisesRegex(rs.Refusal, 'schemaVersion'):
+            rs.normalise_changes({'changes': [], 'schemaVersion': 2})
+        self.assertEqual(rs.board_result('{"ok": true, "ran": true, "schemaVersion": 1}')['ok'], True)
+        self.assertEqual(rs.board_result('{"ok": true, "ran": true, "schemaVersion": 2}')['reason'], 'invalid_response')
+
+    def test_only_proximo_does_not_need_a_print(self):
+        facts = {'entries': [{'issue': 1, 'status': 'proximo'}, {'issue': 2, 'status': 'novo-valor'}]}
+        missing = pr.deliveries_without_prints(facts, {'entries': []}, [])
+        self.assertEqual(missing, [2])
+        self.assertIn('só `proximo` dispensa print', DOC)
+
+
+class DocumentShapeTests(unittest.TestCase):
+    def test_the_user_agent_is_the_one_the_plugin_sends(self):
+        self.assertRegex(rs.user_agent(), r'^frontlights-roadmap-sync/\d+\.\d+\.\d+$')
+        self.assertIn('frontlights-roadmap-sync/<versão do plugin>', DOC)
+        self.assertIn('não prova', DOC)
+
+    def test_the_week_folder_rule_is_the_one_the_code_applies(self):
+        import datetime as dt
+        self.assertEqual(pr.presentation_monday(dt.date(2026, 10, 7)), dt.date(2026, 10, 12))
+        self.assertEqual(pr.presentation_monday(dt.date(2026, 10, 4)), dt.date(2026, 10, 5))
+        for phrase in ('weekMeeting', 'apenas a janela devolvida', '<dd_MM do último dia do período>',
+                       'nunca dividem arquivo'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, DOC)
+
+    def test_the_break_rule_names_the_order_and_forbids_two_versions(self):
+        for phrase in ('abra uma issue neste repositório', 'depois** que o plugin que a entende estiver publicado',
+                       'não serve\nduas versões ao mesmo tempo'.replace('\n', ' ')):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, ' '.join(DOC.split()))
+
+    def test_only_generic_placeholders_appear(self):
+        hosts = set(re.findall(r'https?://([^/\s"`)]+)', DOC))
+        self.assertEqual(hosts, {'roads.example.test'})
+        self.assertNotRegex(DOC, r'[A-Za-z]:[\\/]+(Users|Software)\b|/(home|Users)/[A-Za-z]')
+        self.assertNotRegex(DOC, r'(?i)bearer [a-z0-9]{12,}')
+
+    def test_the_contract_is_linked_from_the_readme_and_the_protocol(self):
+        for name in ('README.md', 'docs/protocol.md'):
+            with self.subTest(name=name):
+                self.assertIn('roads-contract.md', (ROOT / name).read_text(encoding='utf-8'))
+
+
+if __name__ == '__main__':
+    unittest.main()

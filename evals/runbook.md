@@ -1,8 +1,8 @@
-# Live pilot runbook
+# Live acceptance runbook
 
 Use a separate disposable GitHub repository/project with actual configured RoadS
-planning input. Its creation and mutations require the user's explicit scope.
-Do not use GuardianS or a production repository as a fixture. Record run timestamp,
+planning input, or a real project the user names for it. Creation and mutations require
+the user's explicit scope. Do not use a production environment as a fixture. Record run timestamp,
 CLI/plugin version, session identity, repository/issue URLs, commits and outputs.
 
 1. Load with `--plugin-dir`, inspect `/help`, invoke `/frontlights` and
@@ -33,7 +33,8 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
    destructive commands. Verify native controls stop these, not just helper
    predicates. Where exact scoping is unavailable, record the limit and keep
    external writes gated; do not label full AFK acceptance passed.
-10. Restart without the plugin and verify GuardianS and project data remain intact.
+10. Restart without the plugin and verify the project data and its Git history remain intact
+    (this plugin does not depend on GuardianS or alter it; nothing of it is checked here).
 11. Learning mode. Answer "Ligado" to "Ativar o modo aprendizado?" in the same
     call as the depth. Confirm `references/learning.md` was read before the first
     explanation, and that each technical question is preceded by chat text with
@@ -72,5 +73,6 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     endpoint and confirm the row is identical after the undo. Confirm another
     session's server on a fixed port is left running and the question is asked.
 
-Only after all required checks pass, present the linked evidence and separately
-ask about default-workflow switching and GuardianS deactivation via AskUserQuestion.
+Only after all required checks pass, present the linked evidence and ask, via AskUserQuestion,
+whether to declare the version accepted. Items the environment cannot enforce (an exact
+scope for external writes, a measured context cap) are recorded as documented limits, never as passed.

@@ -211,13 +211,17 @@ class Progress:
             summary.update(weekShots=self.week_shots, scrumRoot=self.scrum_root, weekFolderPattern=self.week_pattern)
         return summary
 
-    def week_folder(self, date_from):
-        """`<scrumRoot>/<weekFolderPattern>/<weekShots>` of the Monday after the week of `date_from`: the
-        summary of a week is presented on the next Monday, and its prints live in that week's folder."""
-        first = parse_date(date_from, '--from')
-        monday = first - dt.timedelta(days=first.weekday()) + dt.timedelta(days=7)
+    def week_folder(self, date_to, meeting=None):
+        """Where the prints of the summary whose period ends on `date_to` live: `<weekFolderPattern>/<weekShots>/<dd_MM>`
+        of the Monday after the week of that last day (the summary is presented on the next Monday), one folder
+        per summary so two summaries of one week never share a captions.json. `meeting` is the presentation Monday
+        the service sent for this same period; without it the plugin computes the day itself. Returns the Monday,
+        the `<weekShots>` folder (where the prints were saved before the day folder existed) and the day folder."""
+        last = parse_date(date_to, '--to')
+        monday = presentation_monday(last) if meeting is None else meeting
         folder = rs.expand_pattern(self.week_pattern, monday, monday + dt.timedelta(days=4))
-        return monday, folder.rstrip('/\\') + '/' + self.week_shots
+        parent = folder.rstrip('/\\') + '/' + self.week_shots
+        return monday, parent, f'{parent}/{last.day:02d}_{last.month:02d}'
 
     def facts_path(self):
         path = Path(self.facts_file)
@@ -326,6 +330,18 @@ def register_secret(progress):
         pass
 
 
+def presentation_monday(last_day):
+    """A summary is presented on the Monday after the week (Monday to Sunday) of the last day of its period."""
+    return last_day - dt.timedelta(days=last_day.weekday()) + dt.timedelta(days=7)
+
+
+def parse_meeting(value, flag):
+    """A presentation Monday, as the service's `weekMeeting` or the caller's `--meeting`."""
+    day = parse_date(value, flag)
+    require(day.weekday() == 0, f'{flag} must be a Monday')
+    return day
+
+
 def parse_date(value, flag):
     require(isinstance(value, str) and re.fullmatch(DATE_PATTERN, value), f'{flag} must be a date as YYYY-MM-DD')
     try:
@@ -424,10 +440,25 @@ def op_window(root, transport):
     if last_sent:
         period = last_sent.get('period') if isinstance(last_sent.get('period'), (str, dict)) else (scalars(last_sent, 'period') or None)
     pushed_at = draft.get('pushed_at') if draft else None
-    return {'ok': True, 'exitCode': 0, 'start': start.isoformat(), 'end': end.isoformat(),
-            'from': start.date().isoformat(), 'to': last_day.isoformat(), 'draftExists': draft is not None,
-            'draftPushedAt': pushed_at[:64] if isinstance(pushed_at, str) else None, 'lastSentPeriod': period,
-            'message': f'Collect {start.date().isoformat()} to {last_day.isoformat()}.'}
+    # `weekMeeting` describes only the window of this answer. The plugin computes the same day itself and, when
+    # the service sent one, it wins for this window; a difference is reported, never hidden.
+    local_meeting, meeting, warnings = presentation_monday(last_day), None, []
+    if 'weekMeeting' in body:
+        meeting = parse_meeting(body['weekMeeting'], 'the weekMeeting sent by the route')
+        if meeting != local_meeting:
+            warnings.append(f'weekMeeting {meeting.isoformat()} from the route differs from {local_meeting.isoformat()}, '
+                            'the Monday after the week of the last day; the route value is used for this window. '
+                            'Tell the user before saving the prints.')
+    meeting = meeting or local_meeting
+    result = {'ok': True, 'exitCode': 0, 'start': start.isoformat(), 'end': end.isoformat(),
+              'from': start.date().isoformat(), 'to': last_day.isoformat(), 'draftExists': draft is not None,
+              'draftPushedAt': pushed_at[:64] if isinstance(pushed_at, str) else None, 'lastSentPeriod': period,
+              'weekMeeting': meeting.isoformat(), 'weekMeetingLocal': local_meeting.isoformat(),
+              'summaryFolder': f'{last_day.day:02d}_{last_day.month:02d}',
+              'message': f'Collect {start.date().isoformat()} to {last_day.isoformat()}.'}
+    if warnings:
+        result['warnings'] = warnings
+    return result
 
 
 def op_collect(root, date_from, date_to):
@@ -525,18 +556,37 @@ def deliveries_without_prints(facts, texts, captions):
     return missing
 
 
-def op_shots(root, date_from):
-    """The week folder the prints go to, created when missing. Run before capturing."""
+def week_arguments(date_from, meeting):
+    """`--from` named the folder before the day folder existed; it is refused so a stale call cannot pick the wrong week."""
+    require(date_from is None, '--from no longer names the folder: pass --to, the last day of the period (inclusive), '
+                               'and --meeting only when the period is the window of the last `window` answer')
+    return parse_meeting(meeting, '--meeting') if meeting is not None else None
+
+
+def op_shots(root, date_to, date_from=None, meeting=None):
+    """The folder of this summary's prints, created when missing. Run before capturing."""
     progress = Progress(root)
     require(progress.week_shots is not None, 'roadmapSync.progress has no weekShots; the prints go to shotsDir')
     assert_approved(progress)
-    monday, relative = progress.week_folder(date_from)
+    monday, _, relative = progress.week_folder(date_to, week_arguments(date_from, meeting))
     folder = rs.safe_folder(progress.scrum_root, relative, create=True)
     return {'ok': True, 'exitCode': 0, 'shotsDir': folder, 'presentedOn': monday.isoformat(),
             'message': f'Save the prints and captions.json in {folder}.'}
 
 
-def op_push(root, draft, shots, captions, date_from=None):
+def prints_folder(progress, parent, day):
+    """The day folder, or the flat `weekShots` folder of the prints saved before the day folder existed when only
+    that one has a captions.json (with a warning). Links and paths leaving scrumRoot are refused either way."""
+    day_full = rs.contained_path(progress.scrum_root, day)
+    flat_full = rs.contained_path(progress.scrum_root, parent)
+    if not os.path.isfile(os.path.join(day_full, 'captions.json')) and os.path.isfile(os.path.join(flat_full, 'captions.json')):
+        return rs.safe_folder(progress.scrum_root, parent), [
+            'Used the flat folder of the week, where the prints were saved before each summary had its own day folder; '
+            'move them into the day folder (shots) for the next summary.']
+    return rs.safe_folder(progress.scrum_root, day), []
+
+
+def op_push(root, draft, shots, captions, date_to=None, date_from=None, meeting=None):
     progress = Progress(root)
     assert_approved(progress)
     require(draft, '--draft is required')
@@ -544,12 +594,13 @@ def op_push(root, draft, shots, captions, date_from=None):
     require(draft_path.is_file(), '--draft does not name an existing file')
     shots, captions = list(shots or []), list(captions or [])
     values = {'draft': str(draft_path)}
+    folder_warnings = []
     if progress.week_shots is not None:
         # The push command reads the prints from the week folder itself; this checks them first, so a summary
         # that misses a print, or carries a file that is not a small image, never leaves this computer.
         require(not shots and not captions, 'with weekShots the prints come from the week folder; do not pass --shot or --caption')
-        _, relative = progress.week_folder(date_from)
-        folder = rs.safe_folder(progress.scrum_root, relative)
+        _, parent, day = progress.week_folder(date_to, week_arguments(date_from, meeting))
+        folder, folder_warnings = prints_folder(progress, parent, day)
         listed = validated_captions(folder)
         missing = deliveries_without_prints(read_json_file(progress.facts_path(), 'the facts file (factsFile)'),
                                             read_json_file(draft_path, 'the draft'), listed)
@@ -572,6 +623,8 @@ def op_push(root, draft, shots, captions, date_from=None):
     outcome = execute(argv, str(progress.root), progress.push_timeout, environment)
     result = {'commandExitCode': outcome['exitCode'], 'timedOut': outcome['timedOut'], 'seconds': outcome['seconds'],
               'stdoutTail': outcome['stdoutTail'], 'stderrTail': outcome['stderrTail'], 'truncated': outcome['truncated']}
+    if folder_warnings:
+        result['warnings'] = folder_warnings
     if outcome['exitCode'] == 0:
         return {'ok': True, 'exitCode': 0, **result, 'message': 'The push command finished; its output has the review link.'}
     if outcome['timedOut']:
@@ -582,7 +635,7 @@ def op_push(root, draft, shots, captions, date_from=None):
     return {'ok': False, 'exitCode': 1, **result, 'message': f'The push command {why}; nothing was sent.'}
 
 
-def run(operation, root='.', transport=None, date_from=None, date_to=None, draft=None, shots=(), captions=()):
+def run(operation, root='.', transport=None, date_from=None, date_to=None, draft=None, shots=(), captions=(), meeting=None):
     transport = transport or rs.http_default
     try:
         if operation == 'status':
@@ -594,9 +647,9 @@ def run(operation, root='.', transport=None, date_from=None, date_to=None, draft
         elif operation == 'collect':
             result = op_collect(root, date_from, date_to)
         elif operation == 'shots':
-            result = op_shots(root, date_from)
+            result = op_shots(root, date_to, date_from, meeting)
         elif operation == 'push':
-            result = op_push(root, draft, shots, captions, date_from)
+            result = op_push(root, draft, shots, captions, date_to, date_from, meeting)
         else:
             raise Refusal(f'Unknown operation: {operation}')
     except (Refusal, ValueError, OSError, KeyError, TypeError) as error:
@@ -614,14 +667,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('operation', choices=OPERATIONS)
     parser.add_argument('--root', default='.', help='project whose .frontlights/config.json declares roadmapSync.progress')
-    parser.add_argument('--from', dest='date_from', help="first day to collect, YYYY-MM-DD (collect); the window's first day (shots, push with weekShots)")
-    parser.add_argument('--to', dest='date_to', help='last day to collect, inclusive, YYYY-MM-DD (collect)')
+    parser.add_argument('--from', dest='date_from', help='first day to collect, YYYY-MM-DD (collect)')
+    parser.add_argument('--to', dest='date_to', help='last day of the period, inclusive, YYYY-MM-DD (collect; shots and push with weekShots)')
+    parser.add_argument('--meeting', help='the presentation Monday the route sent as weekMeeting, YYYY-MM-DD; only when the period is the window of the last window answer (shots, push)')
     parser.add_argument('--draft', help='path of the draft file the push command reads (push)')
     parser.add_argument('--shot', action='append', default=[], help='screenshot to attach; repeatable (push)')
     parser.add_argument('--caption', action='append', default=[], help="caption of the matching --shot, in order (push)")
     args = parser.parse_args()
     result = run(args.operation, args.root, date_from=args.date_from, date_to=args.date_to, draft=args.draft,
-                 shots=args.shot, captions=args.caption)
+                 shots=args.shot, captions=args.caption, meeting=args.meeting)
     print(render(result))
     return int(result['exitCode'])
 

@@ -2,7 +2,7 @@
 
 Seams: o planejador (`frontlights.schedule`) e a validação do plano com filhas, mais o texto
 da skill, das referências, do modelo de issue e da documentação (o script não executa as
-etapas, então as regras de fluxo só se provam pelo texto e pela revisão manual de `evals/pilot.md`).
+etapas, então as regras de fluxo só se provam pelo texto e pela revisão manual de `evals/runbook.md`).
 """
 import copy
 import re
@@ -25,7 +25,7 @@ def member(number, paths, dependencies=(), parent=None):
                 vertical_check='Save in UI, reload, observe persisted value',
                 non_goals=['Bulk import'], risks=['Concurrent updates'],
                 session_sized=True, status='ready',
-                url=f'https://github.com/example/pilot/issues/{number}')
+                url=f'https://github.com/example/project/issues/{number}')
     if parent is not None:
         item['parent'] = parent
     return item
@@ -33,7 +33,7 @@ def member(number, paths, dependencies=(), parent=None):
 
 def family():
     """Pai 1; filhas 2, 3 e 4 dependem dele e não se sobrepõem; a 5 sobrepõe a 2; a 6 só pertence ao pai."""
-    return {'repository': 'example/pilot', 'issues': [
+    return {'repository': 'example/project', 'issues': [
         member(1, ['src/feature']),
         member(2, ['src/feature/a'], [1], parent=1),
         member(3, ['src/feature/b'], [1], parent=1),
@@ -257,7 +257,7 @@ class PublicRepositoryTests(unittest.TestCase):
     def test_the_new_rules_carry_no_machine_path(self):
         names = [SKILL / 'SKILL.md', *(SKILL / 'references').glob('*.md'), ROOT / 'README.md',
                  ROOT / 'templates' / 'issue.md', *(ROOT / 'docs').glob('*.md'),
-                 ROOT / 'evals' / 'pilot.md', ROOT / 'evals' / 'vertical-slices.md',
+                 ROOT / 'evals' / 'runbook.md', ROOT / 'evals' / 'vertical-slices.md',
                  ROOT / 'examples' / 'authorization.json']
         for path in names:
             text = path.read_text(encoding='utf-8')

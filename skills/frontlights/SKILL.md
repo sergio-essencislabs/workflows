@@ -78,6 +78,13 @@ parent's branch (stage 6). Sub-issues born during stage 6, from review or tests,
 follow the Follow-ups ladder of `references/issues.md` and are implemented only
 under an authorization that names them.
 
+**Secrets and numbers.** A filter, log or file listing that may hold credentials (the
+passwords of test accounts included) is masked before it is printed. If one leaks anyway,
+say so at once in one line, record it in the handoff and offer to rotate it; never repeat
+the value. Every number published in an issue, a report or a comment (a count, a
+percentage, a total) goes with the predicate or command that produced it, in the same
+text, and is reread before it is posted.
+
 **Show before approval.** Never ask the user to approve a document or plan they
 have not been shown in full in this session. Before each approval: write the
 complete text in the conversation, send the file with the host's file-sending
@@ -310,7 +317,9 @@ implementation authorization, batched when practical. When a sub-issue depends
 on its parent (or on another issue of the family), the same call carries the
 stacking question and offers branches stacked on the dependency's branch,
 recommended first, with the concurrency set to the number of independent children
-whose files do not overlap (`references/development.md`). Identify exact issue IDs,
+whose files do not overlap (`references/development.md`). A family is integrated locally
+and its full suite is green before any of its PRs opens, and a review that the code has
+outgrown (`review-gate`, exit code 2) is redone before anything is reported as reviewed. Identify exact issue IDs,
 repository, worktree base and branch prefix, verification argv, draft PR
 permission, routine issue updates, expiry and stop conditions. Record the answer
 verbatim with a reference; do not self-sign. Local files record consent but

@@ -206,7 +206,10 @@ def write_json_atomic(value, path):
 
 # ---------------------------------------------------------------- configuration
 
-def load_block(config_file):
+def load_block(config_file, need_processes=True):
+    """Read browserTest. `need_processes=False` is for a caller that only checks the accounts: a block that
+    declares no `processes` (the project starts its own environment) then gives back an empty list, while one
+    that declares them wrongly is still refused."""
     try:
         config = json.loads(Path(config_file).read_text(encoding='utf-8-sig'))
     except (OSError, ValueError):
@@ -228,6 +231,11 @@ def load_block(config_file):
                             'um segredo curto não pode ser mascarado com segurança na saída e nos registros. '
                             f'Use um {key} de teste com {MIN_SECRET} ou mais caracteres.', category=USAGE)
                     _SECRETS.extend([value, urllib.parse.quote(value, safe=''), urllib.parse.quote_plus(value)])
+    if 'processes' not in block:
+        require(not need_processes,
+                'O config não declara browserTest.processes: o serve não tem o que subir. Suba o ambiente você mesmo '
+                '(as contas de teste continuam valendo) ou declare os processos em browserTest.processes.', category=USAGE)
+        return []
     processes = block.get('processes')
     require(isinstance(processes, list) and processes, 'browserTest.processes precisa ser uma lista não vazia.')
     names, variables = set(), {}

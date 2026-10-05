@@ -114,6 +114,20 @@ question says so.
 - A conflict on anything beyond the parent's own content already in the base, or a
   dependency closed without being merged, is a stop condition: park the child and ask.
 
+## Integrating a family before its PRs
+
+Each branch passing alone does not prove the family works together: a test of one child
+can assert the very behavior another child changes on purpose, and a clean Git merge
+does not make a green suite. Before any PR of a family with more than one branch is
+opened, integrate it locally: an integration worktree from the parent's branch that
+merges every verified child branch (local only: never pushed, never a PR), then run
+the full relevant suite, the type checks and, when a member turns it on, the browser
+test on it. Findings follow the destination ladder; a fix goes to the branch that owns
+the file, never to the integration branch, and the integration is redone after it.
+The PRs open only after an integration with a green suite, and each branch still needs
+its own current review (`review-gate`). Record the integration worktree, the merged
+HEADs and the results in the handoff. The integration branch is evidence, never delivered.
+
 ## Test-driven development
 
 TDD is the red → green loop. This section is the reference that makes that loop
@@ -208,7 +222,14 @@ When the issue's `## Navegador e testes ligados` turns tests on, follow
 
 Require an independent reviewer to inspect the current diff and test evidence.
 They must not author the changes under review. Bind review to `frontlights.py
-evidence --root <worktree>` hashes/HEAD; any change invalidates review. If no
+evidence --root <worktree>` hashes/HEAD and save that output with the review result
+(`.frontlights/issues/<n>/review.json`). Run `frontlights.py review-gate --root
+<worktree> --review <review.json>` before reporting an issue as reviewed, before
+opening or updating a PR and after every commit: exit code 0 means the review still
+covers the code, exit code 2 means it is stale. Any commit, edit or new file after the
+review makes it stale (bringing a base into the branch included), whatever its size:
+rerun the suite, take new evidence and have the independent reviewer look again. A
+stale review is never reported as reviewed. If no
 independent reviewer is available, report "implemented, awaiting independent
 review", not completed. Do not manufacture reviewer identities or approvals.
 Classify the review's findings, and those of tests and live checks, by the

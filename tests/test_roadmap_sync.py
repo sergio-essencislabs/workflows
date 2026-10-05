@@ -812,5 +812,57 @@ class OverLimitTests(RoadmapSyncTestCase):
         self.assertEqual(result['plan']['maxSprintItems'], 3)
 
 
+class ContractVersionTests(RoadmapSyncTestCase):
+    """docs/roads-contract.md: a route that carries schemaVersion must carry 1; an absent field is
+    the implicit version 1 of the routes that predate it. The ack answer is never judged: the
+    request was already consumed by then, and a breaking change is announced by the routes read first."""
+
+    def pending(self, **extra):
+        return dict(fixture(), **extra)
+
+    def board(self, **extra):
+        return dict(board_fixture(), **extra)
+
+    def test_pending_changes_with_schema_version_one_or_none_are_accepted(self):
+        for label, payload in (('absent', self.pending()), ('one', self.pending(schemaVersion=1))):
+            with self.subTest(label):
+                rs._SECRETS.clear()
+                result, _ = self.approve_and_fetch(payload=payload, discard_staged=True)
+                self.assertTrue(result['ok'], result.get('message'))
+
+    def test_pending_changes_with_another_schema_version_are_refused_before_any_write(self):
+        for label, version in (('two', 2), ('zero', 0), ('text', '1'), ('boolean', True), ('null', None)):
+            with self.subTest(label):
+                rs._SECRETS.clear()
+                result, transport = self.approve_and_fetch(payload=self.pending(schemaVersion=version), discard_staged=True)
+                self.assertFalse(result['ok'])
+                self.assertIn('schemaVersion', result['message'])
+                self.assertNotIn('ack', [c['url'].rsplit('/', 1)[1] for c in transport.calls])
+
+    def test_sync_board_with_another_schema_version_is_reported_and_the_fetch_goes_on(self):
+        result, _ = self.approve_and_fetch(board=self.board(schemaVersion=2))
+        self.assertTrue(result['ok'], result.get('message'))
+        self.assertTrue(result['syncBoardFailed'])
+        self.assertEqual(result['syncBoard']['reason'], 'invalid_response')
+        self.assertIn('schemaVersion', result['syncBoard']['message'])
+
+    def test_sync_board_with_schema_version_one_is_accepted(self):
+        result, _ = self.approve_and_fetch(board=self.board(schemaVersion=1))
+        self.assertFalse(result['syncBoardFailed'])
+
+    def test_the_ack_answer_is_not_judged(self):
+        self.assertTrue(self.run_op('approve')['ok'])
+        fetched = self.run_op('fetch', Transport(*fetch_answers()))
+        self.draft(fetched['plan'])
+        transport = Transport((200, {'acked': 4, 'schemaVersion': 2}))
+        applied = self.run_op('apply', transport)
+        self.assertTrue(applied['ok'], applied.get('message'))
+
+    def test_the_user_agent_names_the_plugin_and_its_version(self):
+        plugin = json.loads((Path(__file__).resolve().parents[1] / '.claude-plugin' / 'plugin.json')
+                            .read_text(encoding='utf-8'))
+        self.assertEqual(rs.user_agent(), f'frontlights-roadmap-sync/{plugin["version"]}')
+
+
 if __name__ == '__main__':
     unittest.main()

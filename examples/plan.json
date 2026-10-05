@@ -1,9 +1,9 @@
 {
-  "repository": "example/pilot",
+  "repository": "example/project",
   "issues": [
     {
       "id": 1,
-      "url": "https://github.com/example/pilot/issues/1",
+      "url": "https://github.com/example/project/issues/1",
       "title": "Save and reload one observation",
       "outcome": "User can save an observation and see it after reload",
       "acceptance": ["Saved text survives reload", "Invalid text produces an actionable error"],
@@ -18,7 +18,7 @@
     },
     {
       "id": 2,
-      "url": "https://github.com/example/pilot/issues/2",
+      "url": "https://github.com/example/project/issues/2",
       "title": "Download a project summary",
       "outcome": "User can download a summary of existing project metadata",
       "acceptance": ["Download contains the current project name and owner"],
@@ -33,7 +33,7 @@
     },
     {
       "id": 3,
-      "url": "https://github.com/example/pilot/issues/3",
+      "url": "https://github.com/example/project/issues/3",
       "title": "Edit an observation with conflict feedback",
       "outcome": "User can edit saved text without silently overwriting concurrent changes",
       "acceptance": ["An accepted edit survives reload", "Stale edits display a conflict"],
@@ -48,7 +48,7 @@
     },
     {
       "id": 4,
-      "url": "https://github.com/example/pilot/issues/4",
+      "url": "https://github.com/example/project/issues/4",
       "parent": 3,
       "title": "Show the conflict message in the user's language",
       "outcome": "A review finding on issue 3: the stale-edit conflict reads in the user's language",

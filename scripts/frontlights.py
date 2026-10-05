@@ -1,4 +1,4 @@
-"""Frontlights pilot: deterministic planning/evidence helpers, never a shell agent.
+"""Frontlights: deterministic planning/evidence helpers, never a shell agent.
 
 Only inspect performs network reads. No command here publishes issues, executes
 tests, grants Claude permissions, or changes a product repository.
@@ -46,7 +46,7 @@ def relative(value):
             all(p not in ('..', '.', '') for p in value.split('/')),
             'ownership must be a normalized relative path')
     require(value == '*' or not any(c in value for c in '*?['),
-            'use concrete ownership paths or * for unknown ownership')
+            f'ownership {value!r} has a glob: name the folder or file (for example src/feature) or use * for unknown ownership')
     return value.casefold().rstrip('/')
 
 
@@ -217,12 +217,17 @@ def body_rules(rules):
     return {name: list(options) for name, options in rules.items()}
 
 
+def is_sub_issue(issue):
+    """A child of an issue of the plan (`parent`) or of a published issue outside it (`parent_external`)."""
+    return issue.get('parent') is not None or issue.get('parent_external') is not None
+
+
 def board_fields(project, issue):
     """Board values for one issue: defaults plus the per-issue choices, with nothing left open.
 
-    A sub-issue (`parent` set) joins the board only through its parent: it takes no values.
+    A sub-issue (`parent` or `parent_external` set) joins the board only through its parent: it takes no values.
     """
-    if issue.get('parent') is not None:
+    if is_sub_issue(issue):
         require('project_fields' not in issue,
                 f'{issue["id"]}: sub-issue não leva project_fields; entra no quadro só pelo pai')
         return {}
@@ -306,7 +311,7 @@ def resolve_board(project, issue):
     labels imply, else the board default."""
     values = board_fields(project, issue)
     rules = board_has_rules(project)
-    if issue.get('parent') is not None:
+    if is_sub_issue(issue):
         require(not (rules and ('labels' in issue or 'body_fields' in issue)),
                 f'{issue["id"]}: sub-issue não leva labels nem body_fields; herda do pai')
         return None
@@ -334,6 +339,9 @@ def board_resolution(plan, project):
     return resolved
 
 
+STATUSES = {'ready', 'running', 'blocked', 'verified', 'proposed'}
+
+
 def validate_plan(plan, project=None):
     require(isinstance(plan, dict) and 'repository' in plan and repository_or_local(plan['repository']),
             'repository must be owner/name, or null for a local project')
@@ -356,11 +364,19 @@ def validate_plan(plan, project=None):
         deps = issue.get('dependencies')
         require(isinstance(deps, list) and all(number(x) for x in deps) and len(deps) == len(set(deps)),
                 'dependencies must be unique integer ids')
-        require(issue.get('status') in {'ready', 'running', 'blocked', 'verified', 'proposed'}, 'invalid status')
+        require(issue.get('status') in STATUSES,
+                f'{issue["id"]}: invalid status {issue.get("status")!r}: use one of {", ".join(sorted(STATUSES))} '
+                '(an issue already published on GitHub is "ready" when its dependencies are met, "blocked" otherwise)')
         if issue.get('parent') is not None:
             require(number(issue['parent']),
                     f'{issue["id"]}: parent precisa ser o id (inteiro positivo) de uma issue deste plano')
             require(issue['parent'] != issue['id'], f'{issue["id"]}: parent não pode ser a própria issue')
+        if 'parent_external' in issue:
+            require(number(issue['parent_external']) and issue['parent_external'] != issue['id'],
+                    f'{issue["id"]}: parent_external precisa ser o número (inteiro positivo, diferente da própria issue) '
+                    'de uma issue já publicada fora deste plano')
+            require(issue.get('parent') is None,
+                    f'{issue["id"]}: parent_external e parent são exclusivos: use parent para uma issue do plano')
         if project is not None:
             resolve_board(project, issue)
         if issue.get('url'):
@@ -476,7 +492,7 @@ def authorize(charter, operation):
     require(kind in {'edit', 'test', 'checkpoint', 'draft_pr', 'issue_update'} and
             kind in charter.get('operations', []), 'operation outside bounded authorization')
     if kind in {'draft_pr', 'issue_update'}:
-        raise ValueError('external write requires native permission; this pilot cannot securely scope generic tools')
+        raise ValueError('external write requires native permission; this plugin cannot securely scope generic tools')
     worktree = Path(operation.get('worktree', '')).resolve(strict=True)
     matches = [w for w in charter.get('worktrees', []) if w.get('issue') == operation['issue'] and
                Path(w['path']).resolve(strict=True) == worktree]
@@ -555,6 +571,27 @@ def git_evidence(root):
             'diff_sha256': hashlib.sha256(diff).hexdigest(),
             'files_sha256': hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest(),
             'files': files}
+
+
+REVIEW_KEYS = ('head', 'branch', 'diff_sha256', 'files_sha256')
+
+
+def review_gate(saved, current):
+    """Whether an independent review still covers the code: `saved` is the `evidence` output taken when the
+    reviewer was bound to it (bare, or under `evidence` or `git` as a checkpoint keeps it), `current` the evidence
+    now. Any difference in HEAD, branch, diff or files makes the review stale, so the author's later commit,
+    edit or new file is never reported as reviewed."""
+    if isinstance(saved, dict) and not all(key in saved for key in REVIEW_KEYS):
+        saved = saved.get('evidence') if isinstance(saved.get('evidence'), dict) else saved.get('git')
+    require(isinstance(saved, dict) and all(isinstance(saved.get(key), str) and saved[key] for key in REVIEW_KEYS),
+            'the review file needs the saved evidence: head, branch, diff_sha256 and files_sha256 '
+            '(the output of the evidence command taken when the review was bound)')
+    changed = [key for key in REVIEW_KEYS if saved[key] != current[key]]
+    before, after = saved.get('files'), current['files']
+    files_changed = sorted(name for name in (set(before) | set(after))
+                           if before.get(name) != after.get(name)) if isinstance(before, dict) else []
+    return {'status': 'stale' if changed else 'current', 'changed': changed, 'files_changed': files_changed,
+            'reviewed_head': saved['head'], 'current_head': current['head']}
 
 
 def drift(snapshot, current):
@@ -638,11 +675,14 @@ def validate_test_blocks(config, path):
 
     Absent or null blocks: nothing is read. The validators read `path`, the file `config` was loaded from (no
     copy of the test password is written anywhere). The refusal text gets the checks mask (test login and
-    password, also percent-encoded), so it never echoes a secret.
+    password, also percent-encoded), so it never echoes a secret. A browserTest that declares only the accounts
+    (the project starts its own environment) is valid: it comes back as a warning, never as a refusal.
+    Returns the list of warnings.
     """
+    warnings = []
     browser, block = config.get('browserTest'), config.get('checks')
     if browser is None and block is None:
-        return
+        return warnings
     require(path is not None, 'browserTest/checks: o inspect precisa do caminho do config para validar os blocos')
     import checks
     import serve
@@ -650,7 +690,11 @@ def validate_test_blocks(config, path):
     try:
         if browser is not None:
             checks.require_maskable_user_secrets(path)
-            serve.load_block(path)
+            if not serve.load_block(path, need_processes=False):
+                warnings.append('browserTest.processes não está declarado: o serve não tem o que subir, então o ambiente precisa '
+                                'estar no ar antes do teste (só as contas e a baseUrl foram conferidas).'
+                                if isinstance(browser, dict) and 'processes' not in browser else
+                                'browserTest.processes está vazio.')
             checks.require_local_declarations(path)
         if block is not None:
             if not isinstance(block, dict):
@@ -663,13 +707,14 @@ def validate_test_blocks(config, path):
             checks.optional_name(block.get('backend'), 'checks.backend')
     except (serve.Refusal, checks.Refused, checks.Infra) as refusal:
         raise ValueError(checks.redact(str(refusal))) from None
+    return warnings
 
 
 def inspect(config, root, config_path=None):
     # A missing key is a typo, not a local project: only an explicit null disables GitHub.
     require('repository' in config and repository_or_local(config['repository']),
             'repository must be owner/name, or null for a local project')
-    validate_test_blocks(config, config_path)
+    warnings = validate_test_blocks(config, config_path)
     repo = config['repository']
     result = {'repository': repo, 'fetched_at': dt.datetime.now(dt.timezone.utc).isoformat(),
               'sources': {}, 'verification_commands': {},
@@ -722,13 +767,15 @@ def inspect(config, root, config_path=None):
             request = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}', 'Accept': 'application/json'})
             with urllib.request.build_opener(NoRedirect).open(request, timeout=20) as response:
                 raw = response.read(2_000_001)
-            require(len(raw) <= 2_000_000, 'RoadS payload exceeds pilot limit')
+            require(len(raw) <= 2_000_000, 'RoadS payload exceeds the size limit')
             result['sources']['roads'] = {'status': 'available', 'source': url, 'data': json.loads(raw)}
         except (ValueError, OSError, KeyError):
             result['sources']['roads'] = {'status': 'unavailable', 'reason': 'RoadS read failed; verify endpoint contract and token locally'}
     package = Path(root) / 'package.json'
     if package.exists():
         result['verification_commands'] = json.loads(package.read_text(encoding='utf-8')).get('scripts', {})
+    if warnings:
+        result['warnings'] = warnings
     return result
 
 
@@ -977,6 +1024,9 @@ def main():
     p.add_argument('--root', default='.')
     p = sub.add_parser('evidence')
     p.add_argument('--root', default='.')
+    p = sub.add_parser('review-gate')
+    p.add_argument('--root', default='.')
+    p.add_argument('--review', required=True, help='saved evidence output taken when the independent review was bound')
     p = sub.add_parser('monitoring')
     p.add_argument('--root', default='.')
     p.add_argument('--since', help='ISO 8601 session start; marks older hosts')
@@ -994,6 +1044,7 @@ def main():
     p.add_argument('--snapshot', required=True)
     p.add_argument('--current', required=True)
     args = parser.parse_args()
+    code = 0
     try:
         if args.command == 'validate-plan':
             project = load(args.config).get('project') if args.config else None
@@ -1012,6 +1063,9 @@ def main():
             result = inspect(load(args.config), args.root, args.config)
         elif args.command == 'evidence':
             result = git_evidence(args.root)
+        elif args.command == 'review-gate':
+            result = review_gate(load(args.review), git_evidence(args.root))
+            code = 0 if result['status'] == 'current' else 2
         elif args.command == 'monitoring':
             result = monitoring(args.root, args.since)
         elif args.command == 'update-check':
@@ -1023,7 +1077,7 @@ def main():
         else:
             result = {'discrepancies': drift(load(args.snapshot), load(args.current))}
         print(json.dumps(result, indent=2, ensure_ascii=True))
-        return 0
+        return code
     except (ValueError, OSError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({'error': str(exc)}), file=sys.stderr)
         return 1

@@ -49,11 +49,11 @@ def issue(number, **extra):
 
 
 def plan(*issues):
-    return {'repository': 'example/pilot', 'issues': list(issues) or [issue(1)]}
+    return {'repository': 'example/project', 'issues': list(issues) or [issue(1)]}
 
 
 def normalised(**overrides):
-    return frontlights.board(project(**overrides), 'example/pilot')
+    return frontlights.board(project(**overrides), 'example/project')
 
 
 class RefusalMixin:
@@ -97,12 +97,12 @@ class LabelRuleTests(RefusalMixin, unittest.TestCase):
         board = project(labels={'require_prefix': ['kind:'],
                                 'by_field': {'Area': {'Backend': ['area:backend']}, 'Priority': {'Low': ['area:frontend']}}})
         with self.assertRaisesRegex(ValueError, 'of one family'):
-            frontlights.resolve_board(frontlights.board(board, 'example/pilot'), issue(
+            frontlights.resolve_board(frontlights.board(board, 'example/project'), issue(
                 1, project_fields={'Area': 'Backend', 'Priority': 'Low'}, labels=['kind:bug']))
 
     def test_naming_one_of_the_labels_a_field_implies_is_not_a_clash(self):
         both = project(labels={'require_prefix': ['kind:'], 'by_field': {'Area': {'Both': ['area:frontend', 'area:backend']}}})
-        resolved = frontlights.resolve_board(frontlights.board(both, 'example/pilot'), issue(
+        resolved = frontlights.resolve_board(frontlights.board(both, 'example/project'), issue(
             1, project_fields={'Area': 'Both', 'Priority': 'Low'}, labels=['kind:bug', 'area:frontend']))
         self.assertEqual(resolved['labels'], ['kind:bug', 'area:frontend', 'area:backend'])
 
@@ -187,11 +187,11 @@ class SubIssueTests(RefusalMixin, unittest.TestCase):
 
 class AdoptedIssueTests(RefusalMixin, unittest.TestCase):
     def test_an_issue_that_already_exists_needs_no_body_line(self):
-        existing = issue(5, body_fields={}, url='https://github.com/example/pilot/issues/5')
+        existing = issue(5, body_fields={}, url='https://github.com/example/project/issues/5')
         frontlights.validate_plan(plan(existing), project())
 
     def test_a_body_line_it_does_carry_is_still_checked(self):
-        existing = issue(5, body_fields={'Effort': 'Huge'}, url='https://github.com/example/pilot/issues/5')
+        existing = issue(5, body_fields={'Effort': 'Huge'}, url='https://github.com/example/project/issues/5')
         self.assertRefused(plan(existing), 'must be one of')
 
     def test_a_new_issue_still_needs_it(self):
@@ -220,11 +220,11 @@ class ConfigShapeTests(RefusalMixin, unittest.TestCase):
         )
         for config in bad:
             with self.subTest(config=config), self.assertRaisesRegex(ValueError, 'project'):
-                frontlights.board(config, 'example/pilot')
+                frontlights.board(config, 'example/project')
 
     def test_a_board_without_the_new_keys_resolves_like_before(self):
         board = frontlights.board({'owner': 'example-org', 'number': 3, 'issue_type': 'Task',
-                                   'fields': {'Status': 'Open', 'Area': None}}, 'example/pilot')
+                                   'fields': {'Status': 'Open', 'Area': None}}, 'example/project')
         resolved = frontlights.resolve_board(board, issue(1, labels=[], body_fields={}, project_fields={'Area': 'X'}))
         self.assertEqual(resolved, {'fields': {'Status': 'Open', 'Area': 'X'}, 'labels': [],
                                     'issue_type': 'Task', 'body_fields': {}})
@@ -240,7 +240,7 @@ class ConfigShapeTests(RefusalMixin, unittest.TestCase):
     def test_an_unknown_project_setting_is_refused_so_a_typo_cannot_switch_a_rule_off(self):
         for key in ('label_rules', 'issue_type_by_labels', 'bodyFields', 'labels ', 'Labels'):
             with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'unknown setting'):
-                frontlights.board(project(**{key: {}}), 'example/pilot')
+                frontlights.board(project(**{key: {}}), 'example/project')
 
     def test_text_that_is_typed_into_gh_commands_is_checked_in_the_config(self):
         curly = 'x”; calc; “y'  # PowerShell closes a string on these, as it does on a straight quote
@@ -260,20 +260,20 @@ class ConfigShapeTests(RefusalMixin, unittest.TestCase):
                project(labels={'require_prefix': ['']}))
         for config in bad:
             with self.subTest(config=config), self.assertRaisesRegex(ValueError, 'project'):
-                frontlights.board(config, 'example/pilot')
+                frontlights.board(config, 'example/project')
 
     def test_the_refusal_names_the_field_and_the_real_reason(self):
         with self.assertRaisesRegex(ValueError, r'project\.fields\.Status default must be text of up to 100 characters'):
-            frontlights.board(project(fields={'Status': 'x' * 101, 'Area': None, 'Priority': None}), 'example/pilot')
+            frontlights.board(project(fields={'Status': 'x' * 101, 'Area': None, 'Priority': None}), 'example/project')
 
     def test_ordinary_values_that_a_quoted_argument_keeps_inert_are_accepted(self):
         config = project(issue_type="Task (small)", fields={'Status': "Don't start", 'Progress %': '50%', 'Urgent': 'Now!',
                                                             'Area': None, 'Priority': None}, assignee='some_login',
                          labels={'require_prefix': ['kind:']})
-        frontlights.board(config, 'example/pilot')
+        frontlights.board(config, 'example/project')
         for login in ('@me', '@copilot', 'octocat', 'jdoe_acme', 'copilot-swe-agent[bot]', 'a-b-c', 'A1'):
             with self.subTest(login=login):
-                frontlights.board(project(assignee=login), 'example/pilot')
+                frontlights.board(project(assignee=login), 'example/project')
 
     def test_plan_values_that_are_typed_into_gh_are_checked_too(self):
         curly = 'x”; calc; “y'
@@ -293,7 +293,7 @@ class ConfigShapeTests(RefusalMixin, unittest.TestCase):
     def test_the_slash_style_label_families_are_recognised_too(self):
         slash = project(labels={'require_prefix': ['kind/'], 'by_field': {'Area': {'Backend': ['area/backend']}}})
         self.assertRefused(plan(issue(1, labels=['kind/bug', 'area/frontend'])), 'clashes', slash)
-        resolved = frontlights.resolve_board(frontlights.board(slash, 'example/pilot'), issue(1, labels=['kind/bug']))
+        resolved = frontlights.resolve_board(frontlights.board(slash, 'example/project'), issue(1, labels=['kind/bug']))
         self.assertEqual(resolved['labels'], ['kind/bug', 'area/backend'])
         self.assertEqual((frontlights.family('Area:Backend'), frontlights.family('area/x'), frontlights.family('plain')),
                          ('area:', 'area/', None))
@@ -301,7 +301,7 @@ class ConfigShapeTests(RefusalMixin, unittest.TestCase):
     def test_a_hostile_label_in_the_config_is_refused_before_any_plan(self):
         for name in ('kind:$(touch x)', 'a`b', 'a;b', 'a"b', 'a\nb', 'a,b'):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'project.labels'):
-                frontlights.board(project(labels={'by_field': {'Area': {'Backend': [name]}}}), 'example/pilot')
+                frontlights.board(project(labels={'by_field': {'Area': {'Backend': [name]}}}), 'example/project')
 
     def test_inspect_shows_the_rules_it_read(self):
         def fake(argv, cwd=None):
@@ -309,7 +309,7 @@ class ConfigShapeTests(RefusalMixin, unittest.TestCase):
                 return json.dumps({'title': 'Board', 'url': 'https://github.com/orgs/example-org/projects/3'}).encode()
             return b'[]'
         with tempfile.TemporaryDirectory() as root, patch.object(frontlights, 'run', side_effect=fake):
-            result = frontlights.inspect({'repository': 'example/pilot', 'project': project()}, root)
+            result = frontlights.inspect({'repository': 'example/project', 'project': project()}, root)
         shown = result['sources']['project']
         self.assertEqual(shown['labels']['require_prefix'], ['kind:'])
         self.assertEqual(shown['issue_type_by_label'], {'kind:bug': 'Bug', 'kind:feature': 'Feature'})
@@ -321,7 +321,7 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             plan_path, config_path = Path(d) / 'plan.json', Path(d) / 'config.json'
             plan_path.write_text(json.dumps(plan_), encoding='utf-8')
-            config_path.write_text(json.dumps({'repository': 'example/pilot', 'project': config}), encoding='utf-8')
+            config_path.write_text(json.dumps({'repository': 'example/project', 'project': config}), encoding='utf-8')
             return subprocess.run([sys.executable, str(SCRIPT), 'validate-plan', '--plan', str(plan_path),
                                    '--config', str(config_path)], capture_output=True, text=True)
 

@@ -119,6 +119,9 @@ navegador ou rede, o teste é registrado como não executado e não conta como a
 registros nunca trazem login nem senha: a conta aparece como `conta 1` ou `conta 2`. Um commit
 ou diff posterior torna essa evidência antiga.
 
+O contrato com o RoadS (rotas, versão, o que é mudança aditiva e a regra para uma quebra) está em
+`docs/roads-contract.md`.
+
 A sincronização do roadmap (`scripts/roadmap_sync.py`) segue esta ordem no `fetch`: `POST
 sync-board`, `GET roadmap-state` e `GET pending-changes`, todos sob o `endpoint` aprovado e com o
 mesmo segredo. Os padrões de caminho (`roadmapFile`, `weekFolderPattern`, `sprintFilePattern`)
@@ -147,9 +150,11 @@ O passo do resumo para a diretoria (`scripts/progress_report.py`) vem logo depoi
 roadmap e só existe quando o bloco `roadmapSync.progress` está habilitado. A ordem é: `status`,
 aprovação do bloco, `window`, `collect`, conferência dos números pelo usuário, arquivo de textos
 (guia `draftGuide`, roadmap e sprint da semana), prints em `shotsDir` com `captions.json` (ou, com
-`weekShots`, na pasta da semana que `shots --from` resolve, com a issue de cada print e pelo menos um
+`weekShots`, na pasta do resumo que `shots --to` resolve, com a issue de cada print e pelo menos um
 por entrega visível fora de `proximo`), rascunho mostrado na íntegra, aprovação e `push --draft` (com
-`--from` quando há `weekShots`). Nada é enviado sem a aprovação do rascunho completo.
+`--to` quando há `weekShots`). A pasta é a da segunda-feira seguinte à semana do último dia do período,
+com uma subpasta `<dd_MM>` por resumo; o contrato com o RoadS está em `docs/roads-contract.md`.
+Nada é enviado sem a aprovação do rascunho completo.
 
 A unidade de trabalho é a issue do GitHub, identificada pelo número, para que o
 quadro e os registros locais coincidam. O plugin não cria identificadores
@@ -168,7 +173,9 @@ O formato de `plan.json` segue `examples/plan.json`. O campo opcional `parent` d
 issue é o id de outra issue do mesmo plano (a issue de origem já publicada entra no
 plano com o próprio número), o que permite conferir o vínculo sem rede. O limite de
 100 filhas conta só as do plano; antes de publicar, confira `subIssuesSummary.total` do
-pai no GitHub para não passar de 100. Sem `parent`, nada muda.
+pai no GitHub para não passar de 100. Sem `parent`, nada muda. Uma sub-issue de uma issue já
+publicada que não está no plano leva `parent_external` (o número do pai) no lugar de `parent`: não
+leva campo do quadro, e os limites de 100 filhas e 8 níveis são lidos do GitHub antes de publicar.
 Os valores técnicos `ready` (pronta), `running` (em execução), `blocked` (bloqueada), `verified` (verificada) e
 `proposed` (proposta) representam observações locais do estado oficial. Salve também
 o horário da consulta ao GitHub. Uma issue concluída só libera dependentes quando
@@ -234,4 +241,9 @@ A conclusão exige cobertura dos critérios de aceitação, alterações complet
 atuais, verificações específicas e abrangentes, verificação de tipos quando aplicável
 e revisão independente vinculada às mesmas evidências. Se não houver suporte à
 revisão, registre explicitamente a pendência. O relatório do autor nunca substitui
-uma verificação independente.
+uma verificação independente. A evidência a que a revisão ficou vinculada é salva em
+`.frontlights/issues/<n>/review.json`, e `frontlights.py review-gate --root <worktree> --review <arquivo>`
+a compara com a atual: saída 0 (`current`) vale, saída 2 (`stale`) significa que houve commit, edição ou
+arquivo novo depois da revisão, e a issue não é relatada como revisada nem tem PR aberto ou atualizado
+sem nova revisão. Uma família de branches é integrada localmente, com a suíte completa verde, antes de
+qualquer PR dela.

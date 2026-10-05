@@ -140,6 +140,12 @@ you found with `gh project list --owner <owner>`, "no board", free text). Record
 the answer in `.frontlights/config.json` as `project` (or `"project": null`) before
 publishing, so later sessions do not ask again. A local project has no board.
 
+A published sub-issue whose parent is a published issue outside the plan (an adopted
+child) carries `parent_external: <parent number>` in `plan.json` instead of `parent`:
+it takes no board field and joins the board only through its parent, and the limits
+of 100 children and 8 levels are read from GitHub before publishing, since the plan
+does not hold its ancestors. The two keys are exclusive.
+
 Put `Depends on: #N, #M` and `Parent: #P` in each canonical issue body (or `none`), and
 the `## Camadas da fatia` table of the slice;
 verify dependency IDs, parent and content after publication. Link local snapshots to returned issue URLs.

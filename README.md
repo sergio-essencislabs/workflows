@@ -1,4 +1,4 @@
-# Frontlights — piloto para Claude Code
+# Frontlights — plugin para Claude Code
 
 Um plugin independente que conduz **qualquer pedido seu** — uma funcionalidade,
 um bug, uma refatoração, uma pesquisa, um script pontual, um documento — por
@@ -11,11 +11,13 @@ referência por etapa. Não depende do GuardianS nem altera sua instalação.
 O plugin se chamava Workflows e foi renomeado para não colidir com os workflows
 do próprio Claude Code.
 
-**Situação do piloto:** implementado localmente, com testes automatizados dos
-utilitários e validação nativa do pacote. A integração real com RoadS, o
-monitoramento pelo celular, a revisão independente e a execução completa sem
-supervisão **ainda não foram homologados**. Consulte as
-[evidências de aceitação](docs/acceptance.md) antes de depender de execução sem supervisão.
+**Situação:** versão candidata à 1.0, para **uso supervisionado no Windows**. O núcleo do fluxo,
+o teste de navegador assistido e a integração com o RoadS foram exercitados em sessões reais de um
+projeto de produto; as [evidências de aceitação](docs/acceptance.md) dizem o que está provado, o que
+falta e os limites. A 1.0 sai depois de uma sessão real que cumpra os itens 12 e 13 do
+[roteiro](evals/runbook.md) com esta versão. **Não** são garantidos: a execução sem supervisão (o
+plugin não instala hooks, então o teto de contexto e o escopo exato das permissões não são impostos
+por ele), o `authorize` (apenas consultivo) e qualquer sistema fora do Windows.
 
 ## Idioma
 
@@ -329,7 +331,7 @@ pergunta não aparece. Com a resposta "sim", o Frontlights:
    `issue` opcional: o número inteiro da issue da entrega. Com `weekShots`, a pasta é a da semana e
    os prints são obrigatórios (veja abaixo); sem ele, a skill pergunta se o resumo leva prints;
 6. mostra o rascunho completo, com cada print e sua legenda, e, com a sua aprovação, envia ao RoadS
-   com `push --draft <arquivo>` (mais `--from <início do período>` com `weekShots`); o comando do
+   com `push --draft <arquivo>` (mais `--to <último dia do período>` com `weekShots`); o comando do
    projeto escolhe os prints na pasta e monta a linha de acesso do e-mail a partir dos arquivos
    locais do projeto, nunca da conversa, e a skill informa o link para revisar.
 
@@ -354,9 +356,16 @@ O bloco fica dentro de `roadmapSync` (veja `examples/config.json`) e reaproveita
 - `weekShots` é opcional e substitui `shotsDir` (os dois juntos são recusados). Ele guarda os prints
   na pasta da semana, fora do projeto: `<scrumRoot>/<weekFolderPattern>/<weekShots>`, por exemplo
   `"weekShots": "summary"`. É um único nome de pasta (letras, dígitos, `-` e `_`).
-  - **Qual semana:** a pasta é a da segunda-feira seguinte à semana do período, o dia em que o resumo
-    é apresentado. Os resumos de 28/09 a 02/10 vão para a pasta de 05/10.
-  - **Como chega ao comando:** `shots --from <início>` cria a pasta quando falta e informa o caminho.
+  - **Qual semana:** a pasta é a da segunda-feira seguinte à semana do ÚLTIMO dia do período, o dia em que
+    o resumo é apresentado, e cada resumo tem a sua subpasta, nomeada pelo dia em que o período termina:
+    o resumo de 28/09 a 02/10 vai para `05_10/summary/02_10`, e o de sáb 03/10 a qua 07/10 para
+    `12_10/summary/07_10`. Dois resumos da mesma semana (quarta e sexta) nunca dividem o `captions.json`.
+    O `window` informa `weekMeeting` e `summaryFolder`; se o RoadS mandar o campo `weekMeeting` e ele
+    divergir do cálculo do plugin, o do RoadS vale para essa janela e o plugin avisa. Prints salvos antes
+    da subpasta, direto em `weekShots`, ainda são lidos pelo `push` (com aviso) quando só a pasta plana tem
+    `captions.json`.
+  - **Como chega ao comando:** `shots --to <último dia>` cria a pasta quando falta e informa o caminho
+    (`--meeting <weekMeeting>` só quando o período é o da janela do `window`; `--from` não nomeia mais a pasta).
     O `pushCommand` precisa trazer `{shotsDir}` como argumento inteiro, que vira esse caminho, por
     exemplo `"--shots-dir", "{shotsDir}"` (`"--shots-dir={shotsDir}"` é recusado). O `scrumRoot`
     precisa ser um caminho completo.
@@ -426,7 +435,9 @@ Limites: só o Windows foi exercitado (POSIX não). O `inspect` confere nesses b
 config inválido com a mensagem mascarada; sem os blocos, a saída dele não muda. O `cwd`
 (`checks.run_directory`, `serve.process_cwd`), o `.cmd`/`.bat` com metacaractere e os nomes
 `checks.backend`/`checks.smoke.target` contra `browserTest.processes` só são conferidos na
-execução, antes de qualquer processo subir.
+execução, antes de qualquer processo subir. Um `browserTest` que declara só as contas (e a
+`baseUrl`), porque o projeto sobe o próprio ambiente, é válido: o `inspect` mostra um aviso em
+`warnings` e segue, e o `serve` recusa subir sem `processes`, dizendo o que fazer.
 
 ## Fluxo de trabalho e utilitários
 
@@ -498,8 +509,8 @@ ou sessões disponíveis do Claude, respeitando a autorização e a capacidade r
 A validação estrutural não determina se o texto descreve uma entrega realmente
 vertical. Isso exige a revisão de conteúdo da skill e a avaliação fornecida.
 
-Leia o [protocolo](docs/protocol.md), os [limites de segurança](docs/security.md),
-as [verificações manuais do piloto](evals/pilot.md) e a [recuperação](docs/recovery.md).
+Leia o [protocolo](docs/protocol.md), o [contrato com o RoadS](docs/roads-contract.md), os [limites de segurança](docs/security.md),
+o [roteiro de homologação](evals/runbook.md) e a [recuperação](docs/recovery.md).
 
 ## Fontes da documentação
 

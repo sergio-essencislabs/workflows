@@ -23,7 +23,7 @@ detectado, ofereça novamente a configuração ancorada em vez de presumir que a
 conexão anterior continua ativa. Onde houver sessão registrada para o diretório
 ou uma de suas worktrees, `claude remote-control -c` reancora nela e falha se nada
 tiver sido registrado ali nas últimas quatro horas aproximadamente; essa janela é
-documentada pelo CLI e ainda não foi exercitada neste piloto.
+documentada pelo CLI e ainda não foi exercitada.
 
 Para deixar de usar o plugin carregado localmente, encerre a sessão e omita
 `--plugin-dir` na próxima inicialização. Se ele for instalado posteriormente por
@@ -32,4 +32,4 @@ após conferir a lista de instalações. Preserve worktrees, registros e issues 
 usuário. Este repositório não possui instalador ou desinstalador que altere o GuardianS.
 
 A troca do fluxo padrão e a desativação do GuardianS são decisões humanas separadas,
-tomadas após a revisão completa das evidências do piloto. O piloto não as executa.
+tomadas após a revisão das evidências de aceitação. O plugin não as executa.

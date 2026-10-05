@@ -98,8 +98,8 @@ class ReleaseManifestTests(unittest.TestCase):
     def test_follow_recommendation_label_fits_the_five_word_limit_everywhere(self):
         old = 'Seguir com a recomendação e marcar a revisar'
         learning = (ROOT / 'skills' / 'frontlights' / 'references' / 'learning.md').read_text(encoding='utf-8')
-        pilot = (ROOT / 'evals' / 'pilot.md').read_text(encoding='utf-8')
-        for name, text in (('learning.md', learning), ('pilot.md', pilot)):
+        runbook = (ROOT / 'evals' / 'runbook.md').read_text(encoding='utf-8')
+        for name, text in (('learning.md', learning), ('runbook.md', runbook)):
             flat = ' '.join(text.split())
             with self.subTest(file=name):
                 self.assertNotIn(old, flat)
@@ -217,17 +217,17 @@ def issue(number, paths, dependencies=()):
                 vertical_check='Save in UI, reload, observe persisted value',
                 non_goals=['Bulk import'], risks=['Concurrent updates'],
                 session_sized=True, status='ready',
-                url=f'https://github.com/example/pilot/issues/{number}')
+                url=f'https://github.com/example/project/issues/{number}')
 
 
 def plan():
-    return {'repository': 'example/pilot', 'issues': [
+    return {'repository': 'example/project', 'issues': [
         issue(1, ['src/save']), issue(2, ['src/export']),
         issue(3, ['src/save/controller.py'], [1])]}
 
 
 def charter(root):
-    return dict(repository='example/pilot', issue_ids=[1, 2], concurrency=2,
+    return dict(repository='example/project', issue_ids=[1, 2], concurrency=2,
                 approved_by='human', approval_reference='session:turn-12',
                 expires_at='2099-01-01T00:00:00+00:00',
                 monitoring={'mode': 'local', 'confirmed_by': 'human'},
@@ -298,6 +298,57 @@ class PlanningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'dependency'):
             frontlights.schedule(p, 2)
 
+    def test_an_invalid_status_lists_the_valid_ones_and_how_to_map_a_published_issue(self):
+        p = plan()
+        p['issues'][0]['status'] = 'published'
+        with self.assertRaises(ValueError) as caught:
+            frontlights.validate_plan(p)
+        message = str(caught.exception)
+        for name in ('ready', 'running', 'blocked', 'verified', 'proposed', "'published'"):
+            self.assertIn(name, message)
+        self.assertIn('published', message)
+        self.assertIn('"ready" when its dependencies are met', message)
+
+    def test_a_glob_in_ownership_says_what_to_write_instead(self):
+        for value in ('src/**', 'src/*.ts', 'src/[ab]'):
+            p = plan()
+            p['issues'][0]['ownership'] = [value]
+            with self.subTest(value=value), self.assertRaises(ValueError) as caught:
+                frontlights.validate_plan(p)
+            message = str(caught.exception)
+            self.assertIn(value, message)
+            self.assertIn('name the folder or file', message)
+            self.assertIn('use * for unknown ownership', message)
+
+    def test_a_sub_issue_of_a_published_parent_outside_the_plan(self):
+        project = {'owner': 'OWNER', 'number': 1, 'fields': {'Area': None}}
+        p = dict(plan(), issues=[issue(1, ['src/save'])])
+        p['issues'][0]['parent_external'] = 50
+        frontlights.validate_plan(p)
+        frontlights.validate_plan(p, project)   # no board field is asked of a sub-issue
+        self.assertEqual(frontlights.board_resolution(p, project), None)
+
+    def test_parent_external_is_validated_and_exclusive(self):
+        bad = {'text': '50', 'zero': 0, 'negative': -1, 'boolean': True, 'self': 1, 'float': 1.5}
+        for label, value in bad.items():
+            p = plan()
+            p['issues'][0]['parent_external'] = value
+            with self.subTest(label=label), self.assertRaisesRegex(ValueError, 'parent_external'):
+                frontlights.validate_plan(p)
+        p = plan()
+        p['issues'][1]['parent'] = 1
+        p['issues'][1]['parent_external'] = 50
+        with self.assertRaisesRegex(ValueError, 'parent_external'):
+            frontlights.validate_plan(p)
+
+    def test_a_sub_issue_of_an_outside_parent_takes_no_project_fields(self):
+        project = {'owner': 'OWNER', 'number': 1, 'fields': {'Area': None}}
+        p = dict(plan(), issues=[issue(1, ['src/save'])])
+        p['issues'][0]['parent_external'] = 50
+        p['issues'][0]['project_fields'] = {'Area': 'Backend'}
+        with self.assertRaisesRegex(ValueError, 'sub-issue'):
+            frontlights.validate_plan(p, project)
+
 
 class AuthorizationTests(unittest.TestCase):
     def setUp(self):
@@ -306,7 +357,7 @@ class AuthorizationTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / 'src').mkdir()
         self.c = charter(self.root)
-        self.op = dict(repository='example/pilot', issue=1, kind='edit',
+        self.op = dict(repository='example/project', issue=1, kind='edit',
                        branch='claude/issue-1', worktree=str(self.root),
                        path=str(self.root / 'src' / 'app.py'))
 
@@ -359,7 +410,7 @@ class EvidenceTests(unittest.TestCase):
             root = Path(d)
             handoff = root / 'handoff.md'
             snapshot = {'number': 1, 'title': 'Save', 'body': 'Accept A', 'state': 'OPEN',
-                        'html_url': 'https://github.com/example/pilot/issues/1'}
+                        'html_url': 'https://github.com/example/project/issues/1'}
             evidence = {'head': 'a' * 40, 'branch': 'codex/issue-1',
                         'diff_sha256': 'a', 'files_sha256': 'b', 'files': {}}
             with patch.object(frontlights, 'git_evidence', return_value=evidence):
@@ -418,21 +469,21 @@ class EvidenceTests(unittest.TestCase):
 class IntegrationReadTests(unittest.TestCase):
     def test_malformed_github_payload_is_unavailable(self):
         with tempfile.TemporaryDirectory() as root, patch.object(frontlights, 'run', return_value=b'{"message":"error"}'):
-            result = frontlights.inspect({'repository': 'example/pilot'}, root)
+            result = frontlights.inspect({'repository': 'example/project'}, root)
         self.assertEqual(result['sources']['github']['status'], 'unavailable')
 
     def test_github_pagination_filters_prs_roads_unconfigured(self):
         raw = json.dumps([[{'number': 1}], [{'number': 2, 'pull_request': {}}],
                           [{'number': 3}]]).encode()
         with tempfile.TemporaryDirectory() as root, patch.object(frontlights, 'run', return_value=raw) as run:
-            result = frontlights.inspect({'repository': 'example/pilot'}, root)
+            result = frontlights.inspect({'repository': 'example/project'}, root)
         self.assertEqual([i['number'] for i in result['sources']['github']['issues']], [1, 3])
         self.assertIn('--paginate', run.call_args.args[0])
         self.assertEqual(result['sources']['roads']['status'], 'unconfigured')
 
     def test_unavailable_integrations_do_not_invent_data_or_echo_tokens(self):
         with tempfile.TemporaryDirectory() as root, patch.object(frontlights, 'run', side_effect=ValueError('private-secret')):
-            result = frontlights.inspect({'repository': 'example/pilot', 'roads': {
+            result = frontlights.inspect({'repository': 'example/project', 'roads': {
                 'observations_url': 'http://unsafe.example', 'token_env': 'MISSING_TOKEN'}}, root)
         self.assertEqual(result['sources']['github']['status'], 'unavailable')
         self.assertEqual(result['sources']['roads']['status'], 'unavailable')
@@ -450,7 +501,7 @@ class ProjectBoardTests(unittest.TestCase):
     """Issues belong on the configured board; a board that is set must never be skipped."""
 
     def test_inspect_reports_board_unconfigured_when_absent_or_null(self):
-        for config in ({'repository': 'example/pilot'}, {'repository': 'example/pilot', 'project': None}):
+        for config in ({'repository': 'example/project'}, {'repository': 'example/project', 'project': None}):
             with self.subTest(config=config), tempfile.TemporaryDirectory() as root, \
                     patch.object(frontlights, 'run', return_value=b'[]'):
                 result = frontlights.inspect(config, root)
@@ -462,7 +513,7 @@ class ProjectBoardTests(unittest.TestCase):
                 return json.dumps({'title': 'Board', 'url': 'https://github.com/orgs/example-org/projects/3'}).encode()
             return b'[]'
         with tempfile.TemporaryDirectory() as root, patch.object(frontlights, 'run', side_effect=fake) as run:
-            result = frontlights.inspect({'repository': 'example/pilot', 'project': board()}, root)
+            result = frontlights.inspect({'repository': 'example/project', 'project': board()}, root)
         project = result['sources']['project']
         self.assertEqual(project['status'], 'available')
         self.assertEqual((project['owner'], project['number']), ('example-org', 3))
@@ -477,7 +528,7 @@ class ProjectBoardTests(unittest.TestCase):
                 raise ValueError('missing project scope private-token')
             return b'[]'
         with tempfile.TemporaryDirectory() as root, patch.object(frontlights, 'run', side_effect=fake):
-            result = frontlights.inspect({'repository': 'example/pilot', 'project': board()}, root)
+            result = frontlights.inspect({'repository': 'example/project', 'project': board()}, root)
         self.assertEqual(result['sources']['project']['status'], 'unavailable')
         self.assertNotIn('private-token', json.dumps(result))
 
@@ -486,7 +537,7 @@ class ProjectBoardTests(unittest.TestCase):
                     board(fields={'Status': 7}), board(fields=[]), board(assignee=''), 'example-org/3'):
             with self.subTest(bad=bad), tempfile.TemporaryDirectory() as root, \
                     patch.object(frontlights, 'run', return_value=b'[]'), self.assertRaisesRegex(ValueError, 'project'):
-                frontlights.inspect({'repository': 'example/pilot', 'project': bad}, root)
+                frontlights.inspect({'repository': 'example/project', 'project': bad}, root)
 
     def test_a_local_project_cannot_have_a_board(self):
         with tempfile.TemporaryDirectory() as root, self.assertRaisesRegex(ValueError, 'project'):
@@ -527,7 +578,7 @@ class ProjectBoardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             plan_path, config_path = Path(d) / 'plan.json', Path(d) / 'config.json'
             plan_path.write_text(json.dumps(plan()), encoding='utf-8')
-            config_path.write_text(json.dumps({'repository': 'example/pilot', 'project': board()}), encoding='utf-8')
+            config_path.write_text(json.dumps({'repository': 'example/project', 'project': board()}), encoding='utf-8')
             result = subprocess.run([sys.executable, str(Path(frontlights.__file__)), 'validate-plan',
                                      '--plan', str(plan_path), '--config', str(config_path)],
                                     capture_output=True, text=True)
@@ -571,7 +622,7 @@ class LocalModeTests(unittest.TestCase):
         for i in p['issues']:
             i['url'] = None
         frontlights.validate_plan(p)
-        p['issues'][0]['url'] = 'https://github.com/example/pilot/issues/1'
+        p['issues'][0]['url'] = 'https://github.com/example/project/issues/1'
         with self.assertRaisesRegex(ValueError, 'local plan'):
             frontlights.validate_plan(p)
 
@@ -588,7 +639,7 @@ class LocalModeTests(unittest.TestCase):
                 self.assertEqual(frontlights.resume(root, saved, local, handoff)['state'], 'unchanged')
                 with self.assertRaises(ValueError):
                     frontlights.checkpoint(root, dict(local, source='guess'), handoff, 'Run focused tests')
-                remote = dict(local, source=None, html_url='https://github.com/example/pilot/issues/1')
+                remote = dict(local, source=None, html_url='https://github.com/example/project/issues/1')
                 with self.assertRaisesRegex(ValueError, 'different issue'):
                     frontlights.resume(root, saved, remote, handoff)
 
@@ -602,7 +653,7 @@ class LocalAuthorizationTests(unittest.TestCase):
                       worktree=root, path=str(Path(root) / 'src' / 'a.py'))
             frontlights.authorize(c, op)
             missing = {k: v for k, v in op.items() if k != 'repository'}
-            for bad in (missing, dict(op, repository='example/pilot')):
+            for bad in (missing, dict(op, repository='example/project')):
                 with self.subTest(op=bad), self.assertRaisesRegex(ValueError, 'repository'):
                     frontlights.authorize(c, bad)
 
@@ -615,7 +666,7 @@ class BranchPrefixTests(unittest.TestCase):
         (self.root / 'src').mkdir()
 
     def operation(self, branch):
-        return dict(repository='example/pilot', issue=1, kind='edit', branch=branch,
+        return dict(repository='example/project', issue=1, kind='edit', branch=branch,
                     worktree=str(self.root), path=str(self.root / 'src' / 'app.py'))
 
     def charter_for(self, branch, **extra):
@@ -842,7 +893,7 @@ class MonitoringTests(unittest.TestCase):
     def test_phone_mode_requires_a_real_confirmation(self):
         with tempfile.TemporaryDirectory() as root:
             Path(root, 'src').mkdir()
-            operation = dict(repository='example/pilot', issue=1, kind='edit',
+            operation = dict(repository='example/project', issue=1, kind='edit',
                              branch='claude/issue-1', worktree=root,
                              path=str(Path(root) / 'src' / 'a.py'))
             good = charter(root)
@@ -867,7 +918,7 @@ class UpdateCheckTests(unittest.TestCase):
         self.config_dir = Path(self.tmp.name, 'config')
         Path(self.plugin_root, '.claude-plugin').mkdir(parents=True)
         Path(self.config_dir, 'plugins').mkdir(parents=True)
-        self.write(self.plugin_root / '.claude-plugin' / 'plugin.json', {'name': 'pilot', 'version': '0.7.2'})
+        self.write(self.plugin_root / '.claude-plugin' / 'plugin.json', {'name': 'sample', 'version': '0.7.2'})
         self.write(self.plugin_root / '.claude-plugin' / 'marketplace.json', {'name': 'market', 'plugins': []})
         self.known({'source': 'github', 'repo': 'OWNER/REPOSITORY'})
 
@@ -878,7 +929,7 @@ class UpdateCheckTests(unittest.TestCase):
         self.write(self.config_dir / 'plugins' / 'known_marketplaces.json', {'market': {'source': source}})
 
     def check(self, published=None, error=None):
-        body = json.dumps({'name': 'market', 'plugins': [{'name': 'pilot', 'version': published}]})
+        body = json.dumps({'name': 'market', 'plugins': [{'name': 'sample', 'version': published}]})
         fake = patch.object(frontlights, 'fetch_text', side_effect=error, return_value=body)
         with fake as fetch:
             result = frontlights.update_check(self.plugin_root, self.config_dir)
@@ -888,7 +939,7 @@ class UpdateCheckTests(unittest.TestCase):
         result, fetch = self.check('0.10.0')
         self.assertEqual(result['status'], 'update_available')
         self.assertEqual(result['commands'], ['claude plugin marketplace update market',
-                                              'claude plugin update pilot@market'])
+                                              'claude plugin update sample@market'])
         self.assertEqual(fetch.call_args[0][0], 'https://api.github.com/repos/OWNER/REPOSITORY'
                                                 '/contents/.claude-plugin/marketplace.json')
 

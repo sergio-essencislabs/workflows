@@ -12,7 +12,7 @@
 | | red / green / broader / typecheck | | |
 
 - TDD exception, if any, and rationale:
-- Independent reviewer evidence tied to exact HEAD/diff:
+- Independent reviewer evidence tied to exact HEAD/diff, and the `review-gate` result (current or stale) for it:
 - Session identity, accumulated token measurement and next-step reserve:
 - Open risks/blockers and exact pending user question:
 - Next concrete step:

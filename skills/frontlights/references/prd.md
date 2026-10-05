@@ -20,4 +20,6 @@ the `preview` of the approve option. A summary or a path is not showing it.
 Then use `AskUserQuestion`, with options, for material decisions and explicit
 PRD approval, and preserve the response reference. Do not publish issues
 or implement code from PRD approval alone. Return the approved revision to the
-coordinator; later material changes invalidate downstream approvals.
+coordinator; later material changes invalidate downstream approvals. Every revision of
+an approved PRD (r2, r2.1, and so on) is a new approval of the exact text shown in
+full; a decision written into a local revision without being shown is not approved.

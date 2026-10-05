@@ -128,7 +128,7 @@ class InspectValidBlocksTests(unittest.TestCase):
             path.write_text(json.dumps(local(EXAMPLE)), encoding='utf-8')
             frontlights.inspect(local(EXAMPLE), root, path)
         secrets.assert_called_once_with(path)
-        block.assert_called_once_with(path)
+        block.assert_called_once_with(path, need_processes=False)
 
     def test_blocks_without_a_config_path_are_refused(self):
         with tempfile.TemporaryDirectory() as root, self.assertRaisesRegex(ValueError, 'caminho do config'):
@@ -223,6 +223,67 @@ class InspectRefusesInvalidBlocksTests(unittest.TestCase):
         self.assertNotIn('Traceback', run.stderr)
         self.assertNotIn(PASSWORD, run.stderr)
         self.assertIn('error', json.loads(run.stderr))
+
+
+class AccountsOnlyBrowserTestTests(unittest.TestCase):
+    """Um projeto que sobe o próprio ambiente declara só as contas (e a baseUrl) em browserTest.
+
+    O `inspect` não falha por falta de `processes`: avisa que o `serve` não tem o que subir. Os segredos
+    de teste continuam mascaráveis e os hosts continuam locais; `processes` declarado e inválido continua recusado.
+    """
+
+    def accounts_only(self, **block):
+        block.setdefault('users', [{'login': 'usuario@exemplo.test', 'password': PASSWORD}])
+        return {'repository': None, 'browserTest': block}
+
+    def test_inspect_goes_on_and_warns_that_serve_has_nothing_to_start(self):
+        with tempfile.TemporaryDirectory() as root:
+            result = inspect_file(self.accounts_only(baseUrl='http://127.0.0.1:4200'), root)
+        self.assertEqual(len(result['warnings']), 1)
+        self.assertIn('browserTest.processes', result['warnings'][0])
+        self.assertIn('serve', result['warnings'][0])
+        self.assertNotIn(PASSWORD, json.dumps(result))
+
+    def test_a_block_with_processes_has_no_warning(self):
+        with tempfile.TemporaryDirectory() as root:
+            result = inspect_file(with_browser(), root)
+        self.assertNotIn('warnings', result)
+
+    def test_the_cli_exits_zero_for_an_accounts_only_block(self):
+        with tempfile.TemporaryDirectory() as root:
+            config = Path(root) / 'config.json'
+            config.write_text(json.dumps(self.accounts_only()), encoding='utf-8')
+            run = subprocess.run([sys.executable, str(SCRIPT), 'inspect', '--config', str(config), '--root', root],
+                                 capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn('browserTest.processes', json.loads(run.stdout)['warnings'][0])
+
+    def test_the_secret_rules_still_apply(self):
+        with tempfile.TemporaryDirectory() as root, self.assertRaises(ValueError) as caught:
+            inspect_file(self.accounts_only(users=[{'login': 'usuario@exemplo.test', 'password': 'abc'}]), root)
+        self.assertIn('menos de 4 caracteres', str(caught.exception))
+
+    def test_hosts_must_still_be_local(self):
+        with tempfile.TemporaryDirectory() as root, self.assertRaises(ValueError) as caught:
+            inspect_file(self.accounts_only(baseUrl='https://app.cliente-real.io'), root)
+        self.assertIn('não é local', str(caught.exception))
+
+    def test_declared_but_empty_or_malformed_processes_are_still_refused(self):
+        for value in ([], 'web', None):
+            with self.subTest(processes=value), tempfile.TemporaryDirectory() as root,                     self.assertRaises(ValueError) as caught:
+                inspect_file(self.accounts_only(processes=value), root)
+            self.assertIn('browserTest.processes', str(caught.exception))
+
+    def test_serve_refuses_to_start_without_processes_and_says_what_to_do(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'config.json'
+            path.write_text(json.dumps(self.accounts_only()), encoding='utf-8')
+            with self.assertRaises(serve.Refusal) as caught:
+                serve.load_block(path)
+        message = str(caught.exception)
+        self.assertIn('não declara browserTest.processes', message)
+        self.assertIn('Suba o ambiente você mesmo', message)
+        self.assertEqual(caught.exception.category, serve.USAGE)
 
 
 if __name__ == '__main__':

@@ -174,7 +174,13 @@ through the project's own read command) and compare it with the saved one before
 reporting; a value that does not come back identical is a failure to ask about,
 naming the field. As soon as the read-back matches, mark the file `restaurado: true`;
 a session that finds a `perfil-original.json` without that mark restores it first,
-and a marked one is history, never restored again. When no login of
+and a marked one is history, never restored again. When the endpoint does not give
+the original row back (it rewrites another field, a timestamp or a column), do not
+write the database yourself: stop and ask with `AskUserQuestion` whether to accept
+and declare the residual difference in the report, or to approve one exact restoring
+statement shown in full (local test database, the test user's id, only the changed
+columns), which is then run and the row compared. A direct write without that
+approval is a failure of the test. When no login of
 `browserTest.users` can call the endpoint or undo the move (the only admin demoted,
 say), stop and ask; never demote the account that performs the undo. Forcing a response by network
 interception (a 403, an empty list) is a complement for what the real back cannot

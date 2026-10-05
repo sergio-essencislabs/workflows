@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import progress_report as pr
 import roadmap_sync as rs
-from test_progress_report import ProgressTestCase
+from test_progress_report import ProgressTestCase, state
 
 PNG = b'\x89PNG\r\n\x1a\n' + b'0' * 32
 JPEG = b'\xff\xd8\xff\xe0' + b'0' * 32
@@ -41,7 +41,7 @@ class WeekShotsTestCase(ProgressTestCase):
         self.draft.write_text(json.dumps({'headline': 'x', 'entries': entries}), encoding='utf-8')
 
     def folder(self):
-        return self.out / '2026' / '05_10' / 'summary'
+        return self.out / '2026' / '05_10' / 'summary' / '30_09'
 
     def prints(self, captions, files=None):
         folder = self.folder()
@@ -51,52 +51,92 @@ class WeekShotsTestCase(ProgressTestCase):
             (folder / name).write_bytes(data)
         (folder / 'captions.json').write_text(json.dumps(captions), encoding='utf-8')
 
-    def push(self, date_from='2026-09-30', **kwargs):
-        return self.run_op('push', draft=str(self.draft), date_from=date_from, **kwargs)
+    def push(self, date_to='2026-09-30', **kwargs):
+        return self.run_op('push', draft=str(self.draft), date_to=date_to, **kwargs)
 
     def pushed(self):
         return json.loads((self.out / 'push.json').read_text(encoding='utf-8'))
 
 
 class WeekFolderTests(WeekShotsTestCase):
-    def test_the_folder_is_the_one_of_the_monday_after_the_week_of_the_window(self):
+    def test_the_folder_is_the_one_of_the_monday_after_the_week_of_the_last_day_of_the_period(self):
         self.approved()
-        for day in ('2026-09-28', '2026-09-30', '2026-10-02', '2026-10-03', '2026-10-04'):
+        for day, folder in (('2026-09-28', '28_09'), ('2026-09-30', '30_09'), ('2026-10-02', '02_10'),
+                            ('2026-10-03', '03_10'), ('2026-10-04', '04_10')):
             with self.subTest(day=day):
-                result = self.run_op('shots', date_from=day)
+                result = self.run_op('shots', date_to=day)
                 self.assertTrue(result['ok'], result)
-                self.assertEqual(Path(result['shotsDir']), self.folder())
+                self.assertEqual(Path(result['shotsDir']), self.out / '2026' / '05_10' / 'summary' / folder)
                 self.assertEqual(result['presentedOn'], '2026-10-05')
-        result = self.run_op('shots', date_from='2026-10-05')
-        self.assertEqual(Path(result['shotsDir']), self.out / '2026' / '12_10' / 'summary')
+        result = self.run_op('shots', date_to='2026-10-05')
+        self.assertEqual(Path(result['shotsDir']), self.out / '2026' / '12_10' / 'summary' / '05_10')
+        self.assertEqual(result['presentedOn'], '2026-10-12')
+
+    def test_a_period_that_starts_on_a_weekend_follows_its_end_not_its_start(self):
+        # Saturday 03/10 to Wednesday 07/10: the week of the end is 05/10, presented on 12/10.
+        self.approved()
+        result = self.run_op('shots', date_to='2026-10-07')
+        self.assertEqual(Path(result['shotsDir']), self.out / '2026' / '12_10' / 'summary' / '07_10')
+        self.assertEqual(result['presentedOn'], '2026-10-12')
+
+    def test_two_summaries_of_one_week_never_share_a_folder(self):
+        self.approved()
+        wednesday = Path(self.run_op('shots', date_to='2026-10-07')['shotsDir'])
+        friday = Path(self.run_op('shots', date_to='2026-10-09')['shotsDir'])
+        self.assertNotEqual(wednesday, friday)
+        self.assertEqual(wednesday.parent, friday.parent)
+        (wednesday / 'captions.json').write_text('[{"file": "a.png", "caption": "A", "issue": 1}]', encoding='utf-8')
+        self.assertFalse((friday / 'captions.json').exists())
+
+    def test_a_meeting_from_the_service_replaces_the_local_monday_for_its_own_period(self):
+        self.approved()
+        result = self.run_op('shots', date_to='2026-10-07', meeting='2026-10-19')
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(Path(result['shotsDir']), self.out / '2026' / '19_10' / 'summary' / '07_10')
+        self.assertEqual(result['presentedOn'], '2026-10-19')
+
+    def test_a_meeting_that_is_not_a_monday_or_not_a_date_is_refused(self):
+        self.approved()
+        for bad in ('2026-10-13', '12/10/2026', '2026-02-30'):
+            with self.subTest(bad=bad):
+                result = self.run_op('shots', date_to='2026-10-07', meeting=bad)
+                self.assertFalse(result['ok'])
+                self.assertIn('--meeting', result['message'])
+
+    def test_from_is_no_longer_the_day_of_the_folder(self):
+        self.approved()
+        result = self.run_op('shots', date_from='2026-09-30')
+        self.assertFalse(result['ok'])
+        self.assertIn('--to', result['message'])
+        self.assertIn('last day', result['message'])
 
     def test_the_folder_is_created_when_missing_and_kept_when_present(self):
         self.approved()
         self.assertFalse(self.folder().exists())
-        self.assertTrue(self.run_op('shots', date_from='2026-09-30')['ok'])
+        self.assertTrue(self.run_op('shots', date_to='2026-09-30')['ok'])
         self.assertTrue(self.folder().is_dir())
         (self.folder() / 'keep.png').write_bytes(PNG)
-        self.assertTrue(self.run_op('shots', date_from='2026-09-30')['ok'])
+        self.assertTrue(self.run_op('shots', date_to='2026-09-30')['ok'])
         self.assertTrue((self.folder() / 'keep.png').exists())
 
     def test_shots_needs_the_approval_a_date_and_weekShots(self):
-        result = self.run_op('shots', date_from='2026-09-30')
+        result = self.run_op('shots', date_to='2026-09-30')
         self.assertFalse(result['ok'])
         self.assertIn('approve', result['message'])
         self.assertFalse(self.folder().exists())
         self.approved()
         for bad in (None, '30/09/2026', '2026-02-30', '2026-09-30; x'):
             with self.subTest(bad=bad):
-                self.assertFalse(self.run_op('shots', date_from=bad)['ok'])
+                self.assertFalse(self.run_op('shots', date_to=bad)['ok'])
         self.write_config()
         self.approved()
-        self.assertIn('weekShots', self.run_op('shots', date_from='2026-09-30')['message'])
+        self.assertIn('weekShots', self.run_op('shots', date_to='2026-09-30')['message'])
 
     def test_a_file_where_the_folder_should_be_is_refused(self):
         self.approved()
         self.folder().parent.mkdir(parents=True)
         self.folder().write_text('x', encoding='utf-8')
-        result = self.run_op('shots', date_from='2026-09-30')
+        result = self.run_op('shots', date_to='2026-09-30')
         self.assertFalse(result['ok'])
         self.assertIn('is a file', result['message'])
 
@@ -113,22 +153,100 @@ class WeekFolderTests(WeekShotsTestCase):
                 self.skipTest('cannot create a junction here')
         else:
             os.symlink(elsewhere, link, target_is_directory=True)
-        result = self.run_op('shots', date_from='2026-09-30')
+        result = self.run_op('shots', date_to='2026-09-30')
         self.assertFalse(result['ok'])
         self.assertIn('reparse point', result['message'])
         self.assertEqual(list(elsewhere.iterdir()), [])
         # the push refuses the same way, even when the prints are already there
-        (elsewhere / 'summary').mkdir()
-        (elsewhere / 'summary' / 'captions.json').write_text('[]', encoding='utf-8')
+        (elsewhere / 'summary' / '30_09').mkdir(parents=True)
+        (elsewhere / 'summary' / '30_09' / 'captions.json').write_text('[]', encoding='utf-8')
         self.assertIn('reparse point', self.push()['message'])
         self.assertFalse((self.out / 'push.json').exists())
 
     def test_a_pattern_that_leaves_the_root_is_refused(self):
         self.write_config(progress=self.week_block(), weekFolderPattern='../{dd_MM}')
         self.approved()
-        result = self.run_op('shots', date_from='2026-09-30')
+        result = self.run_op('shots', date_to='2026-09-30')
         self.assertFalse(result['ok'])
         self.assertFalse((self.out.parent / '05_10').exists())
+
+
+class LegacyFlatFolderTests(WeekShotsTestCase):
+    """Before the day folder, the prints of a week lived directly in `weekShots`. A push still reads that
+    flat folder when the day folder has no captions.json, and says so."""
+
+    def flat(self):
+        return self.out / '2026' / '05_10' / 'summary'
+
+    def put_flat(self, captions):
+        folder = self.flat()
+        folder.mkdir(parents=True, exist_ok=True)
+        for item in captions:
+            (folder / item['file']).write_bytes(PNG)
+        (folder / 'captions.json').write_text(json.dumps(captions), encoding='utf-8')
+
+    def test_the_flat_folder_is_used_with_a_warning_when_the_day_folder_has_no_captions(self):
+        self.approved()
+        self.put_flat([{'file': 'a.png', 'caption': 'A'}])
+        result = self.push()
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(Path(self.pushed()['argv'][-1]), self.flat())
+        self.assertTrue(any('flat folder' in warning for warning in result['warnings']))
+
+    def test_the_day_folder_wins_when_both_exist(self):
+        self.approved()
+        self.put_flat([{'file': 'old.png', 'caption': 'Old'}])
+        self.prints([{'file': 'new.png', 'caption': 'New'}])
+        result = self.push()
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(Path(self.pushed()['argv'][-1]), self.folder())
+        self.assertNotIn('warnings', result)
+
+    def test_with_neither_folder_the_push_is_refused_before_the_command_runs(self):
+        self.approved()
+        result = self.push()
+        self.assertFalse(result['ok'])
+        self.assertFalse((self.out / 'push.json').exists())
+
+
+class WindowWeekMeetingTests(WeekShotsTestCase):
+    """GET progress-report may carry `weekMeeting` for the window it returns. The plugin computes the same
+    day itself, uses the service's value only for that window, and warns when they differ."""
+
+    def window(self, **extra):
+        self.approved()
+        self.roads.answer = (200, dict(state(start='2026-10-03T00:00:00-03:00', end='2026-10-08T00:00:00-03:00'), **extra))
+        return self.run_op('window')
+
+    def test_without_the_field_the_plugin_computes_the_monday_of_the_presentation(self):
+        result = self.window()
+        self.assertTrue(result['ok'], result)
+        self.assertEqual((result['to'], result['weekMeeting'], result['summaryFolder']), ('2026-10-07', '2026-10-12', '07_10'))
+        self.assertNotIn('warnings', result)
+
+    def test_the_service_value_is_used_when_it_agrees(self):
+        result = self.window(weekMeeting='2026-10-12')
+        self.assertEqual(result['weekMeeting'], '2026-10-12')
+        self.assertNotIn('warnings', result)
+
+    def test_a_different_service_value_wins_for_the_window_and_is_reported(self):
+        result = self.window(weekMeeting='2026-10-19')
+        self.assertTrue(result['ok'], result)
+        self.assertEqual((result['weekMeeting'], result['weekMeetingLocal']), ('2026-10-19', '2026-10-12'))
+        self.assertTrue(any('weekMeeting' in warning for warning in result['warnings']))
+
+    def test_an_invalid_service_value_is_refused(self):
+        for value in ('2026-10-13', '12/10/2026', 20261012, None, True, '2026-02-30'):
+            with self.subTest(value=value):
+                result = self.window(weekMeeting=value)
+                self.assertFalse(result['ok'])
+                self.assertIn('weekMeeting', result['message'])
+
+    def test_a_window_that_ends_on_a_monday_midnight_belongs_to_the_week_that_ended(self):
+        self.approved()
+        self.roads.answer = (200, state(start='2026-09-28T00:00:00-03:00', end='2026-10-05T00:00:00-03:00'))
+        result = self.run_op('window')
+        self.assertEqual((result['to'], result['weekMeeting']), ('2026-10-04', '2026-10-05'))
 
 
 class WeekBlockTests(WeekShotsTestCase):
@@ -168,8 +286,8 @@ class WeekBlockTests(WeekShotsTestCase):
     def test_the_week_end_follows_the_sprint_week(self):
         self.write_config(progress=self.week_block(), weekFolderPattern='{yyyy}/{dd_MM}_a_{dd_MM}')
         self.approved()
-        result = self.run_op('shots', date_from='2026-09-30')
-        self.assertEqual(Path(result['shotsDir']), self.out / '2026' / '05_10_a_09_10' / 'summary')
+        result = self.run_op('shots', date_to='2026-09-30')
+        self.assertEqual(Path(result['shotsDir']), self.out / '2026' / '05_10_a_09_10' / 'summary' / '30_09')
 
     def test_status_reports_where_the_prints_go(self):
         result = self.run_op('status')
@@ -217,7 +335,7 @@ class CaptionsTests(WeekShotsTestCase):
 
     def test_push_needs_the_date_and_refuses_shot_arguments(self):
         self.prints([])
-        self.assertFalse(self.push(date_from=None)['ok'])
+        self.assertFalse(self.push(date_to=None)['ok'])
         shot = self.out / 'a.png'
         shot.write_bytes(PNG)
         result = self.push(shots=[str(shot)])
@@ -393,7 +511,8 @@ class ShotsDocumentationTests(unittest.TestCase):
 
     def test_the_reference_describes_the_week_folder_step(self):
         text = self.read('skills', 'frontlights', 'references', 'progress-report.md')
-        for needle in ('weekShots', 'shots --from', '{shotsDir}', '"issue"', 'proximo', '40', '1 MB', 'push --draft <file> --from'):
+        for needle in ('weekShots', 'shots --to', '--meeting <weekMeeting>', 'weekMeeting', '{shotsDir}', '"issue"', 'proximo',
+                       '40', '1 MB', 'push --draft <file> --to', 'no longer names the folder'):
             self.assertIn(needle, text)
 
     def test_security_and_readme_describe_the_write_outside_the_project(self):

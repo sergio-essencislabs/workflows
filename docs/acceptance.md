@@ -1,109 +1,84 @@
-# Evidências do piloto — 24/09/2026
+# Evidências de aceitação — candidata à 1.0 (0.18.0, 05/10/2026)
 
-> O plugin se chamava **Workflows** até a versão 0.6.1 e passou a se chamar
-> **Frontlights** na 0.7.0. Os registros abaixo anteriores a essa versão citam os
-> nomes da época (`workflows@inline`, `/workflows:total-remote-control`).
+Este registro diz o que está **provado**, o que **falta** e quais são os **limites declarados**. Ele não traz
+saída de sessão real, endereços, nomes de produto, de cliente ou de pessoa: resume o que foi observado.
+O roteiro que o orienta é o [`evals/runbook.md`](../evals/runbook.md). O plugin se chamava Workflows até a
+versão 0.6.1; os registros antigos desta página, que citavam os nomes da época, foram substituídos por este.
 
-Branch de implementação: `codex/workflows-pilot`, no clone de desenvolvimento.
-Ambiente: Windows, Python 3.14.6 e Claude Code 2.1.278. Não houve publicação remota,
-instalação, alteração do GuardianS, merge ou implantação.
+## Escopo da homologação
 
-## Verificado localmente
+Homologação para **uso supervisionado no Windows**: uma pessoa acompanha a sessão e responde às perguntas.
+Não é homologada, e não se promete: a execução sem supervisão com teto de contexto garantido e escopo exato
+das permissões (o plugin não instala hooks e não isola ferramentas; veja `docs/security.md`), qualquer
+sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo).
 
-- `python -m unittest discover -s tests -v`: **22 testes passaram**. Inclui repositórios
-  Git temporários separados, mudanças nas evidências, divergências na retomada,
-  seleção de tarefas conforme dependências e verificações positivas e negativas
-  de autorização.
-- `python -m compileall -q scripts tests`: passou. Não há verificador de tipos externo
-  configurado; esse resultado verifica compilação sintática, não análise estática de tipos.
-- `python scripts/frontlights.py validate-plan --plan examples/plan.json`: passou.
-- `python scripts/frontlights.py schedule --plan examples/plan.json --limit 2`:
-  retornou `[1, 2]`; a issue dependente 3 não foi selecionada.
-- `claude plugin validate . --json`: **sucesso**, sem erros ou avisos no manifesto,
-  com um aviso de conteúdo: o CLAUDE.md da raiz não é carregado nos projetos consumidores.
-  As regras essenciais estão na skill de entrada. Por isso, a validação estrita da
-  raiz não passa; o CLAUDE.md curto para colaboradores é mantido intencionalmente.
-- `claude --plugin-dir . plugin details workflows`: carregou `workflows@inline`,
-  versão 0.1.0, e encontrou seis skills, sem agentes, hooks ou servidores MCP/LSP.
+## Verificação automatizada
 
-Não interprete `claude plugin validate skills` como validação das skills: a versão
-local retornou uma lista de conteúdos vazia para esse caminho. Informar o diretório
-de uma skill ou seu SKILL.md também não a validou como skill. A evidência real de
-descoberta é o inventário nativo acima; o menu e a execução interativa ainda exigem
-verificação em uma sessão real.
+- `python -m unittest discover -s tests -v`: **TOTAL_TESTS testes em 18 módulos, nenhum falhando**.
+  Alguns módulos (`test_serve_ports`, `test_checks_integration`) levam vários minutos; rode por módulo.
+- `python -m compileall -q scripts tests`: passou (não há verificador de tipos externo).
+- `claude plugin validate .`: passou; `claude --plugin-dir . plugin details frontlights` carrega uma skill,
+  sem agentes, hooks nem servidores MCP.
+- Integração contínua no GitHub Actions: Windows, Python 3.11 e 3.14.
+- Os testes usam transporte e datas simulados e **não** homologam o RoadS real; os dados dele estão na seção própria.
 
-Evidência de TDD: a estrutura inicial do módulo e do ponto de retomada produziu erros
-de símbolos ausentes, que **não** comprovam uma falha comportamental esperada.
-Depois foram reproduzidas duas regressões comportamentais: uma resposta malformada
-do GitHub era marcada como `available`, e uma issue em execução era aceita com
-dependências pendentes. Os dois testes falharam nas asserções e passaram após a
-validação do formato da resposta e das dependências de tarefas em execução.
+## Matriz do roteiro (sessões reais de 25/09 a 05/10/2026, num projeto de produto real)
 
-## Matriz de aceitação
+| Item | Situação | O que está provado | O que falta |
+| --- | --- | --- | --- |
+| 1. Carregamento, etapa 0, perguntas com opções, português | Parcial | `/frontlights` rodou em várias sessões, a primeira pergunta é a do roadmap, todas as perguntas tinham opções e o texto ao usuário saiu em português | `/help` nunca foi inspecionado; a skill única e oculta só foi vista pelo inventário nativo |
+| 2. Leitura real, fonte indisponível, duplicada | Parcial | issues e roadmap lidos de verdade; fonte indisponível tratada sem bloquear; duplicadas fechadas com aprovação | a fonte de observações do RoadS ficou sem configurar nos projetos reais |
+| 3. Entrevista, PRD, plano, publicação | Parcial | PRD aprovado numa revisão exata, planos com 4 e 7 issues publicados e relidos no GitHub | a recusa de uma publicação só foi vista em ensaio local, sem GitHub |
+| 4. Tickets horizontais corrigidos | Parcial | ensaio local de 25/09: a proposta horizontal virou fatias verticais sem pergunta extra | não repetido numa sessão com GitHub |
+| 5. Concorrência com worktrees | Comprovado, com ressalva | `schedule` devolveu a onda, duas issues rodaram em paralelo em worktrees distintas e a dependente esperou | a concorrência foi de subagentes da mesma sessão; sobreposição de arquivos não apareceu |
+| 6. Red/green, revisão independente | Comprovado no caminho feliz | red real antes do green, suíte ampla, revisão do diff exato | uma correção feita depois da revisão não exigiu nova revisão em duas sessões: corrigido nesta versão com `review-gate` |
+| 7. Renovação de contexto | Parcial | retomada por handoff com `resume` em sessão nova, mudança de escopo tratada | o teto de contexto **não** é imposto nem medido de forma confiável (veja os limites) |
+| 8. Celular (Remote Control) | Parcial | respostas do usuário confirmando que o celular recebeu e respondeu, em testes de setembro | sem confirmação vigente nem prompt nativo de permissão respondido pelo celular |
+| 9. Escritas não autorizadas | Parcial | o classificador do modo automático e as regras do GitHub barraram merge, push e fechamento de issues | sem simulação planejada; o `authorize` nunca foi chamado numa sessão real; o escopo exato não é imposto |
+| 10. Reiniciar sem o plugin | Pendente | o plugin não depende do GuardianS nem o altera | conferir dados e histórico do projeto depois de reiniciar sem o plugin |
+| 11. Modo aprendizado | Parcial | ligado e desligado, explicação antes de decidir, "Ficou claro?" com até 3 decisões, 3 abordagens mais "Explicar antes de decidir" | duas reexplicações em sequência e "Seguir a recomendação" nunca apareceram |
+| 12. Família de issues e branches empilhadas | Parcial | aplicado à mão na 0.16.0: sub-issues lidas, `needs-decision` no grilling, worktrees das filhas saindo da branch do pai | PR de filha com a base do pai e o retarget depois do merge nunca foram exercitados; falta uma sessão real com esta versão |
+| 13. Teste de navegador assistido | Parcial | aplicado à mão na 0.16.0: pergunta antes da janela, Chrome visível, ANTES e DEPOIS, cada caso 2 vezes, janela aberta 45 s, perfil restrito real movido e devolvido; o resultado real passou | os auxiliares `serve` e `checks` não foram usados; falta uma sessão real com esta versão |
 
-| Verificação dos requisitos | Evidência e situação |
-| --- | --- |
-| 1. Carregamento e descoberta, com entrada pública única | Carregamento nativo identifica seis skills; uma delas tem entrada pública. Verificação interativa do menu pendente. Comando: `/frontlights`. |
-| 2. Planejamento com RoadS e GitHub reais | Utilitário de consulta e testes de fontes indisponíveis implementados. Projeto e RoadS reais configurados não foram fornecidos; teste real pendente. |
-| 3. Descoberta, PRD e aprovações | Skills e modelos persistentes implementados. Entrevista real e teste de bloqueio de gravações pendentes. |
-| 4. Decomposição vertical | Validador estrutural e avaliação de conversão de tickets por camada em entregas verticais fornecidos. Avaliação real do modelo pendente. |
-| 5. Implementação paralela isolada | Planejador testado, incluindo maior lote seguro, reposição de vagas e conflitos. Execução simultânea real de modelos em worktrees não testada. |
-| 6. TDD, verificações e revisão independente | Testes locais e evidências de repositórios Git temporários verificados. Sem revisor independente; entrega de produto vinculada a issues pendente. |
-| 7. Renovação de contexto | Testes de limites e retomada passaram. Teto acumulado de tokens imposto pelo ambiente e retomada em sessão nova não demonstrados. |
-| 8. Celular e permissão pendente | Verificação prévia de energia e host implementada e coberta por testes unitários; `phone_connected` só é gravado por confirmação do usuário. Conexão do celular, sobrevivência a bloqueio longo, tampa fechada e a janela de reancoragem de ~4 h continuam **não testadas**. |
-| 9. Controles AFK | Testes positivos e negativos da verificação prévia passaram. Controle obrigatório de ferramentas genéricas indisponível; gravações externas continuam sujeitas à aprovação. Segurança AFK completa NÃO homologada. |
-| 10. Documentação, instalação, recuperação e reversão | Carregamento local, configuração, testes, limitações e recuperação documentados. Teste real de desinstalação e convivência pendente. |
+## RoadS em produção
 
-O GitHub Actions está configurado para Windows/Linux com Python 3.11/3.14, mas ainda
-não executou remotamente. O sucesso local não comprova execução em Linux, outras
-versões do Python ou integração contínua remota. A implementação foi verificada
-somente pelo autor; não há revisão independente declarada. Ainda não recomende
-alterar o fluxo padrão ou desativar o GuardianS.
+- A fila de mudanças foi confirmada (`ack`) em produção em cinco dias distintos entre 28/09 e 05/10, sem
+  pendências restantes; o `gaps` completou issues reais; e um rascunho do resumo com prints chegou ao RoadS
+  em 05/10 já no contrato novo. O RoadS não registra quem chamou cada rota, então que foi o plugin é provável,
+  não provado: por isso o plugin manda um User-Agent com a versão e o RoadS passa a registrá-lo.
+- Os caminhos de erro (tempo esgotado do `sync-board`, credencial trocada, `schemaVersion` desconhecido,
+  marcas recusadas) só têm cobertura simulada.
+- O contrato agora está escrito em [`docs/roads-contract.md`](roads-contract.md), com versão, regra de
+  mudança aditiva e regra de quebra.
 
-## Informações e validações pendentes
+## Defeitos achados no uso real e corrigidos nesta versão
 
-Use `evals/pilot.md` para a execução real. São necessários um repositório/projeto
-descartável escolhido explicitamente, configuração de consulta do RoadS verificada,
-aprovação de gravações externas de issues, confirmação do celular na sessão atual
-(ou escolha de alternativa local) e um revisor independente. A homologação AFK
-completa também exige mecanismos do ambiente que imponham o escopo exato das
-operações e renovem o contexto antes do limite. São limitações técnicas; uma
-aprovação do usuário, por si só, não as resolve.
+- O `inspect` falhava num projeto cujo `browserTest` só declara as contas: agora avisa e segue.
+- O `validate-plan` não explicava o status inválido nem o padrão de caminho em `ownership`, e não modelava
+  uma sub-issue de uma issue publicada fora do plano: ganhou mensagens claras e `parent_external`.
+- Nada obrigava a re-revisão depois de uma correção: o `review-gate` compara a evidência da revisão com a
+  atual e sai com código 2 quando ela envelheceu.
+- Faltava uma etapa de integração local de uma família antes dos PRs, e a regra para um desfazer que o
+  endpoint do produto não devolve idêntico.
+- Segredos de teste impressos no chat e números publicados sem o predicado que os gerou: viraram regra.
+- A pasta dos prints do resumo caía na semana errada para uma janela que começa no fim de semana, e dois
+  resumos da mesma semana dividiam o `captions.json`: a pasta segue o último dia do período, com uma subpasta
+  por resumo.
+- O plugin só conferia `schemaVersion` em uma rota do RoadS.
 
-## Ensaio local — 25/09/2026 (versão 0.2.0)
+## Limites declarados (não são pendências desta versão)
 
-Ensaio conduzido pelo app desktop, com o celular acompanhando a sessão, num
-repositório Git descartável, sem remoto e sem RoadS. O ensaio foi abandonado
-antes do desenvolvimento. Nenhuma gravação externa foi feita.
+- **Execução sem supervisão:** sem hook, o teto de contexto de 150 mil tokens não é imposto nem medido de
+  forma confiável, e a maior parte das sessões reais passou dele. A renovação por handoff existe, mas é
+  pedida pela pessoa ou pelo uso, não por uma medição.
+- **Permissões:** o plugin orienta e confere predicados; quem barra é o Claude Code. Em modo `bypassPermissions`
+  não há parada nativa; o `authorize` nunca devolve `permission_granted: true`.
+- **Plataforma:** só o Windows é suportado e testado.
+- **Celular:** a presença de um processo do Remote Control não prova um celular conectado.
 
-Verificado: fonte RoadS `unconfigured` e GitHub `unavailable` informados sem
-bloquear o fluxo; uma aprovação de publicação recusada deixou de fato de escrever
-as issues; a proposta com tickets horizontais foi revisada para fatias verticais
-sem pergunta extra; `validate-plan` e `schedule --limit 2` produziram `[1, 2]`.
+## Para a 1.0
 
-Achados que motivaram a versão 0.3.0:
-
-- A configuração do celular só foi oferecida na etapa 6, depois da PRD e das issues.
-- A PRD e o plano de issues foram aprovados sem que o usuário os tivesse visto na
-  íntegra; só um resumo apareceu, fora da pergunta.
-- A conversa seguiu em inglês, apesar de o usuário escrever em português.
-- As instruções para iniciar o host vieram soltas, sem pergunta com opções.
-- O usuário confundiu acompanhar uma sessão pelo celular com ter uma máquina fixa
-  no app. `claude -remote-control`, com um traço só, abriu a lista de sessões
-  antigas em vez de iniciar o host. Duas confirmações do celular chegaram sem
-  nenhum processo de host detectado.
-- `inspect` exigia `repository`; `validate-plan` e `checkpoint` não tinham modo local.
-- `authorize` só aceitava branches `codex/`.
-- `inspect` não detectava verificação Python.
-- `git worktree add` falhou por exceder o limite de caminho do Windows, porque o app
-  desktop redireciona o diretório de trabalho para um caminho longo.
-
-Correções na 0.3.0: pergunta do celular primeiro; regras de idioma, perguntas
-com opções e "mostrar antes de aprovar"; `/workflows:total-remote-control`
-público e guiado; oferta do comando `claude --resume` para abrir no CLI a mesma
-sessão do desktop; `repository: null`, issues locais com `source: "local"`,
-`branch_prefix` (padrão `claude/`), candidatos de verificação Python e
-`path_risk`. Os utilitários têm 45 testes automatizados, e uma revisão independente
-por outro agente, que não escreveu o código, apontou achados que foram corrigidos
-antes do fechamento. O novo fluxo de
-conversa e a máquina fixa no celular **ainda não foram testados em sessão real**.
+A 1.0 sai depois de **uma sessão real com a 0.18.0** que cumpra os itens 12 e 13 do roteiro (família empilhada
+com os PRs das filhas na base do pai e o retarget depois do merge; teste assistido com `serve` e `checks`),
+e de a pessoa responsável aceitar este registro. Os itens parciais acima ficam como limites ou como issues de
+acompanhamento, nunca como "passou".

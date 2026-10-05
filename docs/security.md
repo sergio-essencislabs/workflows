@@ -1,6 +1,6 @@
 # Autorização e limites de aplicação das permissões
 
-Este piloto **não** instala hooks de permissão, altera configurações globais ou
+Este plugin **não** instala hooks de permissão, altera configurações globais ou
 ativa modos de contorno das proteções. Os controles existentes do Claude e do
 GuardianS são preservados. As skills orientam o comportamento; não transformam
 ferramentas genéricas de terminal, MCP ou arquivos em um ambiente isolado seguro
@@ -12,7 +12,7 @@ tipo de operação, caminhos sob responsabilidade da tarefa e argumentos de veri
 Ele rejeita branches protegidas, caminhos fora do escopo, arquivos de controle,
 merge, implantação, publicação de versões, operações destrutivas e tipos não
 suportados. Sempre retorna `permission_granted: false`. Mesmo rascunhos de PRs e
-atualizações de issues autorizados continuam sujeitos à aprovação, pois o piloto
+atualizações de issues autorizados continuam sujeitos à aprovação, pois o plugin
 não controla com segurança todas as ferramentas externas. Execute essas ações
 somente pelas ferramentas nativas aprovadas da sessão coordenadora, com as
 permissões humanas e nativas vigentes.
@@ -127,8 +127,10 @@ O resumo para a diretoria (`scripts/progress_report.py`) executa comandos lidos 
   dentro do projeto (sem caminho absoluto, `..` ou `~`) e fazem parte do bloco aprovado. Nada é
   enviado antes da aprovação do rascunho completo.
 - **Prints na pasta da semana (`weekShots`):** é a única gravação do resumo fora do projeto.
-  - A pasta é `<scrumRoot>/<weekFolderPattern>/<weekShots>` da segunda-feira seguinte à semana do
-    período. `weekShots` é um único nome de pasta, e `scrumRoot`, `weekFolderPattern` e
+  - A pasta é `<scrumRoot>/<weekFolderPattern>/<weekShots>/<dd_MM>` da segunda-feira seguinte à semana
+    do último dia do período, com uma subpasta por resumo (a pasta plana antiga só é lida, com aviso,
+    quando é a única com `captions.json`; links e caminhos fora do `scrumRoot` são recusados nas duas).
+    `weekShots` é um único nome de pasta, e `scrumRoot`, `weekFolderPattern` e
     `weekShots` entram no bloco aprovado: mudar qualquer um deles volta o estado para `changed`.
     Sem `weekShots`, o bloco continua sem esses campos e a aprovação que já existia vale.
   - A pasta passa pelas mesmas travas da sincronização do roadmap: precisa ficar dentro do
