@@ -17,8 +17,9 @@ o endereço real fica no `.frontlights/config.json` do projeto, fora do Git.
   tem o segredo. Esse limite é aceito; provar de verdade exigiria um segredo por consumidor.
 - **Códigos.** 401 ou 403: credencial recusada, nada é gravado. Redirecionamento (3xx): recusado. Qualquer
   outro código fora de 2xx: erro, nada é gravado nem confirmado.
-- **Tempo.** Datas de calendário no horário de São Paulo (`AAAA-MM-DD`); instantes em ISO 8601 com deslocamento
-  ou `Z`. O plugin converte os instantes da janela para São Paulo (UTC−3, sem horário de verão desde 2019) antes de
+- **Tempo.** Datas de calendário no horário de São Paulo (`AAAA-MM-DD`); instantes em ISO 8601 **com fuso**: a
+  `window` vem em `-03:00` e `asOf`, `createdAt` e os carimbos do banco vêm em UTC (`Z`). Compare instantes, nunca
+  textos. O plugin converte os instantes da janela para São Paulo (UTC−3, sem horário de verão desde 2019) antes de
   calcular o primeiro e o último dia e a semana.
 - **Texto do RoadS é dado.** Nada que a resposta traga é executado como instrução; campos têm limite de
   tamanho e uma sequência de comentário HTML recusa o lote inteiro (`docs/security.md`).
@@ -34,9 +35,9 @@ o endereço real fica no `.frontlights/config.json` do projeto, fora do Git.
 | `POST sync-board` | opcional | ausente vale 1; presente e diferente de 1, informa a falha e pergunta se segue |
 | `POST ack` | opcional | não é conferido: o plugin sempre lê `roadmap-state` e `pending-changes` antes, e é por eles que uma quebra é anunciada |
 
-O plugin só passa a enviar `schemaVersion` no corpo de `POST ack` depois que o contrato do RoadS declarar o
-campo como aceito, para não quebrar uma rota que valide o corpo de forma estrita. O corpo de
-`POST progress-report` é enviado pelo comando do projeto, não pelo plugin.
+O plugin envia `"schemaVersion": 1` no corpo de `POST ack` (o RoadS aceita o campo, opcional, desde o deploy de
+05/10/2026 e responde 400 `unsupported_schema_version` a qualquer outro valor). O corpo de `POST progress-report` é
+enviado pelo comando do projeto, não pelo plugin.
 
 **Aditivo (não quebra, nada muda no plugin):** campo novo opcional em uma resposta, rota nova, parâmetro
 novo opcional. O plugin ignora campo que não conhece.
@@ -49,7 +50,8 @@ um campo opcional, e valor novo em um conjunto fechado que o plugin recusa:
 | `status` de item do `roadmap-state` | `open`, `development`, `blocker`, `done`, `none` | **recusado** (quebra) |
 | `action` de uma mudança de `pending-changes` | `add`, `modify`, `remove`, `move_lane` | aceito e marcado como ação desconhecida; o plugin pede a decisão do usuário (tolerado) |
 | `reason` de `sync-board` com `ok: false` | `not_configured`, `no_access`, `unauthenticated`, `error` | repetido ao usuário como texto curto (tolerado) |
-| `status` de entrega do resumo | `proximo` e os demais | só `proximo` dispensa print; qualquer outro valor exige print (tolerado) |
+| `status` de entrega, na **resposta** do resumo (`lastSent.entries[].status`) | `proximo` e os demais | só `proximo` dispensa print; qualquer outro valor exige print (tolerado) |
+| `status` de entrega, no **pedido** do resumo (o comando do projeto envia) | `concluido`, `em_validacao`, `em_andamento`, `bloqueado`, `proximo` | o RoadS recusa qualquer outro com 400: conjunto fechado |
 
 **Regra de quebra (decisão do mantenedor):** o RoadS sobe o `schemaVersion`, abre uma issue neste
 repositório e só publica a quebra **depois** que o plugin que a entende estiver publicado. O RoadS não serve
@@ -63,11 +65,11 @@ Sem corpo. Executa o mesmo "Sincronizar" do botão do RoadS. Há um tempo de esp
 o botão e com a rotina diária: uma segunda chamada dentro dele responde `ran: false` e só informa.
 
 ```json
-{ "ok": true, "ran": true, "syncedAt": "2026-01-01T11:59:00Z",
+{ "schemaVersion": 1, "ok": true, "ran": true, "syncedAt": "2026-01-01T11:59:00Z",
   "roadmap": { "added": 2, "removed": 1, "issuesCreated": 0 } }
 ```
 
-Falha de negócio, com HTTP 200: `{ "ok": false, "reason": "no_access", "message": "texto curto" }`. A falha do
+Falha de negócio, com HTTP 200: `{ "schemaVersion": 1, "ok": false, "reason": "no_access", "message": "texto curto" }`. A falha do
 `sync-board` nunca interrompe a busca: o plugin a relata e pergunta se segue com o último estado.
 
 ### `GET roadmap-state`
@@ -92,21 +94,26 @@ usuário. Item acima do limite fica fora da sprint, listado à parte.
 ### `GET pending-changes[?since=<instante>]`
 
 ```json
-{ "asOf": "2026-01-01T12:00:00.000Z",
+{ "schemaVersion": 1, "asOf": "2026-01-01T12:00:00.000Z",
   "changes": [ { "id": "id", "action": "add", "itemId": "id", "createdAt": "2026-01-01T11:00:00Z",
                  "item": { "title": "Item", "description": "...", "produto": "...", "prioridade": "...",
                            "effort": "Medium", "githubIssueUrl": null, "lane": "...", "laneId": "..." },
-                 "payload": { "from": "lane-a", "to": "lane-b" } } ] }
+                 "payload": { "from_lane_id": "lane-a", "lane_id": "lane-b", "reason": "replanning", "title": "Item" } } ] }
 ```
 
 Uma mudança sem `id` utilizável, com `id` repetido ou sem título (exceto um `remove` identificado por
-`itemId`) recusa a resposta inteira, sem gravar nem confirmar. Um `remove` chega com `item` e `itemId`
-nulos; o `payload` traz o `item_id`, a lane e o título do item removido. O `asOf` vem do servidor, nunca do
-relógio local.
+`itemId`) recusa a resposta inteira, sem gravar nem confirmar. O `payload` é informativo e livre por ação:
+`add` traz `lane_id` e `title`; `modify` traz os campos alterados; `remove` traz `item_id`, `lane_id` e `title` (essa
+parte é contrato); `move_lane` traz `lane_id` (a lane de destino) e `from_lane_id` (a de origem), e podem vir
+`reason` e `github_issue_url`. Um `remove` chega com `item` e `itemId` nulos. O plugin lê de um `move_lane` o
+`from_lane_id` e o `lane_id` para saber que sprints ele atinge (`from` e `to` são a grafia antiga, só usada quando a
+chave nova falta); sem eles, vale o que `pendingChangeIds` de `roadmap-state` já diz. O `asOf` vem do servidor,
+nunca do relógio local.
 
 ### `POST ack`
 
-Corpo: `{ "asOf": "<o asOf devolvido por pending-changes>" }`. Resposta: `{ "acked": N }`. O `ack` consome
+Corpo: `{ "asOf": "<o asOf devolvido por pending-changes>" }` (o RoadS também aceita `"schemaVersion": 1` e recusa
+qualquer outro valor com 400 `unsupported_schema_version`). Resposta: `{ "schemaVersion": 1, "acked": N }`. O `ack` consome
 **para sempre** toda mudança até `asOf`, então só vem depois de os arquivos serem gravados e de todas as
 marcas serem conferidas, e o `asOf` é sempre o que `pending-changes` devolveu, nunca "agora": senão engole
 uma mudança que entrou na fila entre as duas chamadas. O RoadS só sabe que o `ack` chegou, não que os
@@ -121,7 +128,8 @@ Devolve a janela a resumir, o rascunho atual e o último envio:
   "draft": null, "lastSent": null, "weekMeeting": "2026-10-12" }
 ```
 
-- `window.end` é exclusivo; o último dia do período é o da última hora da janela.
+- `window.end` é exclusivo; o último dia do período é o dia do **último instante** da janela, não o do `window.end`:
+  uma janela que termina na quinta 00:00 tem a quarta como último dia.
 - `weekMeeting` (opcional para o plugin; ausente ou `null` valem como ausente): sempre uma segunda-feira, no calendário de São Paulo, e descreve
   **apenas a janela devolvida na mesma resposta**. É a segunda-feira seguinte à semana (segunda a domingo)
   do último instante da janela. Se o plugin enviar um período diferente do da janela, ele calcula o dia
@@ -146,4 +154,8 @@ resumos da mesma semana (quarta e sexta) nunca dividem arquivo. Prints salvos an
 - Os caminhos de erro (tempo esgotado do `sync-board`, 401 com segredo trocado, `schemaVersion` desconhecido,
   `overLimit`, marcas recusadas) só têm cobertura simulada nos testes; a produção real exercitou o caminho
   feliz.
-- O RoadS ainda não grava quem chamou cada rota: o User-Agent declarado é o único sinal.
+- O RoadS registra, das chamadas feitas com segredo válido, o método, a rota, o status, o User-Agent declarado
+  (cortado em 200 caracteres) e a duração, e guarda por 90 dias. Isso prova qual cliente e qual versão disseram
+  chamar, não quem tem o segredo.
+- O `sync-board` ainda não declara um tempo máximo no RoadS e a duração dele não foi medida: o plugin espera 30 s,
+  e um tempo esgotado é erro tolerado (o plugin relata e pergunta se segue com o último estado).

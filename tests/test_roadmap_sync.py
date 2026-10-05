@@ -300,7 +300,7 @@ class ApplyTests(RoadmapSyncTestCase):
         backup = Path(applied['backups'][0])
         self.assertEqual(backup.read_text(encoding='utf-8'), before)
         self.assertEqual(transport.calls[0]['url'], 'https://roads.example.test/api/frontlights/ack')
-        self.assertEqual(json.loads(transport.calls[0]['body']), {'asOf': '2026-09-28T12:00:00.000Z'})
+        self.assertEqual(json.loads(transport.calls[0]['body']), {'schemaVersion': 1, 'asOf': '2026-09-28T12:00:00.000Z'})
         self.assertEqual(applied['acked'], 4)
         state = json.loads((self.project / '.frontlights' / 'roadmap-sync' / 'state.json').read_text())
         self.assertEqual(state['lastAckAsOf'], '2026-09-28T12:00:00.000Z')
@@ -716,17 +716,43 @@ class SprintTargetTests(RoadmapSyncTestCase):
         result, _ = self.approve_and_fetch(state=state)
         self.assertIn(REMOVE_ID, result['plan']['targets'][CURRENT]['changeIds'])
 
-    def moved_out(self, lane_to):
+    def moved_out(self, lane_to, real=False):
         """Change 4 moves item d out of the current sprint: it leaves the sprint's items and, when
-        it lands in a group or another sprint, that lane lists the change."""
+        it lands in a group or another sprint, that lane lists the change. With `real`, the payload has the
+        keys the service really sends for a move_lane (`from_lane_id`, `lane_id`, `reason`, `title`)."""
         state, payload = state_fixture(), fixture()
         moved = state['sprints'][0]['items'].pop(1)
         if lane_to == 'g1':
             state['groups'][0]['items'].append({k: v for k, v in moved.items() if k != 'overLimit'})
         else:
             state['sprints'][1]['items'].append(dict(moved, position=2))
-        payload['changes'][3]['payload'] = {'from': 'atual', 'to': lane_to}
+        payload['changes'][3]['payload'] = ({'from_lane_id': 'atual', 'lane_id': lane_to, 'reason': 'replanning',
+                                             'title': 'Item d'} if real else {'from': 'atual', 'to': lane_to})
         return state, payload
+
+    def test_the_payload_the_service_really_sends_reaches_the_origin_and_the_destination(self):
+        for lane_to, targets in (('g1', [CURRENT]), ('proxima', [CURRENT, NEXT])):
+            with self.subTest(lane_to=lane_to):
+                rs._SECRETS.clear()
+                state, payload = self.moved_out(lane_to, real=True)
+                result, _ = self.approve_and_fetch(payload, state=state, discard_staged=True)
+                self.assertTrue(result['ok'], result['message'])
+                self.assertEqual(next(c for c in result['plan']['changes'] if c['id'] == MOVE_ID)['sprintTargets'], targets)
+
+    def test_the_real_payload_from_a_group_into_a_sprint_targets_the_destination(self):
+        state, payload = state_fixture(), fixture()
+        state['sprints'][0]['items'].pop(1)
+        payload['changes'][3]['payload'] = {'from_lane_id': 'g1', 'lane_id': 'proxima', 'reason': 'replanning'}
+        result, _ = self.approve_and_fetch(payload, state=state)
+        self.assertTrue(result['ok'], result['message'])
+        self.assertEqual(result['plan']['targets'][NEXT]['changeIds'], [MOVE_ID])
+        self.assertNotIn(MOVE_ID, result['plan']['targets'][CURRENT]['changeIds'])
+
+    def test_the_real_keys_win_over_the_old_ones_when_both_are_present(self):
+        state, payload = self.moved_out('g1', real=True)
+        payload['changes'][3]['payload'].update({'from': 'ignored', 'to': 'ignored'})
+        result, _ = self.approve_and_fetch(payload, state=state)
+        self.assertEqual(next(c for c in result['plan']['changes'] if c['id'] == MOVE_ID)['sprintTargets'], [CURRENT])
 
     def test_a_move_out_of_a_sprint_to_a_group_targets_the_origin_sprint(self):
         state, payload = self.moved_out('g1')

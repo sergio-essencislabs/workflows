@@ -82,6 +82,20 @@ class DocumentShapeTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, ' '.join(DOC.split()))
 
+    def test_the_contract_states_what_the_service_really_sends(self):
+        flat = ' '.join(DOC.split())
+        for phrase in ('`from_lane_id` (a de origem)', '`lane_id` (a lane de destino)', 'Compare instantes, nunca textos',
+                       '`concluido`, `em_validacao`, `em_andamento`, `bloqueado`, `proximo`', 'conjunto fechado',
+                       'o dia do **último instante** da janela', 'unsupported_schema_version',
+                       'O plugin envia `"schemaVersion": 1` no corpo de `POST ack`'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, flat)
+
+    def test_the_move_lane_keys_in_the_contract_are_the_ones_the_code_reads(self):
+        change = {'id': 'm1', 'action': 'move_lane', 'item': {'title': 'T'},
+                  'payload': {'from_lane_id': 'origem', 'lane_id': 'destino', 'reason': 'x', 'title': 'T'}}
+        self.assertEqual(rs.normalise_changes({'changes': [change]})[0]['_move'], ('origem', 'destino'))
+
     def test_only_generic_placeholders_appear(self):
         hosts = set(re.findall(r'https?://([^/\s"`)]+)', DOC))
         self.assertEqual(hosts, {'roads.example.test'})

@@ -536,6 +536,19 @@ def route_schema_version(payload, route, effect='Nothing was written or acknowle
                 f'{effect}; update Frontlights or take it to the RoadS owner.')
 
 
+def move_lanes(payload, change_id):
+    """The lanes a move_lane leaves and enters. The service sends `from_lane_id` (origin) and `lane_id`
+    (destination); `from` and `to` are the older spelling and only stand in when the real key is absent."""
+    def lane(*keys):
+        for key in keys:
+            if isinstance(payload.get(key), str):
+                text = safe_string(payload[key], f'change {change_id} payload.{key}', FIELD_LIMITS['laneId']).strip()
+                if text:
+                    return text
+        return None
+    return lane('from_lane_id', 'from'), lane('lane_id', 'to')
+
+
 def normalise_changes(payload, issue_targets=None):
     """Defensive normalisation of the pending-changes answer. Unknown fields are dropped. A change
     without a usable id is refused (it could never be marked and the ack would still consume it),
@@ -596,9 +609,7 @@ def normalise_changes(payload, issue_targets=None):
             'itemMissing': not change.get('item'),
             '_created': created,
             # The lanes a move_lane leaves and enters, compared with the state's sprint laneIds.
-            '_move': tuple(safe_string(payload.get(key), f'change {change_id} payload.{key}', FIELD_LIMITS['laneId']).strip() or None
-                           if isinstance(payload.get(key), str) else None for key in ('from', 'to'))
-                     if action == 'move_lane' else (None, None),
+            '_move': move_lanes(payload, change_id) if action == 'move_lane' else (None, None),
         })
     return changes
 
@@ -916,7 +927,7 @@ def do_ack(ctx, transport, plan, result, nonce, confirm_declined):
         return 2
     try:
         assert_approved(ctx)
-        answer = request(ctx, transport, 'POST', endpoint_url(ctx.endpoint, 'ack'), json.dumps({'asOf': plan['asOf']}))
+        answer = request(ctx, transport, 'POST', endpoint_url(ctx.endpoint, 'ack'), json.dumps({'schemaVersion': STATE_SCHEMA_VERSION, 'asOf': plan['asOf']}))
     except Refusal as error:
         result.update(ack='failed', retryable=True, message=(
             f'Files are written and verified, but the acknowledgement failed: {error} Nothing is lost; the next sync skips '
