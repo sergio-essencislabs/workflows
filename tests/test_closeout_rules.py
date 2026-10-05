@@ -63,7 +63,7 @@ class ReferenceTests(unittest.TestCase):
     def test_the_candidate_rule_and_the_order(self):
         for phrase in ('every criterion of it is ticked', 'every one of its sub-issues is closed or a candidate in the same batch',
                        '(children close before their parents)', 'A closed issue whose card is not in Done is a candidate to be moved only',
-                       '`excluded` lists what is not ready and why', '`unchecked_criteria`, `no_criteria`, `open_children`',
+                       '`excluded` lists what is not ready and why', '`unchecked_criteria` and `no_criteria` with the counts',
                        'never ticks one itself', 'Without `project.done` the pair is `Status` / `Done`'):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, self.flat)
@@ -87,6 +87,15 @@ class ReferenceTests(unittest.TestCase):
         options = list(dict.fromkeys(x for x in labels if not x.startswith('Fechar estas')))
         self.assertEqual(options, ['Sim, fechar e mover tudo', 'Escolher quais', 'Só fechar, sem mover', 'Não agora'])
         self.assertTrue(all(len(label.split()) <= 5 for label in options), options)
+
+    def test_every_reason_and_board_status_the_script_produces_is_documented(self):
+        source = (ROOT / 'scripts' / 'closeout.py').read_text(encoding='utf-8')
+        for code in ('unchecked_criteria', 'no_criteria', 'open_children', 'truncated', 'not_found', 'unreadable',
+                     'unconfigured', 'not_read', 'unavailable', 'done_option_missing', 'open_pr', 'no_pr', 'not_on_board',
+                     'already_done_card', 'close_and_move', 'move_only'):
+            with self.subTest(code=code):
+                self.assertIn(f"'{code}'", source, 'the script no longer produces it')
+                self.assertIn(code, self.flat, 'the reference does not explain it')
 
     def test_closing_is_never_implied(self):
         for phrase in ('with **its own approval**', 'no merged PR and no green test stands in for it',

@@ -26,12 +26,16 @@ carries its `action` (`close`, `close_and_move`, `move_only`), the criteria coun
 whether merged), its card status and `cautions`: `open_pr`, `no_pr`, `not_on_board`, `already_done_card`.
 The cautions inform; they never block, and an `open_pr` is called out in the question.
 
-`excluded` lists what is not ready and why (`unchecked_criteria`, `no_criteria`, `open_children`): that
-needs work or a decision, not closing. Tell the user briefly, never propose it. Ticking a criterion belongs
+`excluded` lists what is not ready and why (`unchecked_criteria` and `no_criteria` with the counts,
+`open_children` with the children, `truncated` when a list was cut, `not_found` and `unreadable`): that
+needs work or a decision, not closing. `order` is 1-based and is the order to close in. `closedUnchecked`
+counts closed issues whose card could not be checked because the board was not readable, and `alreadyDone`
+counts the closed ones that need nothing. Tell the user briefly, never propose it. Ticking a criterion belongs
 to the verification of the issue, with evidence (a test, a measured result, a reviewed diff), under the
 authorization for routine issue updates; this step trusts the ticks and never ticks one itself.
 
-`board.status` says whether cards can be moved: `unconfigured` (no board: close only), `unavailable` (a `gh`
+`board.status` says whether cards can be moved: `unconfigured` (no board: close only), `not_read` (nothing in
+scope, so the board was not read), `unavailable` (a `gh`
 without the `project` scope: say so, give `gh auth refresh -s project`, close only),
 `done_option_missing` (the board has no option named as `project.done`: show the field and its real options
 and ask which one is Done; recording the answer in `.frontlights/config.json` as `project.done` is a local
@@ -65,7 +69,8 @@ under the secondary rate limit. Add no comment: the closing is already on the is
 python "${CLAUDE_PLUGIN_ROOT}/scripts/closeout.py" verify --config <config> --root <project> --issues 12,13
 ```
 
-Report per issue whether it is closed and its card is in Done; list every `ok: false`. GitHub is the source
+Report per issue whether it is closed and its card is in Done; list every `ok: false` (the command then exits
+with code 1). GitHub is the source
 of truth: the local `.frontlights/issues/<n>/` snapshots are updated to closed with the time of the read,
 never the other way round. Put the approved list, the user's literal answer, the results and the verify
 output in the handoff.
