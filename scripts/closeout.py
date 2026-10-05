@@ -52,7 +52,8 @@ HINT = 'gh auth refresh -s project'
 NUMBER = re.compile(r'[0-9]{1,9}')
 CURSOR = re.compile(r'[A-Za-z0-9+/=_-]{1,200}')
 PHRASES = ('acceptance criteria', 'criterios de aceitacao', 'criterios de aceite')
-HEADING = re.compile(r'^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$')
+HEADING = re.compile(r'^ {0,3}(#{1,6})(?:[ \t]+(.*))?$')   # no lazy quantifier: a long line must not make it crawl
+LINE_CAP = 2000          # a checklist item or a title never needs more than this of a line
 FENCE = re.compile(r'^[ \t]*(`{3,}|~{3,})(.*)$')
 ITEM = re.compile(r'^[ \t]*(?:[-*+]|[0-9]{1,9}[.)])[ \t]+\[([ xX])\](?=[ \t]|$)')
 FEATURES = 'GraphQL-Features: issue_types'
@@ -61,7 +62,7 @@ VIEW = '''number state stateReason title url body
   parent { number }
   subIssuesSummary { total completed }
   subIssues(first: 100) { totalCount nodes { number state repository { nameWithOwner } } }
-  closedByPullRequestsReferences(first: 5, includeClosedPrs: true) { totalCount nodes { number state merged url } }'''
+  closedByPullRequestsReferences(first: 20, includeClosedPrs: true) { totalCount nodes { number state merged url } }'''
 CARDS = '''
   projectItems(first: 20) { totalCount nodes { id
     project { number owner { ... on Organization { login } ... on User { login } } }
@@ -79,6 +80,15 @@ def plain(text):
     text = unicodedata.normalize('NFD', text)
     text = ''.join(c for c in text if unicodedata.category(c) != 'Mn').casefold()
     return re.sub(r'^[\W_]+', '', ' '.join(text.split()))
+
+
+def heading_text(text):
+    """A heading's text without its optional closing sequence of `#` (which must follow a space)."""
+    text = text.rstrip(' \t')
+    bare = text.rstrip('#')
+    if bare != text and (bare == '' or bare[-1] in ' \t'):
+        text = bare.rstrip(' \t')
+    return text
 
 
 def strip_comments(line):
@@ -118,6 +128,7 @@ def criteria(body):
                 fence = None
             continue
         line, comment = strip_comments(raw)
+        line = line[:LINE_CAP]
         opened = FENCE.match(line)
         if opened and not (opened.group(1)[0] == '`' and '`' in opened.group(2)):
             fence = (opened.group(1)[0], len(opened.group(1)))
@@ -128,7 +139,7 @@ def criteria(body):
             if level is not None and depth > level:
                 continue
             level = None
-            if plain(heading.group(2) or '').startswith(PHRASES):
+            if plain(heading_text(heading.group(2) or '')).startswith(PHRASES):
                 level, found = depth, True
             continue
         item = ITEM.match(line) if level is not None else None
@@ -167,9 +178,11 @@ def read_record(path):
         return None
 
 
-def record_numbers(root):
+def record_numbers(root, repository=None):
     """The issue numbers this project's records name: folders of .frontlights/issues, `issue_ids` of
-    .frontlights/authorization*.json and the integer `id` of each issue in .frontlights/plan.json. A record
+    .frontlights/authorization*.json and the `id` of each issue of .frontlights/plan.json that is already
+    published in `repository` (its `url` is that repository's issue with that same number) and not still a
+    proposal: the ids of a plan before publication are only the proposal's own, never GitHub numbers. A record
     that is missing or unreadable is skipped."""
     base = Path(root) / '.frontlights'
     found = set()
@@ -191,8 +204,12 @@ def record_numbers(root):
             found.update(n for n in ids if valid_number(n))
     plan = read_record(base / 'plan.json')
     issues = plan.get('issues') if isinstance(plan, dict) else None
-    if isinstance(issues, list):
-        found.update(issue['id'] for issue in issues if isinstance(issue, dict) and valid_number(issue.get('id')))
+    if isinstance(issues, list) and isinstance(repository, str):
+        for issue in issues:
+            if (isinstance(issue, dict) and valid_number(issue.get('id')) and issue.get('status') != 'proposed'
+                    and isinstance(issue.get('url'), str)
+                    and issue['url'].casefold() == f"https://github.com/{repository}/issues/{issue['id']}".casefold()):
+                found.add(issue['id'])
     return sorted(found)
 
 
@@ -303,7 +320,7 @@ def scope_numbers(root, explicit, all_flag, gh, repository):
     if all_flag:
         numbers, truncated = open_issue_numbers(gh, repository)
         return {'mode': 'all', 'numbers': numbers, 'truncated': truncated}
-    seeds = record_numbers(root)
+    seeds = record_numbers(root, repository)
     cut = len(seeds) > MAX_SCOPE
     if cut:
         seeds = seeds[-MAX_SCOPE:]
@@ -340,9 +357,7 @@ def parse_view(number, node, repository, board, with_cards):
     completed = summary.get('completed') if type(summary.get('completed')) is int else sum(c['state'] == 'CLOSED' for c in children)
     opened = [c['number'] if c['external'] is None else f"{c['external']}#{c['number']}"
               for c in sorted(children, key=lambda c: (c['external'] is not None, c['number'])) if c['state'] != 'CLOSED']
-    prs, short = page(node.get('closedByPullRequestsReferences'))
-    if short:
-        truncated.append('pull_requests')
+    prs, _ = page(node.get('closedByPullRequestsReferences'))   # a cut list only hides a caution: never a reason to skip
     linked = []
     for pr in prs:
         if valid_number(pr.get('number')):
@@ -649,6 +664,7 @@ def op_verify(config, root='.', explicit=None, gh=None):
     require(explicit is not None and explicit != '' and explicit != [],
             'verify needs the issues to check: pass --issues 12,13')
     numbers = parse_numbers(explicit)
+    require(len(numbers) <= MAX_ALL, f'name at most {MAX_ALL} issues')
     info, _ = board_state(gh, board)
     views = read_board_views(gh, repository, numbers, board, info)
     done_field, done_value = (board['done']['field'], board['done']['value']) if board else (None, None)

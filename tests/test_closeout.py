@@ -286,7 +286,9 @@ class ScopeTests(CloseoutCase):
     def test_records_are_the_union_of_folders_authorizations_and_plans(self):
         self.records(folders=['12', '13', 'notes', '14x', '0', '015', '-3'],
                      authorization={'issue_ids': [14, 15, True, 'x', -3, 2.5, 0, None]},
-                     plan={'issues': [{'id': 16}, {'id': '17'}, {'id': True}, {'id': 18, 'title': 'x'}, 'x', {'id': 12}]},
+                     plan={'issues': [{'id': 16, 'url': URL % 16}, {'id': '17', 'url': URL % 17}, {'id': True, 'url': URL % 1},
+                                      {'id': 18, 'title': 'x', 'url': URL % 18, 'status': 'ready'}, 'x',
+                                      {'id': 12, 'url': URL % 12}]},
                      authorization__second__json=json.dumps({'issue_ids': [19]}))
         (self.root / '.frontlights' / 'issues' / '99').write_text('a file, not a folder', encoding='utf-8')
         self.records(authorization__txt=json.dumps({'issue_ids': [77]}))
@@ -412,7 +414,7 @@ class ReadViewsTests(CloseoutCase):
         closeout.read_views(gh, REPO, [12], fake_board(), False)
         with_cards, without = gh.queries()
         for field in ('stateReason', 'body', 'parent {', 'subIssuesSummary', 'subIssues(first: 100)',
-                      'closedByPullRequestsReferences(first: 5, includeClosedPrs: true)'):
+                      'closedByPullRequestsReferences(first: 20, includeClosedPrs: true)'):
             with self.subTest(field=field):
                 self.assertIn(field, with_cards)
                 self.assertIn(field, without)
@@ -456,12 +458,18 @@ class ReadViewsTests(CloseoutCase):
         self.assertIsNotNone(views[12])
 
     def test_a_list_that_did_not_fit_one_page_is_named(self):
-        cases = ({'children': 101}, {'prs': 6}, {'cards': 21}, {'values': 51})
-        expected = ({'sub_issues'}, {'pull_requests'}, {'cards'}, {'card_values'})
+        cases = ({'children': 101}, {'cards': 21}, {'values': 51})
+        expected = ({'sub_issues'}, {'cards'}, {'card_values'})
         for totals, names in zip(cases, expected):
             with self.subTest(totals=totals):
                 views = closeout.read_views(FakeGh({12: node(12, totals=totals)}), REPO, [12], fake_board(), True)
                 self.assertEqual(set(views[12]['truncated']), names)
+
+    def test_more_linked_pull_requests_than_one_page_never_exclude_the_issue(self):
+        views = closeout.read_views(FakeGh({12: node(12, totals={'prs': 25})}), REPO, [12], fake_board(), True)
+        self.assertEqual(views[12]['truncated'], [])
+        result, _ = self.candidates({12: node(12, totals={'prs': 25})})
+        self.assertEqual([entry['number'] for entry in result['candidates']], [12])
 
     def test_a_refused_read_is_a_refusal_with_no_gh_output(self):
         with self.assertRaises(rs.Refusal):
@@ -638,8 +646,7 @@ class EligibilityTests(CloseoutCase):
         self.assertEqual(result['candidates'][0]['cautions'], ['open_pr', 'not_on_board'])
 
     def test_a_list_that_did_not_fit_one_page_excludes_the_issue_with_the_reason(self):
-        for totals, name in (({'children': 150}, 'sub_issues'), ({'cards': 25}, 'cards'), ({'values': 60}, 'card_values'),
-                             ({'prs': 9}, 'pull_requests')):
+        for totals, name in (({'children': 150}, 'sub_issues'), ({'cards': 25}, 'cards'), ({'values': 60}, 'card_values')):
             with self.subTest(totals=totals):
                 result, _ = self.candidates({12: node(12, totals=totals, children=[(13, 'CLOSED')])})
                 self.assertEqual(result['candidates'], [])
@@ -925,6 +932,47 @@ class VerifyTests(CloseoutCase):
     def test_verify_never_writes_either(self):
         result, gh = self.verify({12: node(12, state='CLOSED', card={'Status': 'Done'})})
         self.assertTrue(all(call[:2] == ['api', 'graphql'] for call in gh.calls))
+
+
+class ReviewFindingsTests(CloseoutCase):
+    """The second independent review: provisional plan ids, a title line that makes a regex crawl, and an
+    unbounded verify."""
+
+    def records(self, plan):
+        (self.root / '.frontlights' / 'plan.json').write_text(json.dumps(plan), encoding='utf-8')
+
+    def test_the_ids_of_a_plan_that_is_only_a_proposal_are_not_github_numbers(self):
+        self.records({'repository': REPO, 'issues': [
+            {'id': 1, 'status': 'proposed'}, {'id': 2, 'status': 'ready'},
+            {'id': 3, 'url': URL % 3, 'status': 'proposed'}, {'id': 4, 'url': 'https://github.com/OTHER/REPO/issues/4'},
+            {'id': 5, 'url': URL % 6}, {'id': 7, 'url': URL % 7, 'status': 'verified'}]})
+        self.assertEqual(closeout.record_numbers(self.root, REPO), [7])
+
+    def test_without_the_repository_no_plan_id_counts_at_all(self):
+        self.records({'issues': [{'id': 7, 'url': URL % 7}]})
+        self.assertEqual(closeout.record_numbers(self.root, None), [])
+
+    def test_a_long_title_line_is_read_in_linear_time(self):
+        import time
+        for filler in (' ', '\t', ' \t', '#'):
+            with self.subTest(filler=repr(filler)):
+                body = '## Acceptance criteria\n\n- [x] done\n\n# a' + filler * 65000 + 'x\n- [ ] after\n'
+                started = time.monotonic()
+                counts = closeout.criteria(body)
+                self.assertLess(time.monotonic() - started, 1.0)
+                self.assertIsNotNone(counts)
+
+    def test_a_heading_with_a_closing_sequence_still_names_its_section(self):
+        for heading in ('## Acceptance criteria ##', '### Acceptance criteria   ###  ', '## **Critérios de aceitação**'):
+            with self.subTest(heading=heading):
+                self.assertEqual(closeout.criteria(f'{heading}\n- [x] a\n- [ ] b\n'), (1, 2))
+        self.assertIsNone(closeout.criteria('## Notes\n- [x] a\n'))
+
+    def test_verify_names_at_most_the_ceiling(self):
+        gh = FakeGh()
+        with self.assertRaises(rs.Refusal):
+            closeout.op_verify(self.config, self.root, list(range(1, closeout.MAX_ALL + 2)), gh)
+        self.assertEqual(gh.calls, [])
 
 
 class RefusalTests(CloseoutCase):

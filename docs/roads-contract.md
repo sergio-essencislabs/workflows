@@ -177,7 +177,7 @@ Informado pelo RoadS a partir do código dele; vale como contrato do lado de que
 `<scrumRoot>/<weekFolderPattern da segunda>/<weekShots>/<dd_MM do último dia do período>`, em que a segunda
 é a de `weekMeeting`. Cada resumo tem a sua subpasta, com o seu `captions.json` e os seus prints: dois
 resumos da mesma semana (quarta e sexta) nunca dividem arquivo. Prints salvos antes da subpasta, direto em
-`weekShots`, ainda são lidos (com aviso) quando só a pasta plana tem `captions.json`.
+`weekShots`, ainda são lidos (com aviso) quando a subpasta do dia não existe e a pasta plana tem `captions.json`.
 
 ## O que ainda não está provado
 

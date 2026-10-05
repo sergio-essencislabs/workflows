@@ -190,12 +190,14 @@ or a disabled one), say nothing about it, ask nothing and go on exactly as befor
 
 **Closeout question, right after the progress question.** When `.frontlights/config.json`
 exists with a `repository`, run the read-only `python "${CLAUDE_PLUGIN_ROOT}/scripts/closeout.py"
-candidates --config <config> --root <project>` (a GitHub read through `gh`; if it cannot run, say so
-in one line and go on). Only when it reports `ask` true, ask with `AskUserQuestion`: "Fechar as
+candidates --config <config> --root <project>` (a GitHub read through `gh` that takes a while when many issues are in scope, so give it a generous timeout; if it
+cannot run, say so in one line and go on). Only when it reports `ask` true, ask with `AskUserQuestion`: "Fechar as
 issues que já têm todos os critérios marcados e mover os cartões para Done?" Put in the question text
 how many there are and which, and what `board.status` allows. Options: "Sim, mostrar a lista" and
 "Não, seguir com o pedido". On yes, read `references/closeout.md` and follow it (stage 7), then come
-back to the request. On no, write nothing. When `ask` is false, say nothing and go on exactly as before.
+back to the request. On no, write nothing. When `ask` is false, say nothing and go on exactly as before, except when `board.status` is `unavailable` or
+`done_option_missing`, or `closedUnchecked` is above zero: then say in one line what could not be checked and the remedy
+(`gh auth refresh -s project`, or fix `project.done`).
 
 The user's own request is the starting point and the authority on scope. Accept
 any kind of work: a product feature, a bug, a refactor, research, a one-off

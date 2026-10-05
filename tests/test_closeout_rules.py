@@ -31,7 +31,7 @@ class SkillTests(unittest.TestCase):
         self.assertIn('closeout.py" candidates', stage1)
         self.assertIn('Only when it reports `ask` true', stage1)
         self.assertIn('Fechar as issues que já têm todos os critérios marcados e mover os cartões para Done?', stage1)
-        self.assertIn('When `ask` is false, say nothing', stage1)
+        self.assertIn('When `ask` is false, say nothing and go on exactly as before, except when `board.status` is `unavailable` or `done_option_missing`, or `closedUnchecked` is above zero: then say in one line what could not be checked', stage1)
         self.assertLess(stage1.index('Progress question'), stage1.index('Closeout question'))
         self.assertLess(stage1.index('Closeout question'), stage1.index('Then choose the lightest path'))
 
@@ -85,7 +85,7 @@ class ReferenceTests(unittest.TestCase):
         asking = ' '.join(section(self.text, '2. Show the list and ask').split())
         labels = re.findall(r'"([^"]+)"', asking.split('with `AskUserQuestion`:', 1)[1].split('Record')[0])
         options = list(dict.fromkeys(x for x in labels if not x.startswith('Fechar estas')))
-        self.assertEqual(options, ['Sim, fechar e mover tudo', 'Escolher quais', 'Só fechar, sem mover', 'Não agora'])
+        self.assertEqual(options, ['Sim, fechar e mover tudo', 'Escolher quais', 'Só fechar, sem mover', 'Não agora', 'Não, seguir com o pedido'])
         self.assertTrue(all(len(label.split()) <= 5 for label in options), options)
 
     def test_every_reason_and_board_status_the_script_produces_is_documented(self):

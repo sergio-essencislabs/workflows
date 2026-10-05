@@ -78,8 +78,8 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     listed). Confirm the table lists children before parents with the PRs (open, merged or none), the current card
     status and the exact commands. Answer "Não agora" once and confirm nothing was written. Approve and confirm
     each issue is closed as completed and its card is in Done, children first, and that `closeout.py verify`
-    reports every issue ok. An issue with an unticked criterion, no criteria section or an open child must never
-    appear in the list, and a `gh` without the project scope must be reported with the close-only fallback.
+    reports every issue ok. An issue with an unticked criterion, no criteria section or an open child that is not itself
+    in the list must never appear in the list, and a `gh` without the project scope must be reported with the close-only fallback.
 
 Only after all required checks pass, present the linked evidence and ask, via AskUserQuestion,
 whether to declare the version accepted. Items the environment cannot enforce (an exact

@@ -21,7 +21,8 @@ the check could not run and go on.
 
 An open issue is a **candidate** only when it has an acceptance-criteria section and every criterion of it is
 ticked, and every one of its sub-issues is closed or a candidate in the same batch (children close before
-their parents). A closed issue whose card is not in Done is a candidate to be moved only. Each candidate
+their parents). A closed issue whose card is not in Done is a candidate to be moved only, but only when it was closed as completed (one
+closed as not planned or as a duplicate needs nothing). Each candidate
 carries its `action` (`close`, `close_and_move`, `move_only`), the criteria count, its PRs (state and
 whether merged), its card status and `cautions`: `open_pr`, `no_pr`, `not_on_board`, `already_done_card`.
 The cautions inform; they never block, and an `open_pr` is called out in the question.
@@ -49,9 +50,10 @@ title, top-level or sub-issue, criteria n/n, children, PRs, card status → Done
 file-sending tool when one exists, and put it in the `preview` of the approve option (show-before-approval,
 `SKILL.md`). Then ask with `AskUserQuestion`: "Fechar estas <N> issues e mover os cartões para Done?" with
 "Sim, fechar e mover tudo" first and recommended (recommend "Escolher quais" instead when some candidate has
-`open_pr`), "Escolher quais" (a follow-up question with the candidates, at most four per call), "Só fechar,
-sem mover" and "Não agora". "Não agora" writes nothing and the question comes back in a later
-session only if the list changed. Record the answer verbatim with a reference; never answer for the user.
+`open_pr`), "Escolher quais" (a follow-up question with the candidates, at most four per call; a parent chosen without its
+candidate children is not written, it waits for them, and the user is told so), "Só fechar,
+sem mover" and "Não agora". "Não agora" writes nothing. The helper keeps no memory of the refusal, so the question comes back in every later
+session while the list stands, and the user can answer the stage 1 question "Não, seguir com o pedido" each time. Record the answer verbatim with a reference; never answer for the user.
 
 ## 3. Write what was approved
 
@@ -82,8 +84,7 @@ without moving its card changes nothing there, and a completed item stays in its
 sprint rotation removes it. RoadS also refreshes only when it syncs, and a sync within 30 s of the previous one
 returns the old snapshot. So, when cards were moved and the roadmap sync of stage 1 is configured, tell the user
 this in one line and offer a new sync (a question with options, "Sincronizar agora" and "Deixar para depois");
-on yes run the roadmap sync again as `references/roadmap-sync.md` describes. Without the board (`board.status`
-`unconfigured` or `unavailable`) say plainly that the close-only fallback will not show in RoadS.
+on yes run the roadmap sync again as `references/roadmap-sync.md` describes. Without a usable board (`board.status` `unconfigured`, `unavailable` or `done_option_missing`) say plainly that the close-only fallback will not show in RoadS.
 
 ## Never
 

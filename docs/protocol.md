@@ -36,7 +36,7 @@ relatada em uma linha, sem pergunta.
 
 O fechamento (`scripts/closeout.py`, só leitura) propõe fechar toda issue aberta, e toda sub-issue, com a seção
 de critérios de aceitação e todos os itens marcados (e as filhas fechadas ou propostas junto, filhas antes dos
-pais) e mover o cartão para o valor `project.done` (padrão `Status` / `Done`); uma issue já fechada com o cartão
+pais) e mover o cartão para o valor `project.done` (padrão `Status` / `Done`); uma issue já fechada como concluída com o cartão
 fora de Done só é movida. Quem escreve é a sessão, com o `gh` dela e depois da aprovação da lista, e a
 conferência relê o GitHub. Nenhuma outra autorização cobre essa escrita.
 

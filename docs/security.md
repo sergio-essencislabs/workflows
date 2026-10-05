@@ -148,7 +148,7 @@ O resumo para a diretoria (`scripts/progress_report.py`) executa comandos lidos 
   nunca escolher uma pasta longe da semana.
   - A pasta é `<scrumRoot>/<weekFolderPattern>/<weekShots>/<dd_MM>` da segunda-feira seguinte à semana
     do último dia do período, com uma subpasta por resumo (a pasta plana antiga só é lida, com aviso,
-    quando é a única com `captions.json`; links e caminhos fora do `scrumRoot` são recusados nas duas).
+    quando a subpasta do dia não existe e só a plana tem `captions.json`; links e caminhos fora do `scrumRoot` são recusados nas duas).
     `weekShots` é um único nome de pasta, e `scrumRoot`, `weekFolderPattern` e
     `weekShots` entram no bloco aprovado: mudar qualquer um deles volta o estado para `changed`.
     Sem `weekShots`, o bloco continua sem esses campos e a aprovação que já existia vale.
