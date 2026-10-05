@@ -22,7 +22,7 @@ case. `to-development` writes tests only at these seams, so approving the issue
 approves them; name them in the approval table too.
 
 Run `frontlights.py validate-plan --plan <plan.json> --config <.frontlights/config.json>`;
-this checks structure, DAG, board fields and `parent` links (see Follow-ups), not semantic verticality. Review every vertical demonstration manually. Check
+this checks structure, DAG, board fields, labels, body lines and `parent` links (see Follow-ups), not semantic verticality. Review every vertical demonstration manually. Check
 missing cross-layer tests, hidden sequencing, generated/shared files, migrations,
 ports, shared services, dependency cycles and context size. Add dependencies or
 shared ownership for resources that cannot safely run together. Split oversized
@@ -52,18 +52,42 @@ and takes none of the board writes below (see Follow-ups). Plan it with the issu
   `project_fields` for every board field whose default is `null`. Choose values
   that exist as options on the board; `validate-plan --config` refuses the plan
   while any field is still open.
-- Show the board values of every issue in the approval table (type, assignee and
-  each field), so approving the plan approves them. They are part of the named
-  writes, not a later step.
-- After `gh issue create`, in this order: `gh project item-add <number> --owner
-  <owner> --url <issue-url>`; `gh issue edit <n> --repo <repo> --add-assignee
-  <assignee> --type <issue_type>`; one `gh project item-edit <number> --owner
-  <owner> --url <issue-url> --field <name> --value <value>` per field. Use
-  `assignee` exactly as configured (`@me` is whoever runs `gh`), never a guessed login.
-- Verify by rereading GitHub (the issue's `projectItems`, `issueType`, `assignees`
-  and each single-select value) and report any value that did not land. A failed
+- When the board configures `labels`, `issue_type_by_label` or `body_fields`, also name
+  in the plan, for every top-level issue, its `labels` (at least one of each family the
+  board requires, such as its kind) and its `body_fields` (one value per configured line).
+  `validate-plan --config` then prints `resolved` for each top-level issue: the board
+  values, the final labels (the plan's own plus the ones its field values imply), the native
+  type (the plan's, else the one its labels imply, else the board default) and the body
+  lines. Publish exactly that, never a value of your own: the labels and the body lines do
+  not come from the board, so nothing else will fill them.
+- Show the board values of every issue in the approval table (type, assignee, labels,
+  body lines and each field), so approving the plan approves them. They are part of the
+  named writes, not a later step.
+- Create the issue with its labels and body lines in the same call: `gh issue create
+  --repo <repo> --title <title> --body-file <file> --label <name>` once per resolved
+  label, and one `**<name>:** <value>` line in the body per body field. Then, in this
+  order: `gh project item-add <number> --owner <owner> --url <issue-url>`; `gh issue
+  edit <n> --repo <repo> --add-assignee <assignee> --type <issue_type>`; one `gh project
+  item-edit <number> --owner <owner> --url <issue-url> --field <name> --value <value>`
+  per single-select field (`--text <value>` instead of `--value` for a text field).
+  Use `assignee` exactly as configured (`@me` is whoever runs `gh`), never a guessed login.
+- Verify by rereading GitHub (the issue's `projectItems`, `issueType`, `assignees`,
+  `labels` and each field value) and report any value that did not land. A failed
   board write is a partial publication: record it and retry only the missing
   writes, never by creating the issue again.
+- An issue that already exists (an adopted one, or one the roadmap sync completes) is edited with
+  `gh issue edit <n> --repo <repo> --add-label "<name>"` once per label, `--add-assignee "<login>"`
+  and `--type "<type>"`; `gh project item-add` when it is not on the board; the fields as above, with
+  `--number` or `--date` for those types. Only on top of an empty value, and its body is never edited.
+- Every value typed into these commands goes in as one double-quoted argument, and none may hold a
+  dollar sign, backtick, double quote (straight or curly: PowerShell closes a string on both),
+  backslash or control character; `validate-plan` refuses a plan value that does, so reword it. A
+  label must match the rule `validate-plan` applies (`LABEL_RULE` in the helper). Never invent a
+  label: it must exist. The issue title is typed the same way; a title that holds those characters
+  is created with `gh api` and a JSON body file instead.
+- A board field that has no options on GitHub cannot hold a value: do not put it in
+  `project.fields`, which would refuse every plan. If something must still be recorded for
+  it, configure it as a `body_fields` line.
 - If `sources.project` is `unavailable` (commonly a `gh` token without the `project`
   scope), do not publish silently outside the board. Report the exact blocked
   operation and give the user the command to fix it (`gh auth refresh -s project`).
@@ -114,7 +138,10 @@ Publish a sub-issue in this order, pausing a few seconds between creations to st
 under the secondary rate limit:
 
 - Read what the child inherits: `gh issue view <parent> --repo <repo> --json
-  assignees,labels,issueType,state`.
+  assignees,labels,issueType,state`. Those names come from GitHub, where anyone with triage access
+  can create a label: type each one as one double-quoted argument under the rule of the Project
+  board section above (no dollar sign, backtick, double quote, backslash or control character; a
+  label must match `LABEL_RULE`), and skip, then report, any value that breaks it.
 - Create it already linked: `gh issue create --repo <repo> --title <title> --body-file <file> --parent <parent>`
   plus one `--assignee <login>` per parent assignee, one `--label <name>` per parent
   label and `--type <issueType.name>` when the parent has a type. Put `Parent: #<parent>`

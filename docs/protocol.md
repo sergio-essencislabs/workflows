@@ -47,7 +47,9 @@ Com `project` no `config.json`, publicar uma issue inclui, na mesma aprovação:
 adicioná-la ao quadro (`gh project item-add`), atribuir o responsável e o tipo
 (`gh issue edit --add-assignee --type`) e preencher cada campo do quadro
 (`gh project item-edit --field --value`). O plano mostrado para aprovação traz esses
-valores por issue, e nenhum campo fica vazio. A conclusão da publicação exige reler,
+valores por issue, e nenhum campo fica vazio. Quando o `project` configura `labels`,
+`issue_type_by_label` ou `body_fields`, o plano nomeia também os labels e as linhas do corpo, o
+`validate-plan` imprime os valores finais (`resolved`) e a publicação usa só eles. A conclusão da publicação exige reler,
 pelo GitHub, que a issue está no quadro com os valores aprovados. Projeto local
 (`repository: null`) não tem quadro.
 
@@ -123,6 +125,15 @@ criados dentro do
 `scrumRoot`, sem junção nem link no caminho, e passam pelo mesmo diff e aprovação. Itens com
 `overLimit` ficam fora da sprint e são avisados; `snapshotStale` indica cópia do quadro com mais de
 24 h ou ausente. Marcas, backups, recusa de encolhimento e confirmação continuam como antes.
+
+Depois da confirmação, o passo `gaps` completa as issues que o RoadS mostra. Ele só lê: `GET
+roadmap-state` de novo (nada é consumido), e no GitHub só as issues do repositório do `config.json`,
+por `gh api graphql`, com a conta ativa do `gh`. Uma URL do RoadS fora desse repositório é ignorada
+e listada em `skipped`; issue fechada não é tocada. O resultado separa o que o config resolve
+sozinho (`fill`) do que exige escolha (`choose`), e informa os campos do quadro sem opção
+(`unfillable`). As escritas seguem a tabela aprovada pelo usuário, com o `gh` da sessão e as
+permissões vigentes, só em valor vazio, e terminam relendo com `gaps`. Esse passo roda também
+quando não há mudança pendente.
 
 O passo do resumo para a diretoria (`scripts/progress_report.py`) vem logo depois da pergunta do
 roadmap e só existe quando o bloco `roadmapSync.progress` está habilitado. A ordem é: `status`,

@@ -21,6 +21,11 @@ Operations (each prints one JSON object on stdout):
   ack             verify every marker in the targets, then POST <endpoint>/ack with the plan's asOf.
   rotate-markers  mint a fresh marker nonce and rewrite every marker in the roadmap and the current
                   week's sprint file. No network.
+  gaps            read only: GET <endpoint>/roadmap-state again, then read on GitHub (gh api graphql) the
+                  issues of the configured repository that RoadS shows, and list what each still lacks
+                  against the project's board rules: `fill` is what the configuration settles by itself,
+                  `choose` what needs a person. Writes nothing anywhere; --only-sprints skips the backlog
+                  groups.
 
 Exit codes: 0 done; 1 nothing was acknowledged (apply validates every target before it writes any,
 so a refusal from validation wrote nothing; a missing marker or an unconfirmed decline is raised
@@ -54,7 +59,17 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+import frontlights  # noqa: E402  (the board rules live there; this helper only reads them)
+
 EFFORTS = ('Very High', 'High', 'Medium', 'Low')
+GH_COMMAND = ['gh']
+GH_TIMEOUT = 60
+GAPS_BATCH = 20
+GAPS_TITLE_LIMIT = 200
+ISSUE_URL = re.compile(r'https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/issues/([1-9][0-9]{0,8})')
 ACTIONS = ('add', 'modify', 'remove', 'move_lane')
 MAX_BODY_BYTES = 5 * 1024 * 1024
 BACKUP_GENERATIONS = 5
@@ -162,10 +177,18 @@ def validate_issue_targets(targets):
         require(isinstance(target, dict) and isinstance(target.get('repository'), str)
                 and re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', target['repository']),
                 f'roadmapSync.issueTargets[{produto!r}].repository must be owner/name')
+        # A misspelt key would be dropped without a word; the board rules live in the top-level `project`.
+        require(set(target) <= {'repository', 'project'},
+                f'roadmapSync.issueTargets[{produto!r}] knows only repository and project')
         project = target.get('project')
-        require(project is None or (isinstance(project, dict) and isinstance(project.get('owner'), str)
-                                    and isinstance(project.get('number'), int) and project['number'] > 0),
-                f'roadmapSync.issueTargets[{produto!r}].project must be null or {{owner, number}}')
+        # `owner` is typed into `gh project item-add --owner`, and a config can come from a cloned repository:
+        # it gets the same login rule as the top-level project's owner.
+        require(project is None or (isinstance(project, dict) and set(project) <= {'owner', 'number'}
+                                    and isinstance(project.get('owner'), str)
+                                    and re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})', project['owner'])
+                                    and type(project.get('number')) is int and project['number'] > 0),
+                f'roadmapSync.issueTargets[{produto!r}].project must be null or {{owner, number}}: '
+                'owner a GitHub login (letters, digits and -), number a positive integer')
     return targets
 
 
@@ -202,6 +225,8 @@ class Context:
         self.marker_path = self.state_dir / 'marker.json'
         self.state_path = self.state_dir / 'state.json'
         self.name = str(config.get('repository') or self.config_path.parent.parent.name)
+        self.repository = config.get('repository')
+        self.project = config.get('project')
 
 
 # ---------------------------------------------------------------- credential and approval
@@ -1370,8 +1395,351 @@ def op_rotate(root, today):
                 "weeks' sprint files were not rewritten and no longer count; decline those changes if offered again.")}
 
 
+# ---------------------------------------------------------------- gaps: complete what RoadS leaves out
+
+def clean(value, limit=GAPS_TITLE_LIMIT):
+    """Text read from GitHub is data: no markup or control characters, and a bounded length."""
+    return re.sub(r'[<>\x00-\x1f\x7f]', '', str(value))[:limit]
+
+
+def gh_environment():
+    """gh has no use for the RoadS credential, so it does not get it."""
+    return {name: value for name, value in os.environ.items() if not re.fullmatch(SECRET_ENV_PATTERN, name)}
+
+
+def gh_default(argv):
+    """Run `gh` without a shell and return its JSON answer. The credential is gh's own login; the
+    answer's text is data. A failure never repeats gh's output, which could carry anything."""
+    # gh writes UTF-8; the console code page would turn "Repositório" into mojibake and no field name would match.
+    try:
+        done = subprocess.run([*GH_COMMAND, *argv], capture_output=True, text=True, encoding='utf-8',
+                              errors='replace', timeout=GH_TIMEOUT, stdin=subprocess.DEVNULL, env=gh_environment())
+    except (OSError, subprocess.TimeoutExpired):
+        raise Refusal('gh could not be run; check that it is installed and logged in')
+    try:
+        answer = json.loads(done.stdout)
+    except ValueError:
+        answer = None
+    # gh exits 1 for a GraphQL answer that carries `errors` (an issue that does not exist, say) yet still
+    # prints it with its `data`: the caller decides which errors it tolerates.
+    if isinstance(answer, dict) and isinstance(answer.get('data'), dict) and answer.get('errors'):
+        return answer
+    if done.returncode != 0:
+        raise Refusal('gh refused the GitHub read; check the active account, the repository access and the '
+                      'project scope (gh auth refresh -s project)')
+    require(answer is not None, 'gh answered with something that is not JSON')
+    return answer
+
+
+_FIELD_NAME = '... on ProjectV2FieldCommon { name }'
+ISSUE_VIEW = '''number state title url
+  labels(first: 100) { totalCount nodes { name } }
+  assignees(first: 20) { totalCount nodes { login } }
+  issueType { name }
+  projectItems(first: 20) { totalCount nodes {
+    project { number owner { ... on Organization { login } ... on User { login } } }
+    fieldValues(first: 50) { totalCount nodes {
+      ... on ProjectV2ItemFieldSingleSelectValue { name field { %(f)s } }
+      ... on ProjectV2ItemFieldTextValue { text field { %(f)s } }
+      ... on ProjectV2ItemFieldNumberValue { number field { %(f)s } }
+      ... on ProjectV2ItemFieldDateValue { date field { %(f)s } }
+      ... on ProjectV2ItemFieldIterationValue { title field { %(f)s } }
+    } }
+  } }''' % {'f': _FIELD_NAME}
+
+BOARD_FIELDS = '''id
+  fields(first: 100) { nodes {
+    ... on ProjectV2SingleSelectField { name options { name } }
+    ... on ProjectV2IterationField { name }
+    ... on ProjectV2Field { name dataType }
+  } }'''
+
+
+def graphql(gh, query, missing_ok=()):
+    """One GraphQL read. An error is tolerated only when it is NOT_FOUND for one of the issue aliases the
+    caller named (GitHub answers a deleted or transferred number that way, with the alias null)."""
+    answer = gh(['api', 'graphql', '-H', 'GraphQL-Features: issue_types', '-f', 'query=' + query])
+    require(isinstance(answer, dict) and isinstance(answer.get('data'), dict),
+            'GitHub answered the read with an error; check the repository, the project and the gh scopes')
+    errors = answer.get('errors') or []
+    require(isinstance(errors, list), 'GitHub answered the read with an error; check the repository, the project and the gh scopes')
+    for error in errors:
+        path = error.get('path') if isinstance(error, dict) else None
+        require(isinstance(error, dict) and error.get('type') == 'NOT_FOUND' and isinstance(path, list) and len(path) == 2
+                and path[0] == 'repository' and isinstance(path[1], str) and path[1] in missing_ok,
+                'GitHub answered the read with an error; check the repository, the project and the gh scopes')
+    return answer['data']
+
+
+def board_layout(gh, board):
+    """The board's fields and, for a single select, its options: what a chosen value must be one of.
+    Names are kept as GitHub spells them, because the rules compare them to the configuration; they are
+    cleaned only when shown."""
+    data = graphql(gh, 'query { owner: repositoryOwner(login: "%s") { ... on ProjectV2Owner { project: projectV2(number: %d) { %s } } } }'
+                   % (board['owner'], board['number'], BOARD_FIELDS))
+    owner = data.get('owner')
+    project = owner.get('project') if isinstance(owner, dict) else None
+    # GitHub answers an unknown login with a null owner and no error: say so, never read it as an empty board.
+    require(isinstance(project, dict), f'the board {board["owner"]}/{board["number"]} was not found; check project.owner and project.number')
+    nodes = ((project.get('fields') or {}).get('nodes')) or []
+    layout = {}
+    for node in nodes:
+        if isinstance(node, dict) and isinstance(node.get('name'), str):
+            if isinstance(node.get('options'), list):
+                layout[node['name']] = {'type': 'single_select',
+                                        'options': [o['name'] for o in node['options'] if isinstance(o, dict) and isinstance(o.get('name'), str)]}
+            elif 'dataType' in node:
+                layout[node['name']] = {'type': str(node.get('dataType') or 'other').lower(), 'options': None}
+            else:
+                layout[node['name']] = {'type': 'iteration', 'options': None}
+    return layout
+
+
+def shown_field(info):
+    """A layout entry as the session sees it: cleaned names, plus the options it must never type, which are
+    those cleaning changed (the cleaned name does not exist on the board) or a command line could not carry."""
+    if info is None:
+        return {'type': 'unknown', 'options': None}
+    options = info['options']
+    shown = {'type': info['type'], 'options': None if options is None else [clean(o) for o in options]}
+    if options:
+        shown['unwritable'] = [clean(o) for o in options if clean(o) != o or frontlights.UNSAFE_CHARS.search(o)]
+    return shown
+
+
+def cut(connection):
+    """The nodes of a GraphQL connection, and whether the page did not hold all of them."""
+    connection = connection if isinstance(connection, dict) else {}
+    nodes = [node for node in (connection.get('nodes') or []) if isinstance(node, dict)]
+    total = connection.get('totalCount')
+    return nodes, isinstance(total, int) and total > len(connection.get('nodes') or [])
+
+
+def card_text(value):
+    for key in ('name', 'text', 'date', 'title', 'number'):
+        if value.get(key) is not None and not isinstance(value[key], (dict, list, bool)):
+            text = str(value[key])
+            return text if text.strip() else None
+    return None
+
+
+def read_issues(gh, repository, numbers, board):
+    """Labels, assignees, native type and the card on the configured board of each issue number. A number
+    GitHub does not know comes back as None; an issue whose labels, assignees, cards or card values did not
+    fit one page is marked `truncated`, because a value cut off would read as empty."""
+    repo_owner, repo_name = repository.split('/')
+    views = {}
+    for start in range(0, len(numbers), GAPS_BATCH):
+        chunk = numbers[start:start + GAPS_BATCH]
+        body = ' '.join(f'i{n}: issue(number: {n}) {{ {ISSUE_VIEW} }}' for n in chunk)
+        data = graphql(gh, 'query { repository(owner: "%s", name: "%s") { %s } }' % (repo_owner, repo_name, body),
+                       missing_ok={f'i{n}' for n in chunk})
+        repo = data.get('repository') or {}
+        for n in chunk:
+            raw = repo.get(f'i{n}')
+            if not isinstance(raw, dict):
+                views[n] = None
+                continue
+            labels, cut_labels = cut(raw.get('labels'))
+            assignees, cut_assignees = cut(raw.get('assignees'))
+            items, cut_items = cut(raw.get('projectItems'))
+            truncated = cut_labels or cut_assignees or cut_items
+            card = None
+            for item in items:
+                project = item.get('project')
+                card_owner = project.get('owner') if isinstance(project, dict) else None
+                card_login = card_owner.get('login') if isinstance(card_owner, dict) else None
+                if (isinstance(project, dict) and isinstance(card_login, str)
+                        and project.get('number') == board['number'] and card_login.casefold() == board['owner'].casefold()):
+                    card = {}
+                    values, cut_values = cut(item.get('fieldValues'))
+                    truncated = truncated or cut_values
+                    for value in values:
+                        field = (value.get('field') or {}).get('name')
+                        text = card_text(value)
+                        if isinstance(field, str) and field and text:
+                            card[field] = text
+            # Labels, assignees, type and card values stay as GitHub spells them: the rules compare them to the
+            # configuration. `shown_view` cleans them when they are put in front of the session.
+            views[n] = {'number': n, 'state': raw.get('state'), 'url': clean(raw.get('url') or ''),
+                        'title': clean(raw.get('title') or ''),
+                        'labels': [x['name'] for x in labels if isinstance(x.get('name'), str) and x['name']],
+                        'assignees': [x['login'] for x in assignees if isinstance(x.get('login'), str) and x['login']],
+                        'issueType': raw['issueType']['name'] if isinstance(raw.get('issueType'), dict) and isinstance(raw['issueType'].get('name'), str) and raw['issueType']['name'] else None,
+                        'card': card, 'truncated': truncated}
+    return views
+
+
+def shown_view(view):
+    """What of an issue is put in front of the session: everything GitHub wrote is cleaned and bounded."""
+    return {'labels': [clean(x) for x in view['labels']], 'assignees': [clean(x) for x in view['assignees']],
+            'issueType': clean(view['issueType']) if view['issueType'] else None,
+            'fields': {clean(name): clean(value) for name, value in (view['card'] or {}).items()}}
+
+
+# What the documented write commands can set. Anything else (an iteration, say) is reported, never tried.
+WRITABLE_TYPES = ('single_select', 'text', 'number', 'date')
+
+
+def issue_gaps(board, view, layout=None):
+    """What one issue lacks against the board rules. `fill` holds values the configuration settles by
+    itself (a field default, a label a field value implies, the board's assignee and type); `choose`
+    holds what only a person can decide, which the session proposes and the user approves. A label a
+    field value implies is filled only when the issue has no other label of that family; otherwise it is a
+    `labelConflicts` entry for the user to settle, never written on top of the label that is there. A
+    default that is not one of the board's options (`layout`) is `staleDefaults`: chosen again, not written.
+    Labels are compared without regard to case, as GitHub does."""
+    card = view['card']
+    current = card or {}
+    have = list(view['labels'])
+    have_fold = {label.casefold() for label in have}
+    fill, choose = {}, {}
+    if card is None:
+        fill['addToBoard'] = True
+    fields_fill = {name: default for name, default in board['fields'].items() if not current.get(name) and default is not None}
+    stale, blocked = [], []
+    for name, default in list(fields_fill.items()) if layout is not None else []:
+        info = layout.get(name)
+        if info is None or info['type'] not in WRITABLE_TYPES or (info['type'] == 'single_select' and not info['options']):
+            # Not on the board, of a type the write commands cannot set, or with no options: never written.
+            blocked.append(name)
+            del fields_fill[name]
+        elif info['type'] == 'single_select' and default not in info['options']:
+            stale.append(name)
+            del fields_fill[name]
+    fields_choose = [name for name, default in board['fields'].items()
+                     if not current.get(name) and (default is None or name in stale or name in blocked)]
+    values = {**current, **fields_fill}
+    implied = []
+    for field, mapping in board['labels']['by_field'].items():
+        for label in mapping.get(values.get(field), []):
+            if label not in implied:
+                implied.append(label)
+    derived, conflicts = [], []
+    twins = frontlights.family_twins([mapping.get(values.get(field), []) for field, mapping in board['labels']['by_field'].items()])
+    for label in implied:
+        if label.casefold() in have_fold:
+            continue
+        (conflicts if label in twins or frontlights.clashes(label, have, implied) else derived).append(label)
+    families = [prefix for prefix in board['labels']['require_prefix']
+                if not any(label.casefold().startswith(prefix.casefold()) for label in have)]
+    follow = [field for field in board['labels']['by_field'] if field not in values]
+    if fields_fill:
+        fill['fields'] = fields_fill
+    if derived:
+        fill['labels'] = derived
+    if not view['assignees'] and board['assignee']:
+        fill['assignee'] = board['assignee']
+    if view['issueType'] is None:
+        by_label = {label.casefold(): kind for label, kind in board['issue_type_by_label'].items()}
+        kind = next((by_label[label.casefold()] for label in have + derived if label.casefold() in by_label), None)
+        if families and not kind:
+            choose['issueType'] = True
+        elif kind or board['issue_type']:
+            fill['issueType'] = kind or board['issue_type']
+        else:
+            choose['issueType'] = True
+    if fields_choose:
+        choose['fields'] = fields_choose
+    if stale:
+        choose['staleDefaults'] = stale
+    if families:
+        choose['labelPrefixes'] = families
+    if follow:
+        choose['labelsFollowFields'] = follow
+    if conflicts:
+        choose['labelConflicts'] = conflicts
+    return fill, choose
+
+
+def op_gaps(root, transport, gh=None, only_sprints=False):
+    """Read-only: list the issues RoadS shows that still lack what the project's board rules ask for,
+    each with what the configuration fills by itself and what needs a choice. Nothing is written to
+    GitHub, to RoadS or to any file; the writes follow the approved table, with the session's own gh."""
+    gh = gh or gh_default
+    ctx = Context(root)
+    repository = ctx.repository
+    result = {'project': ctx.name}
+    if not repository or ctx.project is None:
+        result.update(ok=True, exitCode=0, board='unconfigured', issues=[],
+                      message='This project has no repository or no project board in .frontlights/config.json, '
+                              'so there is nothing to check against. Nothing was read.')
+        return result
+    require(frontlights.repository(repository), 'repository in .frontlights/config.json must be owner/name')
+    board = frontlights.board(ctx.project, repository)
+    read_secret(ctx.secret_env)
+    assert_approved(ctx)
+    state = read_state(ctx, transport)
+    origin, skipped = {}, []
+    lanes = [('sprint', sprint['title'] or sprint['sprintId'], sprint['items']) for sprint in state['sprints']]
+    if not only_sprints:
+        lanes += [('group', group['title'] or group['laneId'], group['items']) for group in state['groups']]
+    for kind, lane, items in lanes:
+        for item in items:
+            if not item['githubIssueUrl']:
+                continue
+            match = ISSUE_URL.fullmatch(item['githubIssueUrl'])
+            if not match:
+                skipped.append({'url': clean(item['githubIssueUrl']), 'reason': 'not the URL of an issue'})
+            elif f'{match.group(1)}/{match.group(2)}'.casefold() != repository.casefold():
+                skipped.append({'url': clean(item['githubIssueUrl']), 'reason': 'outside the configured repository'})
+            else:
+                origin.setdefault(int(match.group(3)), {'kind': kind, 'lane': clean(lane)})
+    numbers = sorted(origin)
+    base = {'board': {'owner': board['owner'], 'number': board['number']}, 'repository': repository, 'stateAsOf': state['asOf'],
+            'skipped': skipped, 'issues': [], 'fields': {}, 'unfillable': [], 'notOnBoard': [],
+            'rules': {'labels': board['labels'], 'issueTypeByLabel': board['issue_type_by_label'],
+                      'issueType': board['issue_type'], 'bodyFields': board['body_fields'],
+                      'labelName': frontlights.LABEL_RULE, 'labelPattern': frontlights.LABEL_NAME.pattern,
+                      'neverTyped': frontlights.UNTYPEABLE_NAMES}}
+    if not numbers:
+        result.update(ok=True, exitCode=0, checked=0, complete=0, closed=0, notFound=0, **base,
+                      message='RoadS shows no issue of the configured repository to check'
+                              + (f' ({len(skipped)} skipped; see skipped).' if skipped else '.'))
+        return result
+    layout = board_layout(gh, board)
+    views = read_issues(gh, repository, numbers, board)
+    issues, complete, closed, missing = [], 0, 0, 0
+    for n in numbers:
+        view = views.get(n)
+        if view is None:
+            missing += 1
+            continue
+        if view['state'] != 'OPEN':
+            closed += 1
+            continue
+        if view['truncated']:
+            skipped.append({'url': view['url'], 'reason': 'more labels, assignees or board values than one read holds; check it by hand'})
+            continue
+        fill, choose = issue_gaps(board, view, layout)
+        if not fill and not choose:
+            complete += 1
+            continue
+        issues.append({'number': n, 'url': view['url'], 'title': view['title'], 'from': origin[n],
+                       'present': shown_view(view), 'fill': fill, 'choose': choose})
+    # Every field the session may be told to write or to choose gets its layout (type and options), so it knows
+    # which flag sets it; the ones that cannot be written at all are the `unfillable` below.
+    asked = sorted({name for issue in issues for name in [*issue['choose'].get('fields', []), *issue['fill'].get('fields', {})]})
+    fields = {name: shown_field(layout.get(name)) for name in asked}
+    not_on_board = sorted(name for name in asked if name not in layout)
+    unfillable = sorted(name for name in asked if name not in layout or layout[name]['type'] not in WRITABLE_TYPES
+                        or (layout[name]['type'] == 'single_select' and not layout[name]['options']))
+    base.update(issues=issues, fields=fields, unfillable=unfillable, notOnBoard=not_on_board)
+    result.update(ok=True, exitCode=0, checked=len(numbers) - missing, complete=complete, closed=closed, notFound=missing, **base)
+    result['message'] = (f'{len(issues)} issue(s) lack something; {complete} are complete; {closed} closed were left alone.'
+                         if issues else f'Every open issue RoadS shows is complete against the board rules ({complete} checked).')
+    if skipped:
+        result['message'] += f' {len(skipped)} skipped; see skipped.'
+    if missing:
+        result['message'] += f' {missing} number(s) GitHub does not know were left out (notFound).'
+    if unfillable:
+        result['message'] += (f' These board fields cannot be filled: {", ".join(unfillable)} (no options on the board, not on the '
+                              'board, or of a type this helper cannot write); someone has to deal with them first.')
+    return result
+
+
 def run(operation, root='.', today=None, transport=None, since=None, no_ack=False, allow_shrink=False,
-        confirm_declined=False, discard_staged=False):
+        confirm_declined=False, discard_staged=False, gh=None, only_sprints=False):
     today = today or dt.date.today()
     transport = transport or http_default
     try:
@@ -1387,6 +1755,8 @@ def run(operation, root='.', today=None, transport=None, since=None, no_ack=Fals
             result = op_ack(root, transport, confirm_declined)
         elif operation == 'rotate-markers':
             result = op_rotate(root, today)
+        elif operation == 'gaps':
+            result = op_gaps(root, transport, gh, only_sprints)
         else:
             raise Refusal(f'Unknown operation: {operation}')
     except (Refusal, ValueError, OSError, KeyError, TypeError) as error:
@@ -1398,7 +1768,8 @@ def run(operation, root='.', today=None, transport=None, since=None, no_ack=Fals
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('operation', choices=['status', 'approve', 'fetch', 'apply', 'ack', 'rotate-markers'])
+    parser.add_argument('operation', choices=['status', 'approve', 'fetch', 'apply', 'ack', 'rotate-markers', 'gaps'])
+    parser.add_argument('--only-sprints', action='store_true', help='gaps: leave the backlog groups out and check the sprints only')
     parser.add_argument('--root', default='.', help='project whose .frontlights/config.json declares roadmapSync')
     parser.add_argument('--since', help='ISO 8601; adds since=<stamp> to pending-changes. Never filled in automatically.')
     parser.add_argument('--no-ack', action='store_true')
@@ -1407,7 +1778,8 @@ def main():
     parser.add_argument('--discard-staged', action='store_true', help='let fetch replace a draft that was never applied')
     args = parser.parse_args()
     result = run(args.operation, args.root, since=args.since, no_ack=args.no_ack, allow_shrink=args.allow_shrink,
-                 confirm_declined=args.confirm_declined, discard_staged=args.discard_staged)
+                 confirm_declined=args.confirm_declined, discard_staged=args.discard_staged,
+                 only_sprints=args.only_sprints)
     print(protect(json.dumps(result, indent=2, ensure_ascii=True)))
     return int(result['exitCode'])
 

@@ -262,7 +262,7 @@ the exact blocked operation.
 These publication rules cover every issue the session creates, on any path and
 at any stage: every top-level issue joins the board; a sub-issue joins only through its parent.
 With a configured `project`, each top-level issue joins that board with its
-assignee, type and fields in the same approved write, and is verified there. Never
+assignee, type, labels and fields (and any body lines the board configures) in the same approved write, and is verified there. Never
 create a top-level issue outside the configured board. Findings from review, tests
 or checks follow the destination ladder and the sub-issue recipe of the Follow-ups
 section of `references/issues.md`, decided as one batch.

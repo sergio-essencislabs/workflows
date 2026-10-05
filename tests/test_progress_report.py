@@ -646,8 +646,9 @@ class PluginContractTests(unittest.TestCase):
         plugin = json.loads(self.read('.claude-plugin', 'plugin.json'))
         market = json.loads(self.read('.claude-plugin', 'marketplace.json'))
         entry = next(p for p in market['plugins'] if p['name'] == plugin['name'])
-        self.assertEqual(plugin['version'], '0.14.0')
-        self.assertEqual(entry['version'], '0.14.0')
+        # Sem o número literal: ele mudava a cada versão e quebrava este teste sem provar nada a mais.
+        self.assertRegex(plugin['version'], r'^\d+\.\d+\.\d+$')
+        self.assertEqual(entry['version'], plugin['version'])
 
     def test_docs_describe_the_approval(self):
         self.assertIn('progress_report.py', self.read('README.md'))

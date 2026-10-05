@@ -120,7 +120,7 @@ O endereço acima é ilustrativo; não representa uma API garantida do RoadS.
 
 Quando as issues do repositório são controladas num quadro (GitHub Projects), configure
 `project`. Com ele definido, toda issue de topo entra no quadro; sub-issue entra só pelo pai.
-Cada issue de topo criada pelo Frontlights entra com responsável, tipo e campos preenchidos,
+Cada issue de topo criada pelo Frontlights entra com responsável, tipo, labels e campos preenchidos,
 e é relida para conferir:
 
 ```json
@@ -144,6 +144,74 @@ e é relida para conferir:
 - `python scripts/frontlights.py validate-plan --plan plan.json --config .frontlights/config.json`
   recusa o plano enquanto faltar valor para algum campo.
 - O token do `gh` precisa do escopo `project` (`gh auth refresh -s project`).
+- Um campo do quadro sem nenhuma opção cadastrada não aceita valor: não o declare em `fields`,
+  que passaria a recusar todo plano.
+
+Para que a issue nasça com tudo preenchido, o `project` aceita três blocos opcionais. O vocabulário
+do projeto (nomes de label, de tipo e de linha) fica só no `config.json` do projeto de destino:
+
+```json
+{
+  "project": {
+    "owner": "PROPRIETARIO",
+    "number": 1,
+    "assignee": "@me",
+    "issue_type": "Task",
+    "fields": {"Status": "Open", "Area": null, "Prioridade": null},
+    "labels": {
+      "require_prefix": ["tipo:"],
+      "by_field": {
+        "Area": {"Backend": ["area:backend"], "Frontend": ["area:frontend"]},
+        "Prioridade": {"High": ["prioridade:alta"], "Critical": ["prioridade:alta"]}
+      }
+    },
+    "issue_type_by_label": {"tipo:bug": "Bug", "tipo:feature": "Feature"},
+    "body_fields": {"Esforço estimado": ["Low", "Medium", "High", "Very High"]}
+  }
+}
+```
+
+- `labels.require_prefix`: cada issue de topo precisa trazer ao menos um label de cada família
+  (`labels` da issue no plano). `labels.by_field` acrescenta, sozinho, os labels que o valor de
+  um campo implica. A família exigida nunca é deduzida de um campo.
+- `issue_type_by_label`: o tipo nativo que um label implica. A ordem de escolha é a do plano
+  (`issue_type`), depois o do label, depois o `issue_type` padrão do quadro.
+- `body_fields`: uma linha `**Nome:** valor` no corpo, com lista fechada de valores
+  (`body_fields` da issue no plano), para o que o quadro não tem como guardar, como um esforço.
+- Com qualquer um dos três, o `validate-plan --config` imprime também `resolved`: por issue de
+  topo, os valores do quadro, os labels finais, o tipo nativo e as linhas do corpo. A publicação
+  usa exatamente isso. Sem os blocos, a saída e as regras são as de antes. Sub-issue não leva
+  `labels` nem `body_fields`: herda do pai. Uma issue que já existe (o plano traz o `url` dela) não
+  precisa de `body_fields`, porque o texto de uma issue nunca é editado.
+- Um label (do plano ou do `config.json`) usa só letras, números e `: . / + -` ou espaço no meio,
+  até 50 caracteres, sem terminar em `: . / -` nem em espaço e sem hífen depois de espaço: nada que
+  um terminal interprete (aspas, `$`, crase, `;`, `&`, `|`, vírgula). Letras acentuadas precisam
+  estar na forma composta (não decomposta). Labels são comparados sem diferenciar maiúsculas, como o
+  GitHub faz; duas issues com `area:backend` e `Area:Backend` são o mesmo label.
+- O texto que o `config.json` manda digitar em comandos `gh` (`issue_type`, valores de
+  `issue_type_by_label`, nomes e padrões de `fields`, `labels.require_prefix`) tem até 100 caracteres
+  e não pode ter `$`, crase, aspas duplas (as retas e as tipográficas `“ ” „`, que o Windows
+  PowerShell também trata como aspas; `‟ ″ ＂` também são recusadas, por precaução, só porque
+  parecem aspas), `\` nem caractere de controle. `assignee` é `@me`, `@copilot` ou um login do GitHub
+  (letras, números, `-`, `_` e o sufixo `[bot]`). O mesmo vale, no plano, para os valores de
+  `project_fields` (sem limite de tamanho, mas numa linha só: reescreva o texto se ele trouxer
+  aspas ou `$`) e para `issue_type`. Não se cobrem o `cmd.exe` (`%`), que o plugin não usa, nem a
+  expansão `!` do bash interativo. O título da issue segue o que já valia: o plano aprovado o define
+  e a sessão o digita como um único argumento entre aspas duplas; um título com esses caracteres
+  deve ser criado por `gh api` com o corpo num arquivo JSON.
+- Um label que um campo implica não pode deixar a issue com dois labels da mesma família (o trecho
+  até o primeiro `:` ou `/`, como `area:` ou `area/`; famílias separadas por outro caractere, como
+  `area-backend`, não são reconhecidas): no plano isso é recusado, nomeado ou não o label implícito
+  e também quando dois campos diferentes implicam labels da mesma família (um único valor, como
+  `Both`, pode implicar `area:frontend` e `area:backend` de propósito), e no `gaps` vira `labelConflicts`
+  para você decidir.
+- `roadmapSync.issueTargets` só conhece `repository` e `project` (`owner` e `number`); chave a mais,
+  por exemplo um `project` copiado do bloco do topo com `assignee` ou `fields`, passa a ser recusada em
+  toda operação de sincronização. O `owner` segue a mesma regra de login do `project` do topo (letras,
+  números e `-`) e o `number` é um inteiro positivo, porque o `owner` é digitado em `gh project
+  item-add`. As regras do quadro são as do `project` do topo.
+- O `project` recusa chave desconhecida, para que um erro de digitação (`label_rules` em vez de
+  `labels`) não desligue a regra em silêncio. O `inspect` mostra as regras lidas.
 
 Achados de revisão, de testes ou de conferência ligados a uma issue não viram uma issue
 de topo cada. O Frontlights propõe o destino de cada achado, nesta ordem: corrigir no
@@ -187,7 +255,17 @@ de acordo com o RoadS. Com a resposta "sim", o Frontlights:
 4. mostra o diff para aprovação;
 5. grava, com backup ao lado de cada arquivo;
 6. confere as marcas ocultas de cada mudança;
-7. só então confirma ao RoadS.
+7. só então confirma ao RoadS;
+8. completa as issues que o RoadS mostra: o RoadS cria a issue com labels, Status, Prioridade,
+   Repositório, Stack, Description e o esforço, mas não define responsável nem tipo nativo, e as
+   issues que nasceram em outro lugar chegam ao quadro com o que tinham. O utilitário `gaps`
+   (somente leitura) lista, nas issues dos sprints e dos grupos, o que falta contra as regras do
+   `project`: o que o config resolve sozinho (padrão de campo, label que um valor implica,
+   responsável e tipo do quadro, entrar no quadro) e o que exige escolha. O Frontlights propõe os
+   valores, mostra a tabela inteira, e você aprova antes de qualquer escrita. Só se preenche o que
+   está vazio, nunca se sobrescreve valor existente, e o texto do corpo de uma issue nunca é
+   editado. Ao final, `gaps` roda de novo para conferir. Campo sem opção no quadro é apenas
+   informado.
 
 Quem decide o limite de itens por sprint é o RoadS: o Frontlights escreve na sprint só os itens
 dentro do limite e avisa, sem perguntar, quais ficaram de fora; as mudanças desses itens vão só
@@ -214,7 +292,20 @@ Configure o bloco `roadmapSync` no `.frontlights/config.json` do projeto (veja
 
 Na primeira vez, o envio do segredo para aquele endereço precisa da sua aprovação. O estado da
 sincronização (aprovação, marca, plano e cópias temporárias) fica em `.frontlights/roadmap-sync/`,
-fora do Git. O utilitário é `python scripts/roadmap_sync.py status|approve|fetch|apply|ack|rotate-markers --root <projeto>`.
+fora do Git. O utilitário é `python scripts/roadmap_sync.py status|approve|fetch|apply|ack|rotate-markers|gaps --root <projeto>`.
+O `gaps` só lê, usa o `gh` da própria máquina (a conta ativa precisa enxergar o repositório e o
+quadro) e aceita `--only-sprints` para deixar os grupos do backlog de fora.
+
+Limites conhecidos do `gaps`: só enxerga o repositório e o quadro do `config.json` (issues de
+outros produtos em `issueTargets` são ignoradas); lê até 100 labels, 20 responsáveis, 20 cartões e 50
+valores de quadro por issue (uma issue maior é ignorada e listada em `skipped`, nunca lida como vazia);
+campos de seleção múltipla, de usuário e outros tipos além de seleção única, texto, número, data e
+iteração não são lidos, e um campo desses configurado em `fields` aparece em `unfillable` e sempre
+vazio; um
+campo de iteração é reconhecido mas não é escrito. Valores de campo ou de opção com `<`, `>` ou
+caracteres que um terminal interpretaria são mostrados limpos e listados em `unwritable`: o Frontlights
+não os digita. Um `project` com chave desconhecida passa a ser recusado: se o seu `config.json` tinha
+chaves extras ali, remova-as.
 
 ### Resumo para a diretoria (opcional)
 

@@ -81,6 +81,32 @@ A sincronização do roadmap (`scripts/roadmap_sync.py`) segue as travas abaixo.
   - cada arquivo substituído ganha backup oculto ao lado, com cinco gerações.
 - **Confirmação ao RoadS:** acontece só depois de reler os arquivos e conferir todas as marcas. Uma
   mudança recusada exige a confirmação separada do usuário, porque o ack a consome para sempre.
+- **Completar issues (`gaps`):**
+  - só lê: `GET roadmap-state` sob a mesma aprovação do segredo, e o GitHub por `gh api graphql`
+    sem shell; nada é gravado no GitHub, no RoadS nem em arquivo;
+  - só consulta o repositório e o quadro do `config.json`: a URL de issue vinda do RoadS é dado,
+    precisa casar com o padrão `github.com/<dono>/<repositório>/issues/<n>` e com o repositório
+    configurado, e a consulta é montada só com o dono, o repositório e o número validados, nunca
+    com texto do RoadS;
+  - usa a conta ativa do `gh`, sem token no comando e sem a variável do segredo da RoadS no
+    ambiente do processo; o repositório do `config.json` é validado como `dono/nome`; uma falha do
+    `gh` não repete a saída dele. Só um erro `NOT_FOUND` de uma das issues pedidas (número que o
+    GitHub não conhece) é tolerado; qualquer outro erro recusa a leitura;
+  - todo texto lido do GitHub (título, labels, responsáveis, tipo, valores de campo, nomes de
+    campo e de opção) é dado, nunca instrução, e chega sem `<`, `>` nem caracteres de controle,
+    limitado a 200 caracteres;
+  - uma issue com mais labels, responsáveis ou valores de quadro do que cabe numa leitura é
+    ignorada e listada em `skipped`, porque um valor cortado pareceria vazio;
+  - as comparações das regras usam o texto do GitHub como veio; só a exibição é limpa. Um nome de
+    opção que a limpeza mudou, ou que um terminal leria (`$`, crase, aspas duplas retas ou
+    tipográficas, `\`, controle), vem em `unwritable` e nunca é digitado. Não se cobrem o `cmd.exe`
+    (`%`) nem a expansão `!` do bash interativo, fora do alvo do plugin; um label escolhido precisa casar com
+    `rules.labelPattern` e já existir no repositório; todo valor entra como um único argumento entre
+    aspas duplas. Os textos do `config.json` que viram argumento (tipo, responsável, nomes e padrões
+    de campo, labels) são validados na leitura, porque um config pode vir num repositório clonado;
+  - as escritas que a tabela aprovada pede não passam por este utilitário: são do `gh` da sessão,
+    sob as permissões vigentes, só em valor vazio. Essa barreira de quoting e a aprovação da tabela
+    são as únicas proteções dessas escritas: o utilitário não as executa nem as valida depois.
 
 O resumo para a diretoria (`scripts/progress_report.py`) executa comandos lidos do
 `.frontlights/config.json`, arquivo que um repositório clonado poderia trazer. Por isso:

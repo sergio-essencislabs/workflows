@@ -64,6 +64,9 @@ def repository_or_local(value):
     return value is None or repository(value)
 
 
+BOARD_KEYS = {'owner', 'number', 'assignee', 'issue_type', 'fields', 'labels', 'issue_type_by_label', 'body_fields'}
+
+
 def board(project, repo=...):
     """The issue board every created issue must join, or None when none is configured.
 
@@ -74,6 +77,9 @@ def board(project, repo=...):
         return None
     require(isinstance(project, dict), 'project must be an object or null')
     require(repo is not None, 'project board requires a GitHub repository; a local project has none')
+    # A misspelt rule key would switch the rule off without a word, so an unknown key is refused.
+    unknown = sorted(set(project) - BOARD_KEYS)
+    require(not unknown, f'project has unknown setting(s): {", ".join(map(str, unknown))}; known: {", ".join(sorted(BOARD_KEYS))}')
     owner, num = project.get('owner'), project.get('number')
     require(isinstance(owner, str) and re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})', owner),
             'project.owner must be a GitHub user or organization login')
@@ -84,8 +90,131 @@ def board(project, repo=...):
     for key in ('assignee', 'issue_type'):
         require(project.get(key) is None or nonempty(project.get(key)),
                 f'project.{key} must be a non-empty string or null')
+    # These strings are typed into `gh` commands, and a config can come from a cloned repository.
+    require(project.get('assignee') is None or project['assignee'] in ('@me', '@copilot') or LOGIN.fullmatch(project['assignee']),
+            'project.assignee must be @me, @copilot or a GitHub login')
+    require(project.get('issue_type') is None or typeable(project['issue_type']),
+            f'project.issue_type must be {TYPEABLE_RULE}')
+    for name, default in fields.items():
+        require(typeable(name), f'project.fields name {name!r} must be {TYPEABLE_RULE}')
+        require(default is None or typeable(default), f'project.fields.{name} default must be {TYPEABLE_RULE}')
     return {'owner': owner, 'number': num, 'fields': dict(fields),
-            'assignee': project.get('assignee'), 'issue_type': project.get('issue_type')}
+            'assignee': project.get('assignee'), 'issue_type': project.get('issue_type'),
+            'labels': label_rules(project.get('labels'), fields),
+            'issue_type_by_label': type_rules(project.get('issue_type_by_label')),
+            'body_fields': body_rules(project.get('body_fields'))}
+
+
+# Text that ends up as one argument of a `gh` command a session types. Passed as a single double-quoted
+# argument it is inert in bash and PowerShell unless it holds `$`, a backtick, a double quote (Windows PowerShell
+# also closes a string on the curly ones U+201C, U+201D and U+201E; U+201F, U+2033 and U+FF02 do not, and are
+# refused only as a precaution because they look like one), a backslash or a control character, so those are
+# refused wherever a config or a plan can introduce them. Not covered: `cmd.exe` (`%`), which this plugin does
+# not target, and bash history expansion (`!`), which is interactive only.
+UNSAFE_CHARS = re.compile(r'[$`"\\“”„‟″＂\x00-\x1f\x7f]')
+UNTYPEABLE_NAMES = 'a dollar sign, backtick, double quote (straight or curly), backslash or control character'
+TYPEABLE_RULE = f'text of up to 100 characters without {UNTYPEABLE_NAMES}'
+LOGIN = re.compile(r'[A-Za-z0-9](?:[A-Za-z0-9_-]{0,38})(?:\[bot\])?')
+
+
+def typeable(value):
+    return nonempty(value) and len(value) <= 100 and not UNSAFE_CHARS.search(value)
+
+
+# A label is such an argument too, so it is stricter: letters, digits and `: . / + -` or a space inside
+# (up to 50 characters), starting with a letter or digit, ending in a letter, digit or `+`, and with no
+# hyphen right after a space, so it can never read as an option. No quote, `;`, `&`, `|`, comma or line break.
+LABEL_NAME = re.compile(r'(?!.*\s-)\w(?:[\w :./+-]{0,48}[\w+])?')
+BODY_FIELD_NAME = re.compile(r'[^\r\n*:]{1,60}')
+LABEL_RULE = ('letters, digits and : . / + - or a space inside; up to 50 characters; not ending in : . / - or a space; '
+              'no hyphen after a space')
+
+
+def label_names(value, where):
+    require(isinstance(value, list) and value and all(isinstance(x, str) and LABEL_NAME.fullmatch(x) for x in value),
+            f'{where} must be a non-empty list of label names ({LABEL_RULE})')
+    return list(value)
+
+
+FAMILY = re.compile(r'[^:/]+[:/]')
+
+
+def family(label):
+    """`area:` for `area:backend` (or `area/` for `area/backend`): the prefix a label family shares up to its
+    first `:` or `/`, or None for a label without one. Vocabularies that split a family with another
+    character (`area-backend`) are not recognised. GitHub treats label names as case-insensitive, so every
+    comparison here is made on the folded text."""
+    match = FAMILY.match(label)
+    return match.group(0).casefold() if match else None
+
+
+def clashes(label, present, wanted):
+    """Whether adding `label` would leave its family with two labels: some label of that family is already
+    there (`present`) and is not itself one of the labels `wanted` for that family."""
+    kin = family(label)
+    if kin is None:
+        return False
+    wanted_fold = {w.casefold() for w in wanted}
+    return any(family(p) == kin and p.casefold() not in wanted_fold for p in present)
+
+
+def family_twins(groups):
+    """The labels one field implies that share a family with a different label another field implies:
+    values of several fields that together would leave an issue with two labels of one family. One field
+    value may imply several labels of a family on purpose (`Both`: `area:frontend` and `area:backend`)."""
+    twins = []
+    for index, group in enumerate(groups):
+        others = [label for other, rest in enumerate(groups) if other != index for label in rest]
+        for label in group:
+            if label not in twins and family(label) is not None and any(
+                    family(o) == family(label) and o.casefold() != label.casefold() for o in others):
+                twins.append(label)
+    return twins
+
+
+def label_rules(rules, fields):
+    """`project.labels`: which label families a top-level issue must carry and which labels follow
+    from a board field value, so a project's own label vocabulary never lives in this plugin."""
+    if rules is None:
+        return {'require_prefix': [], 'by_field': {}}
+    require(isinstance(rules, dict) and set(rules) <= {'require_prefix', 'by_field'},
+            'project.labels must be an object with require_prefix and by_field, or null')
+    prefixes = rules.get('require_prefix', [])
+    require(isinstance(prefixes, list) and all(typeable(p) for p in prefixes),
+            f'project.labels.require_prefix must be a list of label prefixes such as "type:", each {TYPEABLE_RULE}')
+    by_field = rules.get('by_field', {})
+    require(isinstance(by_field, dict), 'project.labels.by_field must map a board field to its values')
+    for field, mapping in by_field.items():
+        require(field in fields, f'project.labels.by_field.{field}: not a field of project.fields')
+        require(isinstance(mapping, dict) and all(nonempty(k) for k in mapping),
+                f'project.labels.by_field.{field} must map each field value to its labels')
+        for value, names in mapping.items():
+            label_names(names, f'project.labels.by_field.{field}.{value}')
+    return {'require_prefix': list(prefixes), 'by_field': {f: dict(m) for f, m in by_field.items()}}
+
+
+def type_rules(mapping):
+    """`project.issue_type_by_label`: the native issue type a label implies."""
+    if mapping is None:
+        return {}
+    require(isinstance(mapping, dict) and all(isinstance(k, str) and LABEL_NAME.fullmatch(k) and typeable(v)
+                                              for k, v in mapping.items()),
+            f'project.issue_type_by_label must map a label name ({LABEL_RULE}) to an issue type without {UNTYPEABLE_NAMES}')
+    return dict(mapping)
+
+
+def body_rules(rules):
+    """`project.body_fields`: a line of the issue body (`**Name:** value`) with a closed list of values,
+    for what the board has no field for."""
+    if rules is None:
+        return {}
+    require(isinstance(rules, dict), 'project.body_fields must map a line name to its allowed values')
+    for name, options in rules.items():
+        require(isinstance(name, str) and BODY_FIELD_NAME.fullmatch(name) and name == name.strip(),
+                f'project.body_fields name {name!r} must be plain text of up to 60 characters')
+        require(strings(options) and all('\n' not in o and '\r' not in o for o in options),
+                f'project.body_fields.{name} must be a non-empty list of single-line values')
+    return {name: list(options) for name, options in rules.items()}
 
 
 def board_fields(project, issue):
@@ -100,15 +229,109 @@ def board_fields(project, issue):
     chosen = issue.get('project_fields', {})
     require(isinstance(chosen, dict) and all(nonempty(k) and nonempty(v) for k, v in chosen.items()),
             f'{issue["id"]}: project_fields must map field names to non-empty values')
+    # A value is typed into `gh project item-edit`, so one that a shell could read is refused (reword it).
+    unsafe = sorted(k for k, v in chosen.items() if UNSAFE_CHARS.search(v))
+    require(not unsafe,
+            f'{issue["id"]}: project_fields {", ".join(unsafe)} must not contain {UNTYPEABLE_NAMES}; reword the value')
     unknown = sorted(set(chosen) - set(project['fields']))
     require(not unknown, f'{issue["id"]}: project_fields not on the board: {", ".join(unknown)}')
     values = {k: v for k, v in project['fields'].items() if v is not None}
     values.update(chosen)
     missing = sorted(k for k in project['fields'] if k not in values)
     require(not missing, f'{issue["id"]}: choose board field(s) {", ".join(missing)} in the plan')
-    issue_type = issue.get('issue_type') or project['issue_type']
-    require(nonempty(issue_type), f'{issue["id"]}: issue_type required by the board (plan or project default)')
     return values
+
+
+def board_labels(project, issue, values):
+    """Labels a top-level issue is created with: the ones its plan names plus the ones the board's
+    rules derive from the field values. A required label family that is still absent is refused."""
+    named = issue.get('labels', [])
+    require(isinstance(named, list) and all(isinstance(x, str) and LABEL_NAME.fullmatch(x) for x in named),
+            f'{issue["id"]}: labels must be a list of label names ({LABEL_RULE})')
+    # The required family is the plan's own choice: a label a field value implies never stands in for it.
+    for prefix in project['labels']['require_prefix']:
+        require(any(label.casefold().startswith(prefix.casefold()) for label in named),
+                f'{issue["id"]}: choose a "{prefix}*" label in the plan (labels)')
+    labels = list(dict.fromkeys(named))
+    folded = {label.casefold() for label in labels}
+    implied = []
+    for field, mapping in project['labels']['by_field'].items():
+        for label in mapping.get(values.get(field), []):
+            if label not in implied:
+                implied.append(label)
+    derived = [label for label in implied if label.casefold() not in folded]
+    # Every implied label counts, named or not: a plan that names `area:backend` and `area:frontend` while the
+    # fields imply only the first leaves two labels of one family just as a derived one would.
+    twins = family_twins([mapping.get(values.get(field), []) for field, mapping in project['labels']['by_field'].items()])
+    require(not twins, f'{issue["id"]}: the {field_values(project, values)} imply the labels {", ".join(twins)}, '
+                       f'of one family; change a field value or the configuration in project.labels.by_field')
+    for label in implied:
+        require(not clashes(label, named, implied),
+                f'{issue["id"]}: the {field_values(project, values)} imply the label {label}, which clashes with the same-family '
+                f'label already named in the plan; keep one')
+    return labels + derived
+
+
+def field_values(project, values):
+    """The field values that imply labels, for a refusal message."""
+    shown = [f'{field}={values[field]}' for field in project['labels']['by_field'] if values.get(field)]
+    return ', '.join(shown) or 'field values'
+
+
+def board_body_fields(project, issue):
+    rules = project['body_fields']
+    chosen = issue.get('body_fields', {})
+    require(isinstance(chosen, dict) and all(nonempty(k) and nonempty(v) for k, v in chosen.items()),
+            f'{issue["id"]}: body_fields must map line names to non-empty values')
+    unknown = sorted(set(chosen) - set(rules))
+    require(not unknown, f'{issue["id"]}: body_fields not on the board: {", ".join(unknown)}')
+    # An issue that already exists (it carries its `url`) cannot get a body line: the flow never edits a body.
+    missing = [] if issue.get('url') else sorted(set(rules) - set(chosen))
+    require(not missing, f'{issue["id"]}: choose body field(s) {", ".join(missing)} in the plan')
+    for name, value in chosen.items():
+        require(value in rules[name], f'{issue["id"]}: body_fields {name} must be one of {", ".join(rules[name])}')
+    return dict(chosen)
+
+
+def board_has_rules(project):
+    """Whether the project configures labels, a label-implied type or body lines. Without any of them the
+    plan's `labels` and `body_fields` mean nothing to the board and are not looked at."""
+    return bool(project['labels']['require_prefix'] or project['labels']['by_field'] or
+                project['issue_type_by_label'] or project['body_fields'])
+
+
+def resolve_board(project, issue):
+    """Everything a top-level issue is created with on the board, or None for a sub-issue (which takes
+    its labels, type and board card from its parent). The native type is the plan's, else the one its
+    labels imply, else the board default."""
+    values = board_fields(project, issue)
+    rules = board_has_rules(project)
+    if issue.get('parent') is not None:
+        require(not (rules and ('labels' in issue or 'body_fields' in issue)),
+                f'{issue["id"]}: sub-issue não leva labels nem body_fields; herda do pai')
+        return None
+    labels = board_labels(project, issue, values) if rules else []
+    by_label = {label.casefold(): kind for label, kind in project['issue_type_by_label'].items()}
+    implied = next((by_label[label.casefold()] for label in labels if label.casefold() in by_label), None)
+    issue_type = issue.get('issue_type') or implied or project['issue_type']
+    require(nonempty(issue_type), f'{issue["id"]}: issue_type required by the board (plan, labels or project default)')
+    require(typeable(issue_type), f'{issue["id"]}: issue_type must be {TYPEABLE_RULE}')
+    return {'fields': values, 'labels': labels, 'issue_type': issue_type,
+            'body_fields': board_body_fields(project, issue) if rules else {}}
+
+
+def board_resolution(plan, project):
+    """The resolved board values per top-level issue, only when the project configures the rules
+    that make them more than the plan's own fields (labels, label-implied type, body lines)."""
+    board_ = board(project, plan['repository'])
+    if board_ is None or not board_has_rules(board_):
+        return None
+    resolved = {}
+    for issue in plan['issues']:
+        value = resolve_board(board_, issue)
+        if value is not None:
+            resolved[str(issue['id'])] = value
+    return resolved
 
 
 def validate_plan(plan, project=None):
@@ -139,7 +362,7 @@ def validate_plan(plan, project=None):
                     f'{issue["id"]}: parent precisa ser o id (inteiro positivo) de uma issue deste plano')
             require(issue['parent'] != issue['id'], f'{issue["id"]}: parent não pode ser a própria issue')
         if project is not None:
-            board_fields(project, issue)
+            resolve_board(project, issue)
         if issue.get('url'):
             require(plan['repository'] is not None, 'a local plan cannot reference GitHub issue URLs')
             require(issue['url'] == f'https://github.com/{plan["repository"]}/issues/{issue["id"]}',
@@ -472,7 +695,9 @@ def inspect(config, root, config_path=None):
         summary = {'owner': project['owner'], 'number': project['number'],
                    'defaults': {k: v for k, v in project['fields'].items() if v is not None},
                    'choose_per_issue': sorted(k for k, v in project['fields'].items() if v is None),
-                   'assignee': project['assignee'], 'issue_type': project['issue_type']}
+                   'assignee': project['assignee'], 'issue_type': project['issue_type'],
+                   'labels': project['labels'], 'issue_type_by_label': project['issue_type_by_label'],
+                   'body_fields': project['body_fields']}
         try:
             view = json.loads(run(['gh', 'project', 'view', str(project['number']),
                                    '--owner', project['owner'], '--format', 'json']))
@@ -772,8 +997,11 @@ def main():
     try:
         if args.command == 'validate-plan':
             project = load(args.config).get('project') if args.config else None
-            validate_plan(load(args.plan), project)
+            plan_ = validate_plan(load(args.plan), project)
             result = {'valid': True, 'semantic_review_required': True}
+            resolved = board_resolution(plan_, project)
+            if resolved is not None:
+                result['resolved'] = resolved
         elif args.command == 'schedule':
             result = {'start': schedule(load(args.plan), args.limit)}
         elif args.command == 'authorize':
