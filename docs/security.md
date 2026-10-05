@@ -72,6 +72,12 @@ A sincronização do roadmap (`scripts/roadmap_sync.py`) segue as travas abaixo.
   - cada campo tem limite de tamanho.
 - **Marcas ocultas:** cada marca carrega um HMAC de um segredo local que nunca sai da máquina.
   Por isso o RoadS não consegue forjar a prova de que uma mudança foi escrita.
+- **Conclusões (`markCompleted`):** são mudanças sintéticas lidas só do `done` de um item de sprint do
+  `roadmap-state` (nunca do estado da issue nem de texto), com o mesmo texto limpo e limitado, as mesmas marcas,
+  travas de caminho, backup e recusa de encolhimento. Uma conclusão só vai para a sprint que tem o item (um
+  `pendingChangeIds` ou `removedPending` malicioso não cria alvo extra), uma mudança da fila com o id reservado
+  `done-<itemId>` recusa a busca, e como a fila do RoadS não as tem, o `ack` nunca as cobre: recusar uma conclusão não
+  consome nada e não pede `--confirm-declined`.
 - **Gravação:**
   - o destino precisa ficar dentro da pasta configurada, sem junção nem link simbólico. O
     placeholder de nuvem do OneDrive é aceito;

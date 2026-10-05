@@ -257,6 +257,11 @@ de acordo com o RoadS. Com a resposta "sim", o Frontlights:
 3. escreve a prosa em cópias temporárias do `ROADMAP.md` do ano e do `SPRINT_*.md` de cada
    sprint que tem mudança. A pasta e o arquivo de uma sprint nova são criados dentro do
    `scrumRoot`, seguindo os títulos e as seções do `SPRINT_*.md` mais recente;
+   O mesmo vale para as conclusões: um item de sprint que o RoadS mostra como concluído (`done`, dentro do limite da
+   sprint) e que ainda não foi registrado entra no plano como "concluída", com a data da **sincronização** (não a da
+   entrega), no `ROADMAP.md` e no arquivo da sprint dele. Isso vem só do `done` do estado, nunca de a issue estar
+   fechada, não existe na fila do RoadS e por isso nunca é confirmado ao RoadS: um plano só de conclusões termina
+   sem `ack` (`not_needed`). `roadmapSync.markCompleted: false` desliga;
 4. mostra o diff para aprovação;
 5. grava, com backup ao lado de cada arquivo;
 6. confere as marcas ocultas de cada mudança;

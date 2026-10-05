@@ -41,6 +41,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 | 12. Família de issues e branches empilhadas | Parcial | aplicado à mão na 0.16.0: sub-issues lidas, `needs-decision` no grilling, worktrees das filhas saindo da branch do pai | PR de filha com a base do pai e o retarget depois do merge nunca foram exercitados; falta uma sessão real com esta versão |
 | 13. Teste de navegador assistido | Parcial | aplicado à mão na 0.16.0: pergunta antes da janela, Chrome visível, ANTES e DEPOIS, cada caso 2 vezes, janela aberta 45 s, perfil restrito real movido e devolvido; o resultado real passou | os auxiliares `serve` e `checks` não foram usados; falta uma sessão real com esta versão |
 | 14. Fechamento de issues e cartões em Done | Pendente | implementado e testado com `gh` simulado: só propõe issue aberta com todos os critérios marcados, filhas antes dos pais, aprovação própria da lista e releitura do GitHub | falta uma sessão real em que uma pessoa mescle uma família e responda à pergunta |
+| 15. Conclusões registradas nos `.md` | Pendente | implementado e testado com transporte simulado: só o `done` do estado conta, mesma aprovação, marca e verificação, sem `ack` para o que não está na fila do RoadS | falta uma sessão real: Done no quadro, Sincronizar no RoadS e a sincronização aprovada no Frontlights |
 
 ## RoadS em produção
 
@@ -67,6 +68,8 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
   resumos da mesma semana dividiam o `captions.json`: a pasta segue o último dia do período, com uma subpasta
   por resumo.
 - O plugin só conferia `schemaVersion` em uma rota do RoadS.
+- Um item concluído que fica na sprint não aparecia como concluído nos `.md` até a rotação semanal: agora o plugin
+  o registra, com a data da sincronização, na mesma aprovação do diff.
 - Depois de uma atuação completa, o plugin não perguntava se podia fechar as issues e sub-issues com todos
   os critérios marcados e mover os cartões para Done: nova etapa 7, com aprovação própria da lista.
 

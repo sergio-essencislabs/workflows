@@ -169,8 +169,10 @@ Informado pelo RoadS a partir do código dele; vale como contrato do lado de que
   origem: botão, rotina diária, `sync-board` do plugin) não consulta o GitHub e devolve o snapshot anterior. Sem
   sincronizar, recarregar a página só relê o que está guardado.
 - **Consequência para o plugin.** Fechar uma issue sem mover o cartão para Done não muda nada no RoadS. Os arquivos
-  `.md` só recebem o que vem da fila de mudanças (`add`, `modify`, `remove`, `move_lane`): um item concluído que
-  fica na sprint não gera mudança e, portanto, não aparece como concluído nos `.md` até a rotação, que o remove.
+  `.md` recebem a fila de mudanças (`add`, `modify`, `remove`, `move_lane`) e, a partir da 0.18.0, a conclusão de um
+  item de sprint lida só do `done` do `roadmap-state` (`roadmapSync.markCompleted`, padrão true): o plugin a registra
+  como "concluída", com a data da sincronização, mesmo sem mudança na fila, e nunca a confirma ao RoadS. Um item
+  concluído que fica na sprint tem, então, o registro de conclusão e, depois da rotação, o `remove`.
 
 ## Pasta dos prints do resumo (`weekShots`)
 

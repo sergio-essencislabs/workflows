@@ -81,6 +81,12 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     reports every issue ok. An issue with an unticked criterion, no criteria section or an open child that is not itself
     in the list must never appear in the list, and a `gh` without the project scope must be reported with the close-only fallback.
 
+15. Completed items in the files. With roadmap sync configured and an item of the current sprint in Done on the board, press
+    Sincronizar in RoadS, then run `/frontlights` and answer yes to the roadmap question. Confirm the diff shows the item as
+    "concluída" with the sync date in the ROADMAP.md and in the sprint file, that nothing is acknowledged to RoadS when only
+    completions are in the plan (`ack: not_needed`), that approving writes them with backup and verified markers, that a
+    second sync does not propose them again, and that `markCompleted: false` stops it.
+
 Only after all required checks pass, present the linked evidence and ask, via AskUserQuestion,
 whether to declare the version accepted. Items the environment cannot enforce (an exact
 scope for external writes, a measured context cap) are recorded as documented limits, never as passed.
