@@ -72,6 +72,15 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     45 s at the end. Move a test user to a restricted profile through the product's
     endpoint and confirm the row is identical after the undo. Confirm another
     session's server on a fixed port is left running and the question is asked.
+    When the window closes, confirm the closing question offers "Assistir de novo",
+    "Aprovado", "Precisa de alteração" and "Pode prosseguir" and that nothing runs
+    after it until it is answered. "Assistir de novo" opens a new window and a second
+    round (ANTES again, the profile moved and undone again) with no second "pronto para
+    assistir?"; "Aprovado" and "Pode prosseguir" go on to `checks smoke`, and the
+    `result.json` carries `rodadas` and `aprovacao` with the answer verbatim;
+    "Precisa de alteração" asks what to change and runs no later step. With a
+    product failure in DEPOIS, the failure question comes first. With "Rodar sem
+    assistir", this question never appears.
 
 14. Closeout. After a human merges a worked family, start `/frontlights`: the closeout question of stage 1 appears
     only when open issues of this project have every acceptance criterion ticked (and their children closed or

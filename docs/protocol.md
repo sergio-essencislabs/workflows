@@ -112,8 +112,13 @@ ligados`, só com o que ela liga e nesta ordem: `checks regression`, `serve star
 `checks integration`, navegador e permissões entre contas, `checks smoke`, `serve stop`.
 O passo do navegador começa com a pergunta "pronto para assistir?"; com o sim, roda em janela
 visível em duas passagens do mesmo cenário e da mesma conta, a base ("ANTES") e depois a branch
-("DEPOIS"), com cada caso duas vezes e a janela aberta cerca de 45 s no fim. O `result.json`
-registra `assistido`, cada passagem com a branch e o `head` servidos, a origem de cada resposta
+("DEPOIS"), com cada caso duas vezes e a janela aberta cerca de 45 s no fim. Ao fim, o
+usuário decide por `AskUserQuestion`: "Assistir de novo" (nova rodada das duas passagens, sem repetir
+"pronto para assistir?"), "Aprovado", "Precisa de alteração" (nenhuma etapa seguinte roda; a mudança
+volta ao laço de testes, ou segue a escada de destinos se ampliar o escopo) ou "Pode prosseguir" (sem
+aprovar). Uma falha de produto na DEPOIS faz a pergunta de falha vir antes e substituir esta. O
+`result.json` registra `assistido`, `rodadas`, `aprovacao` (`aprovado`, `prosseguir` ou `alteracao`,
+com a resposta literal), cada passagem com a branch e o `head` servidos, a origem de cada resposta
 (`back real` ou `interceptada`) e, quando um perfil de teste foi movido, só o campo de perfil antes
 e depois de desfazer (nunca a linha inteira); o valor original fica antes em
 `.frontlights/issues/<n>/browser/perfil-original.json`. O `ANTES` sobe a base com `serve start

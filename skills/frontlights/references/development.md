@@ -216,7 +216,9 @@ sandbox controls still apply. Unexpected effects stop the affected issue.
 
 When the issue's `## Navegador e testes ligados` turns tests on, follow
 [browser-testing.md](browser-testing.md) before review, starting with its question
-"pronto para assistir?"; its records join the evidence below.
+"pronto para assistir?" and, after a watched run, ending with the user's choice of
+watching again, approving, asking for a change or going on; its records join the
+evidence below.
 
 ## Review, checkpoints and renewal
 

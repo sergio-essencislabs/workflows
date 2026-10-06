@@ -1,4 +1,4 @@
-# Evidências de aceitação — candidata à 1.0 (0.18.0, 05/10/2026)
+# Evidências de aceitação — candidata à 1.0 (0.19.0, 05/10/2026)
 
 Este registro diz o que está **provado**, o que **falta** e quais são os **limites declarados**. Ele não traz
 saída de sessão real, endereços, nomes de produto, de cliente ou de pessoa: resume o que foi observado.
@@ -14,7 +14,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 
 ## Verificação automatizada
 
-- `python -m unittest discover -s tests -v`: **1088 testes em 20 módulos, nenhum falhando** (5 pulados por dependências ausentes no ambiente, como o Playwright).
+- `python -m unittest discover -s tests -v`: **1090 testes em 20 módulos, nenhum falhando** (4 pulados por dependências ausentes no ambiente, como o Playwright).
   Alguns módulos (`test_serve_ports`, `test_checks_integration`) levam vários minutos; rode por módulo.
 - `python -m compileall -q scripts tests`: passou (não há verificador de tipos externo).
 - `claude plugin validate .`: passou; `claude --plugin-dir . plugin details frontlights` carrega uma skill,
@@ -39,7 +39,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 | 10. Reiniciar sem o plugin | Pendente | o plugin não depende do GuardianS nem o altera | conferir dados e histórico do projeto depois de reiniciar sem o plugin |
 | 11. Modo aprendizado | Parcial | ligado e desligado, explicação antes de decidir, "Ficou claro?" com até 3 decisões, 3 abordagens mais "Explicar antes de decidir" | duas reexplicações em sequência e "Seguir a recomendação" nunca apareceram |
 | 12. Família de issues e branches empilhadas | Parcial | aplicado à mão na 0.16.0: sub-issues lidas, `needs-decision` no grilling, worktrees das filhas saindo da branch do pai | PR de filha com a base do pai e o retarget depois do merge nunca foram exercitados; falta uma sessão real com esta versão |
-| 13. Teste de navegador assistido | Parcial | aplicado à mão na 0.16.0: pergunta antes da janela, Chrome visível, ANTES e DEPOIS, cada caso 2 vezes, janela aberta 45 s, perfil restrito real movido e devolvido; o resultado real passou | os auxiliares `serve` e `checks` não foram usados; falta uma sessão real com esta versão |
+| 13. Teste de navegador assistido | Parcial | aplicado à mão na 0.16.0: pergunta antes da janela, Chrome visível, ANTES e DEPOIS, cada caso 2 vezes, janela aberta 45 s, perfil restrito real movido e devolvido; o resultado real passou | os auxiliares `serve` e `checks` não foram usados; a pergunta de fechamento da 0.19.0 ("Assistir de novo", "Aprovado", "Precisa de alteração", "Pode prosseguir") só tem prova textual e falta uma sessão real com esta versão |
 | 14. Fechamento de issues e cartões em Done | Pendente | implementado e testado com `gh` simulado: só propõe issue aberta com todos os critérios marcados, filhas antes dos pais, aprovação própria da lista e releitura do GitHub | falta uma sessão real em que uma pessoa mescle uma família e responda à pergunta |
 | 15. Conclusões registradas nos `.md` | Pendente | implementado e testado com transporte simulado: só o `done` do estado conta, mesma aprovação, marca e verificação, sem `ack` para o que não está na fila do RoadS | falta uma sessão real: Done no quadro, Sincronizar no RoadS e a sincronização aprovada no Frontlights |
 
@@ -85,7 +85,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 
 ## Para a 1.0
 
-A 1.0 sai depois de **uma sessão real com a 0.18.0** que cumpra os itens 12 e 13 do roteiro (família empilhada
+A 1.0 sai depois de **uma sessão real com a 0.19.0** que cumpra os itens 12 e 13 do roteiro (família empilhada
 com os PRs das filhas na base do pai e o retarget depois do merge; teste assistido com `serve` e `checks`) e
 exercite o fechamento de issues (item 14) e o registro de conclusões nos `.md` (item 15), que só foram testados com
 GitHub e RoadS simulados, e de a pessoa responsável aceitar este registro. Os itens parciais acima ficam como limites ou como issues de

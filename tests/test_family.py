@@ -242,9 +242,46 @@ class WatchedRunTextTests(unittest.TestCase):
         self.assertIn('never stop a process the test did not start', self.body)
         self.assertIn('belongs to another session', self.body)
 
+    def test_the_user_decides_what_comes_after_the_watched_run(self):
+        after = flat(re.search(r'\*\*After the watched run.*?(?=\n\*\*Real back first)', self.text, re.S).group(0))
+        for phrase in ('"O que fazer depois do teste assistido da issue #<n>?"',
+                       'Options, in this order: "Assistir de novo", "Aprovado", "Precisa de alteração" and "Pode prosseguir"',
+                       'new window', 'no new "pronto para assistir?"', 'Start ANTES again',
+                       '`aprovacao: "aprovado"`', '`aprovacao: "prosseguir"`', '`aprovacao: "alteracao"`',
+                       'not approved by the user', 'in their own words', 'destination ladder',
+                       'Never pick an answer for the user', 'never read the 45 s or a silence as an answer',
+                       'the failure question comes first and replaces this one',
+                       'asked only when the user watched'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, after)
+        found = labels(after, r'Options, in this order: "([^"]+)", "([^"]+)", "([^"]+)" and "([^"]+)"')
+        self.assertEqual(len(found), 4)
+        for label in found:
+            with self.subTest(label=label):
+                self.assertLessEqual(len(label.split()), 5)
+        self.assertIn('ends with the question of what to do next', flat(self.text))
+
+    def test_the_docs_and_the_runbook_carry_the_closing_question(self):
+        for name in (('README.md',), ('docs', 'protocol.md'), ('docs', 'security.md'), ('evals', 'runbook.md')):
+            text = flat(read(*name))
+            with self.subTest(doc=name[-1]):
+                self.assertIn('Assistir de novo', text)
+                self.assertIn('Aprovado', text)
+                self.assertIn('Precisa de alteração', text)
+                self.assertIn('Pode prosseguir', text)
+        for name in (('README.md',), ('docs', 'protocol.md'), ('evals', 'runbook.md')):
+            with self.subTest(doc=name[-1], field='record'):
+                text = flat(read(*name))
+                self.assertIn('`rodadas`', text)
+                self.assertIn('`aprovacao`', text)
+        self.assertIn('never write `aprovacao: "aprovado"` on your own', flat(self.text))
+        self.assertIn('nunca grava `aprovacao: "aprovado"` por conta própria', flat(read('docs', 'security.md')))
+
     def test_the_run_is_part_of_the_order_the_evidence_and_the_docs(self):
         evidence = flat(section(self.text, 'Evidence') or '')
         self.assertIn('A watched run adds `assistido`', evidence)
+        self.assertIn('`rodadas`', evidence)
+        self.assertIn('`aprovacao` (`aprovado`, `prosseguir` or `alteracao`)', evidence)
         self.assertIn('antes-<caso>-<n>', evidence)
         self.assertIn('only the profile field before and after the undo', evidence)
         self.assertIn('the watched-run question below', flat(self.text))

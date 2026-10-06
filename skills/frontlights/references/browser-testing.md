@@ -24,7 +24,8 @@ A missing section on an issue that changes screens, or a field that contradicts 
 diff, parks the issue and goes to `AskUserQuestion`; never turn tests on or off
 alone. Run only what is on, in this order: `checks regression`, `serve start`,
 `checks integration`, browser and cross-account steps (the browser step opens with
-the watched-run question below), `checks smoke` (it reuses the running serve),
+the watched-run question below and, when the user watched, ends with the question of
+what to do next), `checks smoke` (it reuses the running serve),
 `serve stop`. The commands below read `browserTest` and `checks` from the project's
 `.frontlights/config.json` (main worktree included, as stage 2 says).
 
@@ -160,6 +161,38 @@ Compare the two passes case by case in the report. ANTES failing where the issue
 fixes something is expected; DEPOIS differing from the `Fluxo:` is a product
 failure.
 
+**After the watched run: ask what comes next.** Asked only when the user watched
+(`assistido: true`); a run with "Rodar sem assistir" has no one to answer it. Once the
+last window is closed and the result of each case is in the text (ANTES and DEPOIS side
+by side, with the evidence folder), ask with `AskUserQuestion`: "O que fazer depois do
+teste assistido da issue #<n>?" Options, in this order: "Assistir de novo", "Aprovado",
+"Precisa de alteração" and "Pode prosseguir", each saying what it does:
+
+- "Assistir de novo": runs both passes again as above, in a new window, with no new
+  "pronto para assistir?" (the family already answered it). Start ANTES again and, when
+  the `Fluxo:` moves a profile, save the original value again, move and undo it again (the
+  previous round's undo was already read back). Ask this question again at the end;
+  each round adds one to `rodadas`.
+- "Aprovado": the user confirms that DEPOIS did what the `Fluxo:` expects. Record
+  `aprovacao: "aprovado"` and the answer verbatim, then go on with the order
+  (`checks smoke`, `serve stop`, review).
+- "Precisa de alteração": the user wants something changed. Ask what with
+  `AskUserQuestion` and record it in their own words, record `aprovacao: "alteracao"` and
+  run no further step of the order; stop what this test started, with the profile already
+  restored. A change inside the issue's acceptance criteria goes back to the TDD loop on
+  the same branch and the watched run is repeated with no new "pronto para assistir?"; a
+  change that widens the scope follows the destination ladder of the Follow-ups section
+  in `issues.md`, decided as one batch, never as silent work on this branch.
+- "Pode prosseguir": the user saw the run and lets the stage go on without approving it.
+  Record `aprovacao: "prosseguir"`; the handoff and the report say the run was watched
+  but not approved by the user, never "aprovado".
+
+Never pick an answer for the user, never read the 45 s or a silence as an answer and
+never write `aprovacao: "aprovado"` on your own. When a case of DEPOIS failed, the
+failure question comes first and replaces this one ("Corrigir e testar de novo" already
+covers a change and a new run); this one is asked only when the user watched and no
+product failure remains.
+
 **Real back first.** Prefer the real back end and real data. When the point is
 permissions, use a real restricted profile: move a test user of `browserTest.users`
 to that profile through the product's own endpoint, called with a login of
@@ -239,8 +272,10 @@ Write `.frontlights/issues/<n>/browser/result.json` with timestamp, branch,
 `head`, `diff_sha256`, the account used (`conta 1` or `conta 2`, never the login),
 each step and its result, console and network errors, screenshot file names, the
 failure kind and the user's answer. A watched run adds `assistido` (true or
-false), one entry per pass (`ANTES`/`DEPOIS`, with the branch and `head` served and
-`repeticoes: 2`), the source of each response (`back real` or `interceptada`) and,
+false), `rodadas` (how many times the user watched both passes), `aprovacao` (`aprovado`,
+`prosseguir` or `alteracao`) with the answer to the closing question verbatim, one entry
+per pass (`ANTES`/`DEPOIS`, with the branch and `head` served and `repeticoes: 2`), the
+source of each response (`back real` or `interceptada`) and,
 when a profile was moved, only the profile field before and after the undo (never
 the whole row, which can hold a login or a password hash); its screenshots are
 named `antes-<caso>-<n>` and `depois-<caso>-<n>`. Screenshots stay in the same folder. The

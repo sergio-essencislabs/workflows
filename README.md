@@ -441,6 +441,14 @@ forçada por interceptação de rede só complementa e é declarada no relatóri
 usa porta própria e o Frontlights encerra só o que ele mesmo subiu. Se a sua resposta for "rodar
 sem assistir", o registro traz `assistido: false`.
 
+Quando a janela fecha, o Frontlights pergunta o que fazer com o que você viu: "Assistir de novo"
+(repete as duas passagens numa janela nova, sem repetir a pergunta de pronto), "Aprovado" (você
+confirma que a DEPOIS fez o esperado), "Precisa de alteração" (você diz o que mudar e a issue volta
+para o ajuste, sem seguir para as próximas etapas) ou "Pode prosseguir" (segue sem aprovar, e o
+relatório diz que foi assistido, não aprovado). Ele nunca escolhe por você nem trata o silêncio como
+resposta. O registro traz `rodadas` e `aprovacao`. Se um caso da DEPOIS falhar, a pergunta de falha
+vem antes e substitui esta.
+
 Limites: só o Windows foi exercitado (POSIX não). O `inspect` confere nesses blocos as regras do
 `serve` e do `checks` que dependem só do config: formato dos blocos, shell embutido nos argv de
 `checks`, hosts locais, `{port}` com porta `auto` e segredos de teste mascaráveis. Ele recusa o

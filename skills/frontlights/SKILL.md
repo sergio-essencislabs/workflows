@@ -319,7 +319,8 @@ section of `references/issues.md`, decided as one batch.
 
 Read `references/development.md`, and `references/browser-testing.md` for each
 issue whose plan turns on browser or other tests (a browser test is first asked
-as a watched run, before it starts). The scope is the whole family: the issue and
+as a watched run, before it starts, and a watched run ends by asking the user to
+watch again, approve, ask for a change or go on). The scope is the whole family: the issue and
 its open sub-issues. If the user intends to be away, rerun the
 stage 0 preflight and report it in one line; if the host is gone, repeat the
 `claude rc` guidance. Do not turn this into a question. Inventory hooks,
