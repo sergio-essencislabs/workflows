@@ -120,7 +120,8 @@ and takes none of the board writes below (see Follow-ups). Plan it with the issu
 - An issue that already exists (an adopted one, or one the roadmap sync completes) is edited with
   `gh issue edit <n> --repo <repo> --add-label "<name>"` once per label, `--add-assignee "<login>"`
   and `--type "<type>"`; `gh project item-add` when it is not on the board; the fields as above, with
-  `--number` or `--date` for those types. Only on top of an empty value, and its body is never edited.
+  `--number` or `--date` for those types. Only on top of an empty value, and these writes never edit its body
+  (the only body edits are a leftover criterion and the move of a legacy section, under Follow-ups).
 - Every value typed into these commands goes in as one double-quoted argument, and none may hold a
   dollar sign, backtick, double quote (straight or curly: PowerShell closes a string on both),
   backslash or control character; `validate-plan` refuses a plan value that does, so reword it. A
@@ -155,24 +156,31 @@ verified issue links/graph to the coordinator for batch authorization.
 
 ## Follow-ups
 
-Findings from an independent review, a test run or a live check that belong to an
-issue never become one new issue each. Classify every finding by the first
-destination that fits:
+Findings from an independent review, a test run, a live check or another verification
+pass that belong to an issue never become one new issue each. Classify every finding
+by the first destination that fits:
 
 1. Fix it in the same PR, when it is inside the issue's approved scope and ownership.
-2. A checklist item (`- [ ] ...`) in the source issue's body, for a small leftover
-   that does not need its own branch or review.
+2. A new acceptance criterion in the source issue, written as a checklist item
+   (`- [ ] ...`) inside its acceptance-criteria section, for a small leftover that
+   does not need its own branch or review (recipe: "A leftover as an acceptance
+   criterion", below). The issue is done only when the leftover is treated, completed
+   and ticked with evidence, like any other criterion.
 3. A sub-issue of the source issue, for work of its own that still belongs to that
    outcome.
 4. A top-level issue only for new scope or for a problem that crosses several
    issues; then make it a sub-issue of the epic that gathers them, when one exists.
 
+Every finding that is not fixed in the PR leaves with a destination GitHub tracks
+(destination 2, 3 or 4); text in the PR body is never a destination (the gate, below).
+
 No finding becomes a top-level issue by default. Show the whole batch (each finding,
-its proposed destination with the reason, and the full text of every checklist item
+its proposed destination with the reason, and the full text of every new criterion
 and sub-issue body) under the show-before-approval rule, then decide it in a
 single `AskUserQuestion`: one option approves the proposed destinations and their named
-writes, others adjust them. Approving the batch approves exactly those writes; it
-is not an implementation authorization for the new work. The new sub-issues join the
+writes, others adjust them. Approving the batch approves exactly those writes, with the
+criterion text exactly as shown; it is not an implementation authorization for the new
+work. The new sub-issues join the
 slice of their parent (with the `## Camadas da fatia` rows they cover); to implement
 them in the same execution, ask the extended authorization in a new `AskUserQuestion`,
 stacked on the parent's branch when they depend on it.
@@ -218,7 +226,99 @@ the link, never by creating the issue again.
 
 A parent is reported complete only when every child is closed
 (`subIssuesSummary.completed` equal to `total`); otherwise list the open children.
-A late finding, after the parent was merged or closed, still becomes a sub-issue of
+A late finding, after the parent was closed, still becomes a sub-issue of
 it: say that the parent must be reopened for its progress to count, and leave that
 decision to the user; never reopen, delete or archive an issue yourself, and close or move one
-only through the closeout approval of `references/closeout.md`.
+only through the closeout approval of `references/closeout.md`. A parent that was only
+merged and is still open follows the ladder above like any other.
+
+### A leftover as an acceptance criterion
+
+A leftover is not an appendix of the issue: it is one more acceptance criterion. It goes
+into the acceptance-criteria section (`Acceptance criteria`, `Critérios de aceitação` or
+`Critérios de aceite`), never into a section of its own, because that section is the
+only one `scripts/closeout.py` counts: a leftover kept anywhere else would let the issue
+be proposed for closing with it still open. A source issue that has no such section, or is
+closed, cannot take destination 2 (a section holding only the leftover would make the
+closeout read the issue as finished once it is ticked, and an unticked criterion
+contradicts a closed issue): use a sub-issue and say why.
+
+- **Text.** One objective, observable item that names the evidence that will close it
+  (a test at a seam, a measured result, a reviewed diff), in the user's language and
+  prefixed with where it came from: `- [ ] Pendência (achado da revisão): <what must be
+  true>. Evidência que fecha: <evidence>` (`do teste ao vivo`, `dos testes` or `da
+  conferência` for the other origins). Several leftovers are several items.
+- **Approval.** It changes the issue's scope, so, like any update of a published issue, it
+  keeps what is there and is shown before it is written (the update rule at the end of
+  the Project board section): the exact text, the issue and its place in the section go
+  in the batch above and are approved in that single question. Nothing is written before
+  the answer.
+- **Capture.** Save the body exactly as GitHub holds it, with this command and never with
+  a shell redirect (Windows PowerShell re-encodes redirected output, and `--jq .body`
+  adds a newline): `python -c "import json,subprocess,pathlib; b=json.loads(subprocess.run(['gh','issue','view','<n>','--repo','<repo>','--json','body'],capture_output=True,check=True).stdout)['body']; pathlib.Path(r'<file>').write_bytes(b.encode('utf-8'))"`.
+  The first copy is `.frontlights/issues/<n>/body-before-<YYYYMMDDTHHMMSSZ>.md` (UTC, no
+  colon: a colon is not valid in a Windows file name; create the folder first when it
+  does not exist) and each later one, with its own stamp, `body-now-<stamp>.md`. Run
+  `python "${CLAUDE_PLUGIN_ROOT}/scripts/closeout.py" candidates --config <config> --root
+  <project> --issues <n>` (read only) once now: its `criteria.total`, under `candidates`
+  or `excluded`, is the baseline.
+- **Write.** Build the new body as a copy of the saved one with only the new items
+  inserted right after the last item of the section, by an exact-replace edit of the
+  copy and never by retyping the whole body; the file tool writes UTF-8 without a
+  byte-order mark, and mixed line endings are harmless to GitHub and to the closeout.
+  Check the new file against the saved copy before writing: `git diff --no-index
+  --ignore-cr-at-eol --numstat <before> <new>` must show no deleted line. Capture the
+  body once more right before writing and compare it with the saved copy (`git diff
+  --no-index --ignore-cr-at-eol --exit-code <before> <now>`): any difference means
+  someone edited the issue meanwhile, so stop and show it instead of overwriting. Then
+  write it with `gh issue edit <n> --repo <repo> --body-file <file>`, a literal UTF-8
+  file, never an interpolated string. GitHub offers no compare-and-swap, so an edit
+  landing between that last comparison and the write is a known limit.
+- **Verify.** Run the same closeout command again: `criteria.total` must have grown by
+  the number of items added, and the issue stays out of the list as `unchecked_criteria`
+  (or `open_children` while a child is open) until they are ticked. Capture the body
+  again and compare it with the saved copy with the same flag (`--ignore-cr-at-eol`): the
+  only differences are the added lines, inside the section (in a legacy migration, also
+  the removed legacy lines). Anything else is a divergence to show and ask about;
+  restoring the saved body is a write of its own and needs its own approval.
+- **Record.** Put the approved text, the user's literal answer with a reference, the
+  saved copies and the verified difference in the handoff, and note the write in the
+  authorization's record of GitHub writes when the session has one.
+- **Treat it.** The leftover is worked like any other criterion of the family. Tick it
+  only with evidence, under the authorization for routine issue updates
+  (`references/development.md`), and never to get the issue closed. While one is open,
+  the PR cites the issue without a closing keyword (`Closes`, `Fixes`, `Resolves`), in
+  its body and in the commit messages, because the merge would close the issue with the
+  criterion unticked.
+
+A leftover already kept in a section of its own (a body written before this rule) is
+moved into the criteria only when the user asks for it, as a write of this recipe with
+its own approval: the open items are added to the criteria (text shown first) and the
+same items are removed from the old section, so the only differences are those added
+lines and those removed ones. Until then the closeout only warns about it
+(`pending_outside_criteria`).
+
+### The gate: no open finding without a destination
+
+Before an issue is reported as reviewed or complete, and before a PR is opened or
+updated, list every open finding of the review, the tests, the live check and any other
+verification pass, the ones of earlier rounds included, each with its destination: fixed
+(the commit), new criterion (the issue and the exact text), sub-issue or top-level issue
+(its number), not a defect, or dropped by the user. The report shows that list.
+
+- A finding with none of these stops the report and the PR: say how many are open and
+  run the ladder above for them, as one batch.
+- A mention in the PR body, in a comment, in the chat or in the handoff is never a
+  destination: none of them is tracked, and the PR text is out of sight after the merge. The
+  PR body may repeat an item as context, but only when it also has its destination, which
+  the body then cites.
+- Only noise that is not a defect may stay as text: a 404 for a file that is only missing
+  from the local disk, test data left behind, an error line of the tool itself. Say "não
+  é defeito" and give the evidence that shows it (the command and what it returned). When
+  in doubt it is a finding.
+- Only the user can drop a finding that has no destination, by an explicit answer to the
+  batch question (its adjust option): record the answer verbatim in the handoff and
+  report the finding as "descartado pelo usuário". Never offer it as the default and
+  never infer it from silence.
+- The handoff keeps the list: "Achados sem correção e destino de cada um"
+  (`templates/handoff.md`).

@@ -50,9 +50,20 @@ pelo GitHub, que a issue está no quadro com os valores aprovados. Projeto local
 
 Regra do quadro: toda issue de topo entra no quadro; sub-issue entra só pelo pai.
 Achados de revisão, testes ou conferência seguem a seção Follow-ups de
-`skills/frontlights/references/issues.md`: corrigir no PR, checklist na issue de
-origem, sub-issue, e issue de topo só para escopo novo ou problema que atravessa
-várias issues. O lote é decidido numa única pergunta. A sub-issue é criada com
+`skills/frontlights/references/issues.md`: corrigir no PR, critério de aceitação novo
+na issue de origem, sub-issue, e issue de topo só para escopo novo ou problema que
+atravessa várias issues. O lote é decidido numa única pergunta. Toda pendência que não
+for corrigida no PR vira, na issue de origem, um critério `- [ ]` dentro da seção de
+critérios de aceitação (nunca numa seção à parte, que o fechamento não conta), com
+a evidência que o fechará; como altera o escopo, o texto exato é mostrado e aprovado no
+lote antes de a sessão escrever o corpo (`gh issue edit --body-file`, com o corpo anterior
+guardado, só acréscimo, exceto na migração de uma seção legada, releitura e diferença
+conferidas) e a escrita é registrada no
+documento de passagem de contexto. Antes de relatar uma issue como revisada ou concluída,
+e antes de abrir ou atualizar um PR, todo achado em aberto precisa de destino rastreável
+(corrigido, critério novo, sub-issue ou issue de topo); "citado no corpo do PR" nunca é
+destino, e só ruído que não é defeito pode ficar como texto, dito como tal e com a
+evidência. A sub-issue é criada com
 `gh issue create --parent` (ou ligada com `gh issue edit --parent`), herda
 responsável, tipo e rótulos do pai e não recebe `gh project item-add` nem
 `item-edit`. A conferência relê `parent` e `projectItems` do filho e
@@ -251,4 +262,6 @@ uma verificação independente. A evidência a que a revisão ficou vinculada é
 a compara com a atual: saída 0 (`current`) vale, saída 2 (`stale`) significa que houve commit, edição ou
 arquivo novo depois da revisão, e a issue não é relatada como revisada nem tem PR aberto ou atualizado
 sem nova revisão. Uma família de branches é integrada localmente, com a suíte completa verde, antes de
-qualquer PR dela.
+qualquer PR dela. A conclusão exige também que nenhum achado fique sem destino rastreável: o handoff traz a
+linha "Achados sem correção e destino de cada um", e uma pendência vira critério de aceitação da issue de
+origem, que só fecha com ela tratada, concluída e marcada com evidência.

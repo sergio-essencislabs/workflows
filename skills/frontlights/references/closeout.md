@@ -25,8 +25,18 @@ ticked, and every one of its sub-issues is closed or a candidate in the same bat
 their parents). A closed issue whose card is not in Done is a candidate to be moved only, but only when it was closed as completed (one
 closed as not planned or as a duplicate needs nothing). Each candidate
 carries its `action` (`close`, `close_and_move`, `move_only`), the criteria count, its PRs (state and
-whether merged), its card status and `cautions`: `open_pr`, `no_pr`, `not_on_board`, `already_done_card`.
+whether merged), its card status and `cautions`: `open_pr`, `no_pr`, `not_on_board`, `already_done_card`,
+`pending_outside_criteria`.
 The cautions inform; they never block, and an `open_pr` is called out in the question.
+
+A known leftover is an acceptance criterion like any other (`issues.md`, Follow-ups), so an open one keeps its
+issue out of this list as `unchecked_criteria`. `pending_outside_criteria` is for a body written before that rule,
+which kept its leftovers in a section of their own (`Pendências conhecidas`) outside the criteria, where this
+step cannot count them: the candidate carries the number of open items in `pendingOutside`. Show it in the table
+as "fecha com N pendências fora dos critérios" and call it out in the question like an `open_pr`; it is the
+user's call whether to close with them open. Say in the question that moving them into the criteria is available:
+it is a write of the Follow-ups recipe in `issues.md`, done only when the user asks for it, with its own approval
+and outside this list. This step never moves them.
 
 `excluded` lists what is not ready and why (`unchecked_criteria` and `no_criteria` with the counts,
 `open_children` with the children, `truncated` when a list was cut, `not_found` and `unreadable`): that
@@ -46,12 +56,13 @@ write, shown first). Without `project.done` the pair is `Status` / `Done`.
 ## 2. Show the list and ask
 
 Show in the conversation, in full and in the user's language, one table with a row per candidate (number,
-title, top-level or sub-issue, criteria n/n, children, PRs, card status → Done, action, cautions) in the
+title, top-level or sub-issue, criteria n/n, children, PRs, card status → Done, action, cautions, and "fecha com N
+pendências fora dos critérios" when `pendingOutside` is above zero) in the
 `order` of the result, and the exact `commands` that will run. Send the same text as a file with the host's
 file-sending tool when one exists, and put it in the `preview` of the approve option (show-before-approval,
 `SKILL.md`). Then ask with `AskUserQuestion`: "Fechar estas <N> issues e mover os cartões para Done?" with
 "Sim, fechar e mover tudo" first and recommended (recommend "Escolher quais" instead when some candidate has
-`open_pr`), "Escolher quais" (a follow-up question with the candidates, at most four per call; a parent chosen without its
+`open_pr` or `pendingOutside` above zero), "Escolher quais" (a follow-up question with the candidates, at most four per call; a parent chosen without its
 candidate children is not written, it waits for them, and the user is told so), "Só fechar,
 sem mover" and "Não agora". "Não agora" writes nothing. The helper keeps no memory of the refusal, so the question comes back in every later
 session while the list stands, and the user can answer the stage 1 question "Não, seguir com o pedido" each time. Record the answer verbatim with a reference; never answer for the user.

@@ -21,6 +21,11 @@ An open issue is a candidate only when its body has an acceptance-criteria secti
 checklist item and every item checked, and every sub-issue is closed or a candidate in the same batch. A
 closed issue (completed) whose card is outside Done needs only the move.
 
+A known leftover is an acceptance criterion like any other, so it is counted with the others. A body written
+before that rule may hold the leftovers in a section of their own ("Pendencias conhecidas") outside the
+criteria: such a candidate is still proposed, with the `pending_outside_criteria` caution and the number of
+open items in `pendingOutside`, so the user is told before closing it. The caution informs and never blocks.
+
 Exit codes: 0 done; 1 refusal (bad usage or configuration, a failed read) or, for verify, an issue that is not
 finished yet (`ok` is false and `issues` says which). A refusal is JSON, never a traceback.
 """
@@ -52,6 +57,7 @@ HINT = 'gh auth refresh -s project'
 NUMBER = re.compile(r'[0-9]{1,9}')
 CURSOR = re.compile(r'[A-Za-z0-9+/=_-]{1,200}')
 PHRASES = ('acceptance criteria', 'criterios de aceitacao', 'criterios de aceite')
+LEGACY_PHRASES = ('pendencias conhecidas', 'known pending')   # leftovers kept outside the criteria before they became criteria
 HEADING = re.compile(r'^ {0,3}(#{1,6})(?:[ \t]+(.*))?$')   # no lazy quantifier: a long line must not make it crawl
 LINE_CAP = 2000          # a checklist item or a title never needs more than this of a line
 FENCE = re.compile(r'^[ \t]*(`{3,}|~{3,})(.*)$')
@@ -110,11 +116,20 @@ def criteria(body):
     runs to the next heading of the same or a higher level (deeper headings belong to it). Items are
     `- [ ]`, `* [x]`, `+ [X]` (and numbered `1. [ ]`), indented or not. Fenced code and HTML comments are
     skipped, and items outside the section never count. Several matching sections are added up."""
+    return scan(body)[0]
+
+
+def scan(body):
+    """(criteria, pending): `criteria` as `criteria()` returns it, and `pending`, the number of unchecked items
+    in the sections the body keeps outside the criteria for known leftovers (a heading starting with
+    `pendencias conhecidas` or `known pending`, read like the criteria section). A heading nested inside the
+    criteria section belongs to it and is already counted there, so it is never counted twice."""
     if not isinstance(body, str):
-        return None
-    checked = total = 0
+        return None, 0
+    checked = total = pending = 0
     found = False
     level = None      # depth of the section being read; None outside one
+    kind = None       # what that section holds: 'criteria' or 'pending'
     fence = None      # (character, length) inside fenced code
     comment = False   # inside a multi-line HTML comment
     for raw in re.split(r'\r\n|\r|\n', body):
@@ -136,17 +151,24 @@ def criteria(body):
         heading = HEADING.match(line)
         if heading:
             depth = len(heading.group(1))
-            if level is not None and depth > level:
+            name = plain(heading_text(heading.group(2) or ''))
+            # deeper headings belong to the section being read, except a criteria heading under a legacy
+            # section: that one still opens the criteria, exactly as it did before the legacy sections existed
+            if level is not None and depth > level and not (kind == 'pending' and name.startswith(PHRASES)):
                 continue
-            level = None
-            if plain(heading_text(heading.group(2) or '')).startswith(PHRASES):
-                level, found = depth, True
+            level = kind = None
+            if name.startswith(PHRASES):
+                level, kind, found = depth, 'criteria', True
+            elif name.startswith(LEGACY_PHRASES):
+                level, kind = depth, 'pending'
             continue
         item = ITEM.match(line) if level is not None else None
-        if item:
+        if item and kind == 'criteria':
             total += 1
             checked += item.group(1) in 'xX'
-    return (checked, total) if found else None
+        elif item:
+            pending += item.group(1) == ' '
+    return ((checked, total) if found else None), pending
 
 
 # ---------------------------------------------------------------- scope
@@ -387,13 +409,14 @@ def parse_view(number, node, repository, board, with_cards):
                     if isinstance(field, str) and field and text:
                         card[field] = text
                 break
-    counts = criteria(node.get('body'))
+    counts, pending = scan(node.get('body'))
     parent = node.get('parent')
     state = node.get('state')
     reason = node.get('stateReason')
     return {'number': number, 'state': state if isinstance(state, str) else None,
             'stateReason': reason if isinstance(reason, str) else None, 'title': rs.clean(node.get('title') or ''),
             'criteria': None if counts is None else {'checked': counts[0], 'total': counts[1]},
+            'pendingOutside': pending,
             'parent': parent['number'] if isinstance(parent, dict) and valid_number(parent.get('number')) else None,
             'children': {'total': total, 'completed': completed, 'open': opened, 'nodes': children},
             'prs': linked, 'card': card, 'cardsRead': with_cards, 'truncated': truncated}
@@ -527,6 +550,8 @@ def assess(views, repository, board, info):
                 cautions.append('not_on_board')
             if card is not None and current == done_value:
                 cautions.append('already_done_card')
+            if view['pendingOutside']:
+                cautions.append('pending_outside_criteria')
         url = issue_url(repository, number)
         commands = []
         if not closed:
@@ -537,7 +562,7 @@ def assess(views, repository, board, info):
                                                       board['owner'], '--url', url, '--field', done_field,
                                                       '--value', done_value]})
         return {'number': number, 'title': view['title'], 'url': url, 'level': level, 'parent': view['parent'],
-                'criteria': view['criteria'],
+                'criteria': view['criteria'], 'pendingOutside': 0 if closed else view['pendingOutside'],
                 'children': {key: view['children'][key] for key in ('total', 'completed', 'open')},
                 'state': view['state'], 'action': 'move_only' if closed else 'close_and_move' if move else 'close',
                 'prs': view['prs'],
@@ -641,6 +666,10 @@ def op_candidates(config, root='.', explicit=None, all_flag=False, gh=None):
     moves = sum(c['action'] == 'move_only' for c in ordered)
     parts = [f'{len(ordered)} issue(s) can be closed or moved to Done ({len(ordered) - moves} to close, {moves} only to move).'
              if ordered else 'No issue is ready to close.']
+    pending = [c['number'] for c in ordered if c['pendingOutside']]
+    if pending:
+        parts.append('Open leftovers outside the acceptance criteria in ' + ', '.join(f'#{n}' for n in pending)
+                     + ' (pendingOutside): tell the user before closing them.')
     if excluded:
         parts.append(f'{len(excluded)} excluded (see excluded for the reason of each).')
     if already:

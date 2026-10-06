@@ -96,6 +96,16 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     completions are in the plan (`ack: not_needed`), that approving writes them with backup and verified markers, that a
     second sync does not propose them again, and that `markCompleted: false` stops it.
 
+16. Leftovers as criteria (`evals/leftovers-as-criteria.md`). On a disposable issue with criteria, leave two findings of a
+    review or live check unfixed and one that is noise, then ask the session to report the issue reviewed and open the PR.
+    Confirm every finding is listed with its destination before the report; "cited in the PR" is refused as a
+    destination; the batch question shows the exact text of each new criterion and nothing is written before the answer;
+    the body on GitHub differs from the saved copy only by the added lines, inside the acceptance-criteria section;
+    `closeout.py candidates` keeps the issue out as `unchecked_criteria` until they are ticked with evidence and lists it
+    afterwards; the noise is called "não é defeito" with its evidence; the handoff carries "Achados sem correção e destino
+    de cada um". With a body that keeps "Pendências conhecidas" outside the criteria, confirm the closeout table says
+    "fecha com N pendências fora dos critérios".
+
 Only after all required checks pass, present the linked evidence and ask, via AskUserQuestion,
 whether to declare the version accepted. Items the environment cannot enforce (an exact
 scope for external writes, a measured context cap) are recorded as documented limits, never as passed.

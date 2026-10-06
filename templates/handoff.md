@@ -13,6 +13,7 @@
 
 - TDD exception, if any, and rationale:
 - Independent reviewer evidence tied to exact HEAD/diff, and the `review-gate` result (current or stale) for it:
+- Achados sem correção e destino de cada um (critério de aceitação novo na issue de origem, sub-issue ou issue de topo, com o número e o texto escrito; texto no PR nunca é destino; só ficam sem destino o ruído que não é defeito, com a evidência, e o que o usuário descartou, com a resposta literal e "descartado pelo usuário"):
 - Session identity, accumulated token measurement and next-step reserve:
 - Open risks/blockers and exact pending user question:
 - Next concrete step:

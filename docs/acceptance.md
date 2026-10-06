@@ -14,7 +14,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 
 ## Verificação automatizada
 
-- `python -m unittest discover -s tests -v`: **1090 testes em 20 módulos, nenhum falhando** (4 pulados por dependências ausentes no ambiente, como o Playwright).
+- `python -m unittest discover -s tests -v`: **1130 testes em 21 módulos, nenhum falhando** (5 pulados por dependências ausentes no ambiente, como o Playwright; contagem da 0.21.0).
   Alguns módulos (`test_serve_ports`, `test_checks_integration`) levam vários minutos; rode por módulo.
 - `python -m compileall -q scripts tests`: passou (não há verificador de tipos externo).
 - `claude plugin validate .`: passou; `claude --plugin-dir . plugin details frontlights` carrega uma skill,
@@ -42,6 +42,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 | 13. Teste de navegador assistido | Parcial | aplicado à mão na 0.16.0: pergunta antes da janela, Chrome visível, ANTES e DEPOIS, cada caso 2 vezes, janela aberta 45 s, perfil restrito real movido e devolvido; o resultado real passou | os auxiliares `serve` e `checks` não foram usados; a pergunta de fechamento da 0.19.0 ("Assistir de novo", "Aprovado", "Precisa de alteração", "Pode prosseguir") só tem prova textual e falta uma sessão real com esta versão |
 | 14. Fechamento de issues e cartões em Done | Pendente | implementado e testado com `gh` simulado: só propõe issue aberta com todos os critérios marcados, filhas antes dos pais, aprovação própria da lista e releitura do GitHub | falta uma sessão real em que uma pessoa mescle uma família e responda à pergunta |
 | 15. Conclusões registradas nos `.md` | Pendente | implementado e testado com transporte simulado: só o `done` do estado conta, mesma aprovação, marca e verificação, sem `ack` para o que não está na fila do RoadS | falta uma sessão real: Done no quadro, Sincronizar no RoadS e a sincronização aprovada no Frontlights |
+| 16. Pendências como critério de aceitação | Pendente | regra escrita na skill, nos modelos e nos docs, e testada: o `closeout.py` conta a pendência como critério (a issue com ela aberta sai da lista) e avisa sobre a seção legada "Pendências conhecidas" fora dos critérios, com `gh` simulado | falta uma sessão real em que o portão liste os achados, o texto exato do critério seja aprovado antes da escrita e o corpo no GitHub mude só pelas linhas acrescentadas; o portão é regra da skill, não barreira |
 
 ## RoadS em produção
 

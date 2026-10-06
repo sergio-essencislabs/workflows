@@ -232,6 +232,118 @@ class CriteriaTests(unittest.TestCase):
         body = '## Acceptance criteria\n- [x] a\n## Critérios de aceitação\n- [ ] b\n'
         self.assertEqual(closeout.criteria(body), (1, 2))
 
+    def test_a_known_leftover_written_as_a_criterion_is_counted_like_any_other(self):
+        body = ('## Acceptance criteria\n- [x] Original behavior\n'
+                '- [ ] Pendência (achado da revisão): the export keeps the filter after reload. '
+                'Evidence: the export test at the seam passes\n')
+        self.assertEqual(closeout.criteria(body), (1, 2))
+        self.assertEqual(closeout.scan(body), ((1, 2), 0))
+
+
+class LegacyPendingTests(unittest.TestCase):
+    """Leftovers kept in a section of their own, outside the criteria, by bodies written before they became criteria."""
+
+    def test_open_items_of_the_legacy_section_are_counted_outside_the_criteria(self):
+        body = '## Acceptance criteria\n- [x] a\n## Pendências conhecidas\n- [ ] b\n- [x] c\n* [ ] d\n'
+        self.assertEqual(closeout.scan(body), ((1, 1), 2))
+        self.assertEqual(closeout.criteria(body), (1, 1))
+
+    def test_the_legacy_heading_is_read_like_the_criteria_heading(self):
+        for heading in ('## Pendências conhecidas', '## Pendencias Conhecidas', '## PENDÊNCIAS CONHECIDAS',
+                        '## Known pending items', '## Pendências conhecidas (revisão)', '## **Pendências conhecidas**',
+                        '# Pendências conhecidas'):
+            with self.subTest(heading=heading):
+                self.assertEqual(closeout.scan(f'## Acceptance criteria\n- [x] a\n{heading}\n- [ ] b\n'), ((1, 1), 1))
+        self.assertEqual(closeout.scan('### Pendências conhecidas\n- [ ] b\n'), (None, 1))
+
+    def test_other_headings_are_not_the_legacy_section(self):
+        for heading in ('## Pendências', '## Notes on pendências conhecidas', '## Not known pending', '## Next steps'):
+            with self.subTest(heading=heading):
+                self.assertEqual(closeout.scan(f'## Acceptance criteria\n- [x] a\n{heading}\n- [ ] b\n'), ((1, 1), 0))
+        # a line indented four spaces is code, not a heading: the item stays in the criteria section
+        self.assertEqual(closeout.scan('## Acceptance criteria\n- [x] a\n    ## Pendências conhecidas\n- [ ] b\n'),
+                         ((1, 2), 0))
+
+    def test_a_section_nested_in_the_criteria_is_a_criterion_and_is_never_counted_twice(self):
+        body = '## Acceptance criteria\n- [x] a\n### Pendências conhecidas\n- [ ] b\n'
+        self.assertEqual(closeout.scan(body), ((1, 2), 0))
+
+    def test_the_legacy_section_ends_like_the_criteria_section(self):
+        self.assertEqual(closeout.scan('## Pendências conhecidas\n- [ ] a\n## Next\n- [ ] b\n'), (None, 1))
+        self.assertEqual(closeout.scan('## Pendências conhecidas\n- [ ] a\n### Deeper\n- [ ] b\n# Top\n- [ ] c\n'), (None, 2))
+
+    def test_fenced_code_comments_and_ticked_items_never_count(self):
+        body = ('## Pendências conhecidas\n- [x] done\n```\n- [ ] example\n```\n<!-- - [ ] hint -->\n'
+                '- [ ] real <!-- - [ ] hidden -->\n')
+        self.assertEqual(closeout.scan(body), (None, 1))
+
+    def test_a_body_without_the_section_has_none_and_a_non_text_body_is_empty(self):
+        self.assertEqual(closeout.scan('## Acceptance criteria\n- [ ] a\n'), ((0, 1), 0))
+        for body in ('', None, 5, ['## Pendências conhecidas']):
+            with self.subTest(body=body):
+                self.assertEqual(closeout.scan(body), (None, 0))
+
+    def test_a_criteria_heading_under_a_legacy_section_still_opens_the_criteria(self):
+        # before the legacy sections existed, any heading that was not a criteria heading ended the section
+        # being read, so a criteria heading nested deeper started one: that must not change
+        body = '## Acceptance criteria\n- [x] a\n## Pendências conhecidas\n- [ ] p\n### Critérios de aceitação\n- [ ] b\n'
+        self.assertEqual(closeout.scan(body), ((1, 2), 1))
+        self.assertEqual(closeout.criteria(body), (1, 2))
+        self.assertEqual(closeout.scan('## Pendências conhecidas\n- [ ] p\n### Acceptance criteria\n- [x] a\n'), ((1, 1), 1))
+        # a deeper heading that is not a criteria heading stays inside the legacy section
+        self.assertEqual(closeout.scan('## Pendências conhecidas\n- [ ] p\n### Notes\n- [ ] q\n'), (None, 2))
+
+    def test_criteria_counts_are_the_ones_the_function_gave_before_the_legacy_sections_existed(self):
+        """Differential check against the earlier reading, on seeded random bodies built from the headings, items,
+        fences and comments that matter. Only the pending count is new."""
+        import random
+
+        def earlier(body):
+            checked = total = 0
+            found = False
+            level = None
+            fence = None
+            comment = False
+            for raw in re.split(r'\r\n|\r|\n', body):
+                if comment:
+                    end = raw.find('-->')
+                    if end < 0:
+                        continue
+                    raw, comment = raw[end + 3:], False
+                if fence:
+                    if re.match(r'^[ \t]*' + re.escape(fence[0]) + '{%d,}[ \t]*$' % fence[1], raw):
+                        fence = None
+                    continue
+                line, comment = closeout.strip_comments(raw)
+                opened = closeout.FENCE.match(line)
+                if opened and not (opened.group(1)[0] == '`' and '`' in opened.group(2)):
+                    fence = (opened.group(1)[0], len(opened.group(1)))
+                    continue
+                line = line[:closeout.LINE_CAP]
+                heading = closeout.HEADING.match(line)
+                if heading:
+                    depth = len(heading.group(1))
+                    if level is not None and depth > level:
+                        continue
+                    level = None
+                    if closeout.plain(closeout.heading_text(heading.group(2) or '')).startswith(closeout.PHRASES):
+                        level, found = depth, True
+                    continue
+                item = closeout.ITEM.match(line) if level is not None else None
+                if item:
+                    total += 1
+                    checked += item.group(1) in 'xX'
+            return (checked, total) if found else None
+
+        names = ('Acceptance criteria', 'Critérios de aceitação', 'Pendências conhecidas', 'Known pending', 'Other')
+        pieces = [f'{"#" * depth} {name}' for depth in (1, 2, 3, 4) for name in names]
+        pieces += ['- [ ] open', '- [x] done', '* [X] done', 'plain text', '```', '~~~', '<!-- open', 'close -->',
+                   '<!-- one -->', '']
+        rng = random.Random(20261006)
+        for _ in range(4000):
+            body = '\n'.join(rng.choice(pieces) for _ in range(rng.randint(1, 14)))
+            self.assertEqual(closeout.criteria(body), earlier(body), repr(body))
+
 
 class NumbersTests(unittest.TestCase):
     def test_a_list_of_positive_integers_is_sorted_and_deduplicated(self):
@@ -500,7 +612,8 @@ class EligibilityTests(CloseoutCase):
         self.assertEqual(entry['number'], 12)
         self.assertEqual({k: v for k, v in entry.items() if k != 'commands'}, {
             'number': 12, 'title': 'Issue 12', 'url': URL % 12, 'level': 'top', 'parent': None,
-            'criteria': {'checked': 2, 'total': 2}, 'children': {'total': 0, 'completed': 0, 'open': []},
+            'criteria': {'checked': 2, 'total': 2}, 'pendingOutside': 0,
+            'children': {'total': 0, 'completed': 0, 'open': []},
             'state': 'OPEN', 'action': 'close_and_move',
             'prs': [{'number': 1012, 'state': 'MERGED', 'merged': True, 'url': 'https://github.com/OWNER/REPOSITORY/pull/1012'}],
             'card': {'status': 'Todo'}, 'onBoard': True, 'moveToDone': True, 'cautions': [], 'order': 1})
@@ -644,6 +757,41 @@ class EligibilityTests(CloseoutCase):
     def test_cautions_never_keep_a_candidate_out_and_come_in_a_fixed_order(self):
         result, _ = self.candidates({12: node(12, prs=[(30, 'OPEN', False)], card=None)})
         self.assertEqual(result['candidates'][0]['cautions'], ['open_pr', 'not_on_board'])
+
+    def test_an_open_known_leftover_written_as_a_criterion_keeps_the_issue_out_until_it_is_ticked(self):
+        leftover = '- [%s] Pendência (achado da revisão): the export keeps the filter after reload. Evidence: seam test\n'
+        result, _ = self.candidates({12: node(12, text=DONE_ALL + leftover % ' ')})
+        self.assertEqual(result['candidates'], [])
+        self.assertFalse(result['ask'])
+        self.assertEqual((result['excluded'][0]['reason'], result['excluded'][0]['criteria']),
+                         ('unchecked_criteria', {'checked': 2, 'total': 3}))
+        result, _ = self.candidates({12: node(12, text=DONE_ALL + leftover % 'x')})
+        self.assertEqual(result['candidates'][0]['criteria'], {'checked': 3, 'total': 3})
+        self.assertEqual(result['candidates'][0]['cautions'], [])
+
+    def test_open_leftovers_outside_the_criteria_are_a_caution_that_informs_and_never_blocks(self):
+        text = DONE_ALL + '\n## Pendências conhecidas\n\n- [ ] first\n- [x] second\n- [ ] third\n'
+        result, _ = self.candidates({12: node(12, text=text)})
+        entry = result['candidates'][0]
+        self.assertEqual((entry['pendingOutside'], entry['cautions']), (2, ['pending_outside_criteria']))
+        self.assertEqual(entry['criteria'], {'checked': 2, 'total': 2})
+        self.assertEqual(result['excluded'], [])
+        self.assertTrue(result['ask'])
+        self.assertIn('#12', result['message'])
+        self.assertIn('pendingOutside', result['message'])
+        self.assertNotIn('first', json.dumps(result))   # only the count of a body is ever reported
+
+    def test_the_leftover_caution_comes_last_and_only_for_an_issue_that_will_be_closed(self):
+        text = DONE_ALL + '\n## Pendências conhecidas\n- [ ] first\n'
+        result, _ = self.candidates({12: node(12, text=text, prs=[(30, 'OPEN', False)], card=None)})
+        self.assertEqual(result['candidates'][0]['cautions'], ['open_pr', 'not_on_board', 'pending_outside_criteria'])
+        result, _ = self.candidates({12: node(12, state='CLOSED', text=text)})
+        entry = result['candidates'][0]
+        self.assertEqual((entry['action'], entry['pendingOutside'], entry['cautions']), ('move_only', 0, []))
+
+    def test_a_body_without_leftovers_adds_no_caution_and_no_sentence(self):
+        result, _ = self.candidates({12: node(12)})
+        self.assertNotIn('pendingOutside', result['message'])
 
     def test_a_list_that_did_not_fit_one_page_excludes_the_issue_with_the_reason(self):
         for totals, name in (({'children': 150}, 'sub_issues'), ({'cards': 25}, 'cards'), ({'values': 60}, 'card_values')):

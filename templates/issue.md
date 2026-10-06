@@ -10,6 +10,12 @@ PRD: <approved revision/link>
 
 - [ ] <observable result>
 
+Achado de revisão, de teste ao vivo ou de conferência que não for corrigido no PR entra
+aqui como mais um critério (`- [ ] Pendência (achado da revisão): <resultado observável>.
+Evidência que fecha: <teste, medição ou diff revisado>`), nunca numa seção à parte: só
+esta seção conta para fechar a issue, e a issue só fecha com a pendência tratada,
+concluída e marcada com evidência.
+
 ## Approach and conventions
 
 Chosen approach (rejected alternatives in the PRD or discovery log) and the

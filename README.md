@@ -217,18 +217,34 @@ do projeto (nomes de label, de tipo e de linha) fica só no `config.json` do pro
 
 Achados de revisão, de testes ou de conferência ligados a uma issue não viram uma issue
 de topo cada. O Frontlights propõe o destino de cada achado, nesta ordem: corrigir no
-mesmo PR, item de checklist no corpo da issue de origem, sub-issue da issue de origem e,
+mesmo PR, critério de aceitação novo na issue de origem, sub-issue da issue de origem e,
 só para escopo novo ou problema que atravessa várias issues, issue de topo (sub-issue do
-épico que as reúne). O lote inteiro é decidido numa única pergunta. A sub-issue nasce
-ligada ao pai (`gh issue create --parent <n>`), herda responsável, tipo e rótulos dele e
-não ganha cartão no quadro: o cartão do pai mostra o progresso das filhas. No `plan.json`,
-a sub-issue leva `parent` com o id da issue de origem, que precisa estar no mesmo plano,
-e dispensa `project_fields`. O `validate-plan` recusa `parent` igual ao próprio id, pai
-fora do plano, mais de 100 filhas por pai no plano e mais de 8 níveis de aninhamento;
-as filhas que o pai já tem no GitHub (`subIssuesSummary.total`) são conferidas antes de
-publicar, sem passar de 100. O pai só é dado como
-concluído com as filhas fechadas; um achado depois do merge ou do fechamento do pai vira
+épico que as reúne). O lote inteiro é decidido numa única pergunta.
+
+A sub-issue nasce ligada ao pai (`gh issue create --parent <n>`), herda responsável, tipo
+e rótulos dele e não ganha cartão no quadro: o cartão do pai mostra o progresso das
+filhas. No `plan.json`, a sub-issue leva `parent` com o id da issue de origem, que
+precisa estar no mesmo plano, e dispensa `project_fields`. O `validate-plan` recusa
+`parent` igual ao próprio id, pai fora do plano, mais de 100 filhas por pai no plano e
+mais de 8 níveis de aninhamento; as filhas que o pai já tem no GitHub
+(`subIssuesSummary.total`) são conferidas antes de publicar, sem passar de 100. O pai só
+é dado como concluído com as filhas fechadas; um achado depois do fechamento do pai vira
 sub-issue dele, e o Frontlights avisa que o pai precisa ser reaberto, sem reabri-lo.
+
+Uma pendência que não é corrigida no PR não fica só no texto do PR, que ninguém
+acompanha e que some depois do merge: ela vira um critério `- [ ] Pendência (achado da
+revisão): ...` dentro da seção de critérios de aceitação da issue de origem, com a
+evidência que o fechará. Como altera o escopo da issue, o texto exato é mostrado e
+aprovado no lote antes de ser escrito (corpo anterior guardado, só acréscimo, releitura e
+diferença conferidas; só a migração de uma seção legada também remove linhas). A issue só fecha com a pendência tratada, concluída e marcada com
+evidência, como qualquer critério, e o fechamento (veja abaixo) já a enxerga; enquanto
+houver uma aberta, o PR cita a issue sem palavra de fechamento (`Closes`, `Fixes`). Antes
+de relatar uma issue como revisada ou concluída, e antes de abrir ou atualizar um PR,
+todo achado em aberto tem destino rastreável; "citado no corpo do PR" nunca é destino, e
+só ruído que não é defeito (um 404 de arquivo que só falta no disco local, dado de teste)
+pode ficar como texto, dito como "não é defeito" com a evidência. O `handoff` registra
+"Achados sem correção e destino de cada um". Isso é regra da skill, não barreira do
+plugin: o que o plugin garante é que o fechamento conta a pendência como critério.
 
 Sem `project`, ou com `"project": null`, as issues não entram em quadro nenhum; num
 repositório de organização, o Frontlights pergunta qual quadro usar antes de publicar.
@@ -464,7 +480,10 @@ fechá-las e mover os cartões para Done. A lista vem completa, com as sub-issue
 ligados (aberto, mesclado ou nenhum), o status atual do cartão e os comandos exatos; só depois da sua
 aprovação dessa lista ele fecha (`gh issue close --reason completed`) e move, e relê o GitHub para conferir.
 Uma issue sem a seção de critérios, com critério desmarcado ou com filha ainda aberta que não esteja na mesma lista
-nunca entra. Uma issue já fechada só é movida se foi fechada como concluída.
+nunca entra. Uma issue já fechada só é movida se foi fechada como concluída. Um corpo escrito antes da regra das
+pendências, com uma seção "Pendências conhecidas" fora dos critérios e item aberto nela, entra na lista com o
+aviso "fecha com N pendências fora dos critérios": a decisão de fechar assim é sua, e, se você pedir, mover
+essas pendências para os critérios é uma escrita à parte, com texto aprovado antes.
 O RoadS lê só o **Status** do cartão no Project, nunca se a issue está fechada: fechar sem mover o cartão não muda nada
 lá, e um item concluído fica na sprint (marcado como concluído) até a rotação semanal removê-lo; por isso, depois de mover
 cartões, o Frontlights oferece sincronizar de novo. Nenhuma autorização de implementação, merge ou teste verde

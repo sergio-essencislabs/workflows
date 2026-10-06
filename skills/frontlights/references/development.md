@@ -235,8 +235,20 @@ stale review is never reported as reviewed. If no
 independent reviewer is available, report "implemented, awaiting independent
 review", not completed. Do not manufacture reviewer identities or approvals.
 Classify the review's findings, and those of tests and live checks, by the
-destination ladder of the Follow-ups section in `issues.md` (same PR, checklist in
-the source issue, sub-issue, top-level issue only for new scope), decided as one batch.
+destination ladder of the Follow-ups section in `issues.md` (same PR, a new
+acceptance criterion in the source issue, sub-issue, top-level issue only for new
+scope), decided as one batch.
+
+**Gate on the findings.** Before an issue is reported as reviewed or complete, and before
+a PR is opened or updated, every open finding (review, tests, live check, any other
+verification pass) has a destination GitHub tracks, or is fixed, or is shown as not a
+defect with its evidence, or is dropped by the user's explicit answer: the gate of the
+Follow-ups section. A line in the PR body, a comment or the chat is never a
+destination, so "cited in the PR" does not pass the gate. A finding
+left unfixed leaves by the ladder: most often as an acceptance criterion of the source
+issue, which keeps the issue open until the leftover is treated, completed and ticked
+with evidence; or as a sub-issue or a top-level issue. The PR cites the issue without a
+closing keyword, in its body and in the commit messages, while such a criterion is open.
 
 Refactoring happens here. The reviewer may recommend refactors of the green code;
 the author applies them without changing behavior or adding tests at new seams,
@@ -260,11 +272,13 @@ enforce renewal, explicitly report that hard-cap AFK acceptance is unproven.
 Update GitHub checkpoints/status only if authorized and supported by current
 evidence; tick an acceptance criterion in the issue body only with evidence for it
 (a test, a measured result, a reviewed diff), because the closeout of stage 7 trusts
-the ticks. Closing an issue and moving its card are never part of this: they have
+the ticks; a criterion born from a finding is ticked the same way, once the work it
+names is done and its evidence exists. Closing an issue and moving its card are never part of this: they have
 their own approval (`references/closeout.md`). Draft PRs also require charter permission and native approval. Never
 merge a pull request, write the base branch, deploy, release, delete data or close
 issues as routine AFK work; the only merges allowed are the ones the stacking authorization names: of a base into an issue's own
 branch, and of a family's verified branches into a local integration branch that is never pushed. Park
 blocked issues with the precise pending question and continue independent ones.
 Report each issue's state, branch/PR, exact tests/results, review evidence,
-remaining risk and next action. Leave worktrees and evidence intact for recovery.
+the findings left unfixed with the destination of each, remaining risk and next
+action. Leave worktrees and evidence intact for recovery.

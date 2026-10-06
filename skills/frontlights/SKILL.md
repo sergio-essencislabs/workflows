@@ -260,7 +260,9 @@ With a configured `project`, each top-level issue joins that board with its
 assignee, type, labels and fields (and any body lines the board configures) in the same approved write, and is verified there. Never
 create a top-level issue outside the configured board. Findings from review, tests
 or checks follow the destination ladder and the sub-issue recipe of the Follow-ups
-section of `references/issues.md`, decided as one batch.
+section of `references/issues.md`, decided as one batch. A finding that is not fixed
+in the PR leaves as a new acceptance criterion of its source issue, a sub-issue or a
+top-level issue, never as a note in the PR body (the gate of that section).
 
 ## 6. Bounded development
 
@@ -298,8 +300,15 @@ close issues or expand scope under this charter; the only merges allowed are the
 branch, and of a family's verified branches into a local integration branch that is never pushed.
 
 At each material boundary reconcile GitHub, preserve evidence and check context.
+Before an issue is reported as reviewed or complete, and before a PR is opened or
+updated, every open finding has its destination (the gate of the Follow-ups section
+of `references/issues.md`): fixed, a new acceptance criterion of the source issue, a
+sub-issue, a top-level issue, shown as not a defect with its evidence, or dropped by
+the user's explicit answer. "Cited in the PR" is never a destination, and an issue is not reported as reviewed or complete
+while one has none.
 Finish with per-issue state, branch/PR, changes, measured commands/results,
-independent review against the exact diff, risks and next action. Never present
+independent review against the exact diff, the findings left unfixed with the
+destination of each, risks and next action. Never present
 fixture tests as live integration, human confirmation or independent review.
 
 ## 7. Closeout of finished issues (its own approval)

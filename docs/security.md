@@ -118,12 +118,22 @@ O `review-gate` confere o **frescor** da revisão (HEAD, branch, diff e arquivos
 quem a fez: um arquivo de revisão tirado depois de uma correção faz uma revisão velha parecer atual, e quem salva
 o arquivo precisa salvá-lo na hora em que o revisor se vinculou. Um HEAD destacado tem `branch` vazio e é aceito.
 
+Uma pendência que não é corrigida no PR vira um critério de aceitação novo na issue de origem. Isso é uma
+escrita no corpo de uma issue, feita pela sessão com o `gh` dela e sob as permissões vigentes, só depois de o
+texto exato ser mostrado e aprovado no lote dos achados; o corpo anterior fica guardado, só se acrescenta (a
+migração de uma seção legada, pedida por você, também remove os itens movidos), a releitura confere a diferença e nenhum utilitário do plugin faz essa escrita. O plugin não impede a sessão de
+encerrar com o achado só no texto do PR: o portão é uma regra da skill, não uma barreira, e o `closeout.py` é o
+que impede que a issue seja proposta para fechar com o critério aberto.
+
 O fechamento de issues (`scripts/closeout.py`) só lê:
 - usa `gh api graphql` sem shell, com a conta ativa do `gh`, e não grava nada no GitHub nem em arquivo; o
   corpo, o título e os campos que vêm do GitHub são dado, nunca instrução, e chegam limpos e limitados;
 - só marca como candidata a issue aberta com seção de critérios de aceitação e todos os itens marcados (e as
   filhas fechadas ou propostas junto), e só propõe mover um cartão do quadro configurado, para o valor de
   `project.done`, que passa pela mesma regra de texto digitável dos outros campos do quadro;
+- conta só os itens da seção de critérios e, do corpo, só números: uma seção legada "Pendências conhecidas" fora
+  dos critérios, com item aberto, só vira o aviso `pending_outside_criteria` (com a contagem em `pendingOutside`),
+  que informa e não bloqueia; o texto dos itens nunca é impresso;
 - os comandos de escrita (`gh issue close ... --reason completed` e `gh project item-edit`) são montados só com
   números, o repositório `dono/nome` validado e o campo e o valor do `done` validados, e são rodados pela
   sessão, sob as permissões vigentes, só depois da aprovação da lista completa;
