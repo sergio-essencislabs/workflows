@@ -69,9 +69,9 @@ configuração ou rotina automática de interceptação (hook) é instalada.
 
 ## Acompanhar pelo celular (máquina fixa no app)
 
-O `/frontlights` começa verificando, só por leitura, se há um host do
-Remote Control rodando. Não faz pergunta sobre celular. Sem host, ele apenas
-orienta, em passos curtos:
+O `/frontlights` não verifica o Remote Control ao começar e não faz pergunta
+sobre celular. Para deixar o PC disponível no app Claude do celular, siga estes
+passos por conta própria:
 
 1. Abra um PowerShell, fora do app desktop, e entre na pasta do projeto.
 2. Rode `claude rc` nessa pasta. Se pedir para confiar na pasta, aceite. Se não
@@ -90,11 +90,8 @@ Fechar a janela tira o dispositivo do ar. Depois de reiniciar o PC ou o Claude,
 repita os passos 1 e 2 em cada pasta: as sessões voltam sincronizadas (observado
 em um teste em uma máquina, sem garantia).
 
-Para continuar pelo celular com a tampa fechada ou o PC bloqueado, peça a
-configuração guiada durante o `/frontlights`. Ela lê os ajustes de energia,
-mostra os comandos `powercfg` exatos, com os valores anteriores para desfazer, e
-você os roda: o plugin nunca altera o esquema de energia sozinho. Ela também faz
-o teste no celular e segue `skills/frontlights/references/remote-control.md`.
+O plugin não lê nem altera os ajustes de energia do PC. Com a tampa fechada ou o
+PC em suspensão, o dispositivo pode sair do ar.
 
 ## Configurar um projeto
 
@@ -476,8 +473,7 @@ substitui essa aprovação. O utilitário é
 
 ## Fluxo de trabalho e utilitários
 
-Verificação do host do Remote Control (sem pergunta; orienta `claude rc` quando falta)
-e de atualização do plugin (sem pergunta; mostra os dois comandos de atualização
+Verificação de atualização do plugin (sem pergunta; mostra os dois comandos de atualização
 quando há versão nova no GitHub) →
 pedido e dimensionamento → inspeção → entrevista de decisões → PRD mostrado na
 íntegra e aprovado →
@@ -527,7 +523,6 @@ Execute estes comandos no diretório do plugin:
 python scripts/frontlights.py validate-plan --plan examples/plan.json
 python scripts/frontlights.py schedule --plan examples/plan.json --limit 2
 python scripts/frontlights.py context --used 85000 --reserve 15000
-python scripts/frontlights.py monitoring --root .
 python scripts/frontlights.py update-check
 python -m unittest discover -s tests -v
 python -m compileall -q scripts tests
@@ -556,7 +551,7 @@ o [roteiro de homologação](evals/runbook.md) e a [recuperação](docs/recovery
 
 O formato e os comandos seguem as referências oficiais de
 [plugins do Claude Code](https://code.claude.com/docs/en/plugins) e
-[skills](https://code.claude.com/docs/en/skills). O monitoramento segue a documentação
+[skills](https://code.claude.com/docs/en/skills). Os passos para acompanhar pelo celular seguem a documentação
 de [Remote Control](https://code.claude.com/docs/en/remote-control). O desenho de
 permissões foi conferido na [referência de hooks](https://code.claude.com/docs/en/hooks).
 Essas fontes externas estão em inglês. Consulta realizada em 24/09/2026; versão da

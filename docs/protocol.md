@@ -4,7 +4,7 @@
 
 | Etapa | Permitido antes da próxima aprovação | Evidência exigida |
 | --- | --- | --- |
-| Host do Remote Control (sem pergunta) | Detectar o host e, sem host, orientar `claude rc` num PowerShell que fica aberto | Resultado da verificação prévia |
+| Atualização do plugin (sem pergunta) | Consultar a versão publicada e mostrar os comandos de atualização, sem executá-los | Resultado do `update-check` |
 | Inspeção | Ler o projeto atual e as fontes configuradas | Fontes, horários e limitações |
 | Descoberta | Entrevistar, ler código e registrar decisões | Resultado, limites e escolhas aprovados |
 | PRD | Redigir e revisar uma versão local | Texto integral mostrado e aprovação humana da versão exata |
@@ -13,26 +13,14 @@
 | Desenvolvimento | Somente issues e operações autorizadas | Testes, alterações, integração e revisão independente |
 | Fechamento | Somente fechar e mover para Done o que a pessoa aprovou na lista mostrada | Lista e comandos mostrados na íntegra, aprovação própria e nova leitura do GitHub |
 
-O bloco `monitoring` da autorização registra `mode` (`phone`, `local` ou
-`alternative`), `confirmed_by`, a identidade da sessão e o horário. Em `phone`,
+O bloco `monitoring` da autorização registra `mode` (`local`, `phone` ou
+`alternative`), `confirmed_by`, a identidade da sessão e o horário; sem outra
+informação, é `local` com quem aprovou a autorização. Em `phone`,
 `phone_connected` só recebe `true` depois que o usuário afirmar, na sessão atual,
 que o celular recebeu uma pergunta e respondeu. Em `alternative`, `details` é
-obrigatório. A verificação prévia nunca preenche `phone_connected`: ela devolve
-`null` e o campo `authority`, e é reexecutada a cada sessão, reinício ou queda
-relatada. Uma confirmação anterior só sobrevive como `host.known`: o
-`.frontlights/monitoring.json` registrado pela configuração guiada (`references/remote-control.md`)
-aponta o mesmo pid de um host ainda em execução, iniciado antes da confirmação.
-
-A verificação do host vem antes de tudo e não faz pergunta nenhuma. Sem host, o
-usuário recebe uma única orientação curta: abrir um PowerShell na pasta do
-projeto, rodar `claude rc` (confiando na pasta, se pedir), deixar a janela aberta
-e iniciar a sessão pelo dispositivo no celular, além da oferta da configuração
-guiada de energia para tampa fechada ou PC bloqueado. Com `host.known`, o registro é
-`phone` com `phone_connected: true`; com outro host, `alternative` com
-`confirmed_by: "preflight"`; sem host, `local`. Fora de `host.known`, `phone` com
-`phone_connected: true` só vale se o usuário afirmar, por conta própria na sessão
-atual, que o celular recebeu e respondeu. Na etapa 6, a verificação é refeita e
-relatada em uma linha, sem pergunta.
+obrigatório. O plugin não detecta o celular nem o host do Remote Control, não lê
+os ajustes de energia e não orienta `claude rc`: `phone_connected: true` vale
+somente pela afirmação do usuário na sessão atual.
 
 O fechamento (`scripts/closeout.py`, só leitura) propõe fechar toda issue aberta, e toda sub-issue, com a seção
 de critérios de aceitação e todos os itens marcados (e as filhas fechadas ou propostas junto, filhas antes dos

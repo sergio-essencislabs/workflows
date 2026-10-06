@@ -7,8 +7,8 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
 
 1. Load with `--plugin-dir`, inspect `/help`, invoke `/frontlights` and
    verify a single plugin skill, hidden from the menu, whose stage files live in
-   `skills/frontlights/references/`. Confirm stage 0 asks nothing and only shows
-   the `claude rc` guidance when no host runs,
+   `skills/frontlights/references/`. Confirm stage 0 asks nothing, never looks for a
+   Remote Control host and only reports a plugin update when one exists,
    every question has options, and all user-facing text is in Portuguese. Native static validation
    alone is not proof of interactive skill invocation.
 2. Read real observations and existing issues; include an unavailable-source case

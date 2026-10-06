@@ -28,7 +28,7 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertEqual(skills, ['frontlights'])
         text = (ROOT / 'skills' / 'frontlights' / 'SKILL.md').read_text(encoding='utf-8')
         self.assertIn('user-invocable: false', text.split('---')[1])
-        for name in ('grilling', 'prd', 'issues', 'development', 'remote-control', 'roadmap-sync', 'learning'):
+        for name in ('grilling', 'prd', 'issues', 'development', 'roadmap-sync', 'learning'):
             self.assertIn(f'references/{name}.md', text)
             self.assertTrue((ROOT / 'skills' / 'frontlights' / 'references' / f'{name}.md').is_file())
 
@@ -38,6 +38,17 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertIn('every session', stage1)
         self.assertIn('Atualizar a sprint e o roadmap de acordo com o RoadS?', stage1)
         self.assertLess(stage1.index('roadmap_sync.py'), stage1.index('Then choose the lightest path'))
+
+    def test_session_start_never_looks_for_remote_control(self):
+        skill = ROOT / 'skills' / 'frontlights'
+        text = (skill / 'SKILL.md').read_text(encoding='utf-8')
+        stage0 = text.split('## 0.')[1].split('## 1.')[0]
+        self.assertIn('update-check', stage0)
+        for banned in ('monitoring', 'claude rc', 'Remote Control'):
+            self.assertNotIn(banned, stage0)
+        self.assertNotIn('remote-control', text)
+        self.assertFalse((skill / 'references' / 'remote-control.md').exists())
+        self.assertFalse(hasattr(frontlights, 'monitoring'))
 
     def test_grilling_always_proposes_approaches_that_respect_the_code_pattern(self):
         skill = ROOT / 'skills' / 'frontlights'
@@ -793,112 +804,7 @@ class PathRiskTests(unittest.TestCase):
                           {'ok', 'long_path', 'virtualized'})
 
 
-QH_ENGLISH = ('    Current AC Power Setting Index: 0x00000000\n'
-              '    Current DC Power Setting Index: 0x0000001e\n')
-QH_LOCALIZED = ('    \u00cdndice de Configura\u00e7\u00f5es de Correntes Alternadas Atuais: 0x00000000\n'
-                '    \u00cdndice de Configura\u00e7\u00f5es de Correntes Cont\ufffdnuas Atuais: 0x00000000\n')
-Q_WITHOUT_VALUE = ('GUID do Esquema de Energia: 381b4222 (Equilibrado)\n'
-                   '  Subgrupo: SUB_VIDEO\n')
-
-
-class MonitoringTests(unittest.TestCase):
-    def test_power_value_parses_english_and_localized_output(self):
-        self.assertEqual(frontlights.power_value(QH_ENGLISH), {'ac': 0, 'dc': 30})
-        # The console codepage mangles the accented word; the ASCII stem must still match.
-        self.assertEqual(frontlights.power_value(QH_LOCALIZED), {'ac': 0, 'dc': 0})
-
-    def test_absent_power_index_is_unknown_not_zero(self):
-        for text in (Q_WITHOUT_VALUE, '', None, 'garbage without any index'):
-            with self.subTest(text=text):
-                self.assertEqual(frontlights.power_value(text), {'ac': None, 'dc': None})
-
-    def test_host_candidates_match_tokens_not_image_name(self):
-        rows = [{'ProcessId': 1, 'CommandLine': 'claude remote-control --name Vision'},
-                {'ProcessId': 2, 'CommandLine': 'claude remote-control --help'},
-                {'ProcessId': 3, 'CommandLine': 'node C:\\x\\cli.js remote-control --name A'},
-                {'ProcessId': 4, 'CommandLine': 'code C:\\src\\remote-control\\readme.md'},
-                {'ProcessId': 5, 'CommandLine': 'claude remote-control --version'},
-                {'ProcessId': 6, 'CommandLine': None},
-                {'ProcessId': 9, 'CommandLine': 'claude rc'},
-                {'ProcessId': 10, 'CommandLine': 'node C:\\x\\claude\\cli.js rc --name B'},
-                {'ProcessId': 11, 'CommandLine': 'claude rc --help'},
-                {'ProcessId': 12, 'CommandLine': 'notepad rc'}]
-        self.assertEqual([c['pid'] for c in frontlights.host_candidates(rows)], [1, 3, 9, 10])
-
-    def test_since_marks_hosts_older_than_the_session(self):
-        rows = [{'ProcessId': 7, 'CommandLine': 'claude remote-control', 'CreationDate': '2026-09-25T08:00:00'},
-                {'ProcessId': 8, 'CommandLine': 'claude remote-control', 'CreationDate': '2026-09-25T12:00:00'}]
-        found = frontlights.host_candidates(rows, since='2026-09-25T10:00:00')
-        self.assertEqual([(c['pid'], c['predates_session']) for c in found], [(7, True), (8, False)])
-
-    def test_since_compares_powershell_dates_as_times(self):
-        rows = [{'ProcessId': 9, 'CommandLine': 'claude remote-control',
-                 'CreationDate': '/Date(1790360617247)/'}]  # 2026-09-25T18:23:37Z
-        self.assertTrue(frontlights.host_candidates(rows, since='2026-09-25T19:00:00Z')[0]['predates_session'])
-        self.assertFalse(frontlights.host_candidates(rows, since='2026-09-25T18:00:00Z')[0]['predates_session'])
-
-    def test_known_host_needs_the_same_process_started_before_confirmation(self):
-        record = {'mode': 'phone', 'host_name': 'pc', 'host_process_id': 42,
-                  'observed_phone_confirmation': {'at': '2026-09-25T18:25:43Z'}}
-        before = {'pid': 42, 'created': '/Date(1790360617247)/'}
-        known = frontlights.known_host(record, [before])
-        self.assertEqual((known['pid'], known['host_name'], known['confirmed_at']),
-                         (42, 'pc', '2026-09-25T18:25:43Z'))
-        restarted = {'pid': 42, 'created': '2026-09-26T09:00:00Z'}
-        for rec, candidates in ((record, [restarted]), (record, [{'pid': 43, 'created': before['created']}]),
-                                (record, [{'pid': 42, 'created': None}]), (record, []),
-                                ({**record, 'mode': 'local'}, [before]),
-                                ({**record, 'observed_phone_confirmation': {}}, [before]), (None, [before])):
-            with self.subTest(record=rec, candidates=candidates):
-                self.assertIsNone(frontlights.known_host(rec, candidates))
-
-    def test_monitoring_record_is_found_from_a_linked_worktree(self):
-        with tempfile.TemporaryDirectory() as main, tempfile.TemporaryDirectory() as linked:
-            Path(main, '.frontlights').mkdir()
-            Path(main, '.frontlights', 'monitoring.json').write_text('{"mode": "phone"}', encoding='utf-8')
-            common = (str(Path(main, '.git')) + '\n').encode()
-            with patch.object(frontlights, 'run', return_value=common):
-                self.assertEqual(frontlights.monitoring_record(linked), {'mode': 'phone'})
-            with patch.object(frontlights, 'run', side_effect=ValueError('not a repository')):
-                self.assertIsNone(frontlights.monitoring_record(linked))
-
-    def test_monitoring_reports_a_known_host_without_claiming_a_phone(self):
-        listing = json.dumps([{'ProcessId': 42, 'CommandLine': 'claude remote-control --name pc',
-                               'CreationDate': '/Date(1790360617247)/'}]).encode()
-        record = {'mode': 'phone', 'host_name': 'pc', 'host_process_id': 42,
-                  'observed_phone_confirmation': {'at': '2026-09-25T18:25:43Z'}}
-
-        def fake(argv, cwd=None):
-            if argv[0] == 'powershell':
-                return listing
-            raise ValueError('not needed')
-        with patch.object(frontlights.sys, 'platform', 'win32'), \
-             patch.object(frontlights, 'run', side_effect=fake), \
-             patch.object(frontlights, 'monitoring_record', return_value=record):
-            result = frontlights.monitoring('.')
-        self.assertEqual(result['host']['known']['pid'], 42)
-        self.assertEqual(result['host']['conclusion'], 'confirmed host still running')
-        self.assertIsNone(result['phone_connected'])
-
-    def test_monitoring_never_claims_a_phone_and_degrades_per_source(self):
-        with patch.object(frontlights.sys, 'platform', 'win32'), \
-             patch.object(frontlights, 'run', side_effect=ValueError('powercfg exploded')):
-            result = frontlights.monitoring('.')
-        self.assertIsNone(result['phone_connected'])
-        self.assertEqual(result['authority'], 'user confirmation in this session')
-        for name in ('lock_display_timeout', 'lid_close_action'):
-            self.assertEqual(result['power'][name]['status'], 'unavailable')
-        # Absence must not be concluded when the listing itself failed.
-        self.assertEqual(result['host']['status'], 'unavailable')
-        self.assertNotIn('powercfg exploded', json.dumps(result))
-
-    def test_monitoring_is_unsupported_off_windows_without_raising(self):
-        with patch.object(frontlights.sys, 'platform', 'linux'):
-            result = frontlights.monitoring('.')
-        self.assertEqual(result['power']['status'], 'unsupported')
-        self.assertEqual(result['host']['status'], 'unsupported')
-        self.assertIsNone(result['phone_connected'])
-
+class MonitoringBlockTests(unittest.TestCase):
     def test_phone_mode_requires_a_real_confirmation(self):
         with tempfile.TemporaryDirectory() as root:
             Path(root, 'src').mkdir()

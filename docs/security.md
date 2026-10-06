@@ -236,25 +236,10 @@ verificadas de uma família numa branch de integração local, que nunca é envi
 
 Os testes desses utilitários rodaram só no Windows; o caminho POSIX não foi exercitado.
 
-A conexão do celular exige confirmação do usuário na sessão atual do Claude, ou
-uma confirmação registrada em `.frontlights/monitoring.json` cujo host continua o
-mesmo processo: mesmo pid e início anterior à confirmação. Host reiniciado ou pid
-reaproveitado tem outro horário de início e volta a exigir a pergunta.
-O plugin não inicia conversa paralela nem afirma detectar o dispositivo físico.
-A verificação prévia de monitoramento lê, apenas, os dois valores de energia
-do esquema ativo (apagar a tela ao bloquear e ação ao fechar a tampa) e a lista de
-processos, casando `remote-control` como token da linha de comando. Ausência de
-candidato é conclusão segura de que não há host; presença de candidato prova um
-processo, nunca um celular conectado. O plugin não grava tarefa agendada, atalho
-de inicialização nem serviço, e nunca altera o esquema de energia: quando algum
-ajuste é necessário, mostra os comandos `powercfg` e quem roda é o próprio usuário.
-O PC pode ficar bloqueado, mas a janela do terminal que hospeda o comando precisa
-continuar aberta — isso não é configuração de energia e não tem como ser contornado.
-
-A detecção de host considera qualquer processo `remote-control` na máquina. Ela não
-filtra pela pasta do projeto, e `--since` só marca processos mais antigos que a
-sessão, sem excluí-los. Um host de outra pasta conta como candidato, e por isso a
-confirmação no celular precisa citar o nome exato da máquina (`--name`).
+A conexão do celular exige confirmação do usuário na sessão atual do Claude. O plugin
+não inicia conversa paralela, não afirma detectar o dispositivo físico, não procura host
+do Remote Control, não lê nem altera os ajustes de energia e não grava tarefa agendada,
+atalho de inicialização nem serviço.
 
 Os limites de contexto também dependem de medição confiável do ambiente; não há
 hook neste plugin que garanta um teto de 150 mil tokens antes de cada geração.

@@ -801,156 +801,6 @@ def inspect(config, root, config_path=None):
     return result
 
 
-POWER_SETTINGS = {
-    'lock_display_timeout': ('7516b95f-f776-4464-8c53-06167f40cc99',
-                             '8EC4B3A5-6868-48c2-BE75-4F3044BE88A7'),
-    'lid_close_action': ('4f971e89-eebd-4455-a8de-9e59040e7347',
-                         '5ca83367-6e45-459f-a27b-476b1d01c936'),
-}
-HELP_TOKENS = {'--help', '-h', '-?', '/?', '--version', 'help', 'version'}
-
-
-def power_value(text):
-    """Parse one powercfg /qh block. An absent index stays None, never 0.
-
-    powercfg /q omits these settings entirely because they are hidden, so a
-    missing index must read as unknown; treating it as 0 would silently claim
-    the safe value on a machine that was never configured.
-    """
-    found = {'ac': None, 'dc': None}
-    for line in (text or '').splitlines():
-        match = re.search(r'\b(AC|DC)\b[^:]*:\s*(0x[0-9a-fA-F]+|\d+)\s*$', line, re.IGNORECASE)
-        if match:
-            key = match.group(1).lower()
-        else:
-            # Localized powercfg translates the words but keeps the index. Match
-            # ASCII-only stems: the console codepage mangles accented characters
-            # into replacement chars, which no \w class would match.
-            match = re.search(r'(Altern|Cont)[^:]*:\s*(0x[0-9a-fA-F]+|\d+)\s*$', line)
-            if not match:
-                continue
-            key = 'ac' if match.group(1) == 'Altern' else 'dc'
-        raw = match.group(2)
-        if found[key] is None:
-            found[key] = int(raw, 16) if raw.lower().startswith('0x') else int(raw)
-    return found
-
-
-def host_candidates(rows, since=None):
-    """Select processes that look like a Remote Control host.
-
-    Matches the tokenized command line, not the image name: on Windows the CLI
-    frequently runs under node.exe, so an image-name filter both misses real
-    hosts and matches a bare `remote-control --help`.
-    """
-    selected = []
-    for row in rows or []:
-        command = row.get('CommandLine') or row.get('command') or ''
-        tokens = [token.strip('"\'') for token in command.split()]
-        # `claude rc` is the short alias of `claude remote-control`.
-        if 'remote-control' not in tokens and not (
-                'rc' in tokens and any('claude' in token.lower() for token in tokens)):
-            continue
-        if any(token.lower() in HELP_TOKENS for token in tokens):
-            continue
-        created = row.get('CreationDate') or row.get('created')
-        started, start = moment(created), moment(since)
-        selected.append({'pid': row.get('ProcessId') or row.get('pid'),
-                         'created': created,
-                         'predates_session': bool(started and start and started < start)})
-    return selected
-
-
-def moment(value):
-    """Parse ISO 8601 or the `/Date(ms)/` that PowerShell 5.1 emits; None when unknown."""
-    if not isinstance(value, str) or not value:
-        return None
-    match = re.fullmatch(r'/Date\((-?\d+)\)/', value)
-    try:
-        if match:
-            return dt.datetime.fromtimestamp(int(match.group(1)) / 1000, dt.timezone.utc)
-        parsed = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
-    except (ValueError, OverflowError, OSError):
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
-
-
-def monitoring_record(root):
-    """Read `.frontlights/monitoring.json` here or, from a linked worktree, in the main one."""
-    places = [Path(root)]
-    try:
-        common = run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd=root)
-        places.append(Path(common.decode('utf-8', 'replace').strip()).parent)
-    except (ValueError, OSError, subprocess.TimeoutExpired):
-        pass
-    for place in places:
-        try:
-            record = load(place / '.frontlights' / 'monitoring.json')
-        except (OSError, ValueError):
-            continue
-        if isinstance(record, dict):
-            return record
-    return None
-
-
-def known_host(record, candidates):
-    """Match a running host to the one the user confirmed on the phone.
-
-    Same process id, and a process started no later than the confirmation: a
-    restarted host, or a reused id, gets a new start time and falls back to asking.
-    """
-    if not isinstance(record, dict) or record.get('mode') != 'phone':
-        return None
-    confirmed = moment((record.get('observed_phone_confirmation') or {}).get('at'))
-    if not confirmed:
-        return None
-    for candidate in candidates:
-        started = moment(candidate.get('created'))
-        if candidate.get('pid') == record.get('host_process_id') and started and started <= confirmed:
-            return {'pid': candidate['pid'], 'host_name': record.get('host_name'),
-                    'confirmed_at': record['observed_phone_confirmation']['at'],
-                    'source': '.frontlights/monitoring.json'}
-    return None
-
-
-def monitoring(root, since=None):
-    """Read-only monitoring preflight. Proves absence, never a connected phone."""
-    result = {'checked_at': dt.datetime.now(dt.timezone.utc).isoformat(),
-              'root': str(root), 'phone_connected': None,
-              'authority': 'user confirmation in this session',
-              'requirement': 'terminal window stays open; lid open until the closed-lid test passes',
-              'power': {}, 'host': {}}
-    if not sys.platform.startswith('win'):
-        unsupported = {'status': 'unsupported', 'platform': sys.platform}
-        result['power'], result['host'] = dict(unsupported), dict(unsupported)
-        return result
-    for name, (subgroup, setting) in POWER_SETTINGS.items():
-        argv = ['powercfg', '/qh', 'SCHEME_CURRENT', subgroup, setting]
-        try:
-            values = power_value(run(argv).decode('utf-8', 'replace'))
-            require(values['ac'] is not None or values['dc'] is not None, 'no power index reported')
-            result['power'][name] = {'status': 'available', 'source': ' '.join(argv), **values}
-        except (ValueError, OSError, subprocess.TimeoutExpired):
-            result['power'][name] = {'status': 'unavailable', 'source': ' '.join(argv),
-                                     'reason': 'powercfg read failed; run the command locally'}
-    argv = ['powershell', '-NoProfile', '-NonInteractive', '-Command',
-            'Get-CimInstance Win32_Process | Select-Object ProcessId,CommandLine,CreationDate '
-            '| ConvertTo-Json -Compress']
-    try:
-        rows = json.loads(run(argv).decode('utf-8', 'replace') or 'null')
-        require(isinstance(rows, (list, dict)), 'malformed process listing')
-        found = host_candidates(rows if isinstance(rows, list) else [rows], since)
-        known = known_host(monitoring_record(root), found)
-        result['host'] = {'status': 'available', 'candidates': found, 'known': known,
-                          'conclusion': 'no persistent host' if not found
-                                        else 'confirmed host still running' if known
-                                        else 'a process, not a connected phone'}
-    except (ValueError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
-        result['host'] = {'status': 'unavailable',
-                          'reason': 'process listing failed; absence cannot be concluded'}
-    return result
-
-
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -1049,9 +899,6 @@ def main():
     p = sub.add_parser('review-gate')
     p.add_argument('--root', default='.')
     p.add_argument('--review', required=True, help='saved evidence output taken when the independent review was bound')
-    p = sub.add_parser('monitoring')
-    p.add_argument('--root', default='.')
-    p.add_argument('--since', help='ISO 8601 session start; marks older hosts')
     sub.add_parser('update-check')
     for name in ('checkpoint', 'resume'):
         p = sub.add_parser(name)
@@ -1088,8 +935,6 @@ def main():
         elif args.command == 'review-gate':
             result = review_gate(load(args.review), git_evidence(args.root))
             code = 0 if result['status'] == 'current' else 2
-        elif args.command == 'monitoring':
-            result = monitoring(args.root, args.since)
         elif args.command == 'update-check':
             result = update_check()
         elif args.command == 'checkpoint':

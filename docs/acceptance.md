@@ -81,7 +81,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 - **Permissões:** o plugin orienta e confere predicados; quem barra é o Claude Code. Em modo `bypassPermissions`
   não há parada nativa; o `authorize` nunca devolve `permission_granted: true`.
 - **Plataforma:** só o Windows é suportado e testado.
-- **Celular:** a presença de um processo do Remote Control não prova um celular conectado.
+- **Celular:** o plugin não detecta o celular nem o host do Remote Control; `phone_connected: true` vale só pela afirmação do usuário na sessão.
 
 ## Para a 1.0
 
