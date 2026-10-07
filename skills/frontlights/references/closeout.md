@@ -1,7 +1,8 @@
 # Closing finished issues
 
-Read this when the stage 1 closeout question is answered yes, when a family worked in stage 6 is
-reported merged, or when the user asks to close or move finished issues. Everything the user reads
+Read this when the stage 1 closeout question is answered yes, when the wait for the merge of stage 6
+(`development.md`, "After the pull request") finds a pull request merged into the approved base, when a family
+worked in stage 6 is reported merged, or when the user asks to close or move finished issues. Everything the user reads
 stays in Portuguese. Closing is a write on GitHub with **its own approval**: no implementation
 authorization, no merged PR and no green test stands in for it. The helper only reads; the session
 writes, with its own `gh`, and only what the user approved.
@@ -19,6 +20,13 @@ repository: a plan still in proposal does not count) plus all
 their sub-issues, down the tree. `--issues` names an explicit list. `--all` sweeps every open issue of the
 repository and is used only when the user asks for it. With no repository or no `gh`, say in one line that
 the check could not run and go on.
+
+When a merge woke the session, pass `--issues` with the issues of the pull requests `merge-status` lists as
+`ready` and, for a family, the sub-issues that merged with them: an explicit list is taken as it is. Only a merge
+into the approved base counts; the merge of a child into its parent's branch closes nothing by itself (its issue joins the closeout when the
+parent's PR becomes `ready` with a later `mergedAt`, as `development.md` says). An issue whose pull
+request merged but that still has an unticked criterion comes back in `excluded` as `unchecked_criteria`: say which
+criteria are left, and tick only what the evidence supports (never to get the issue closed).
 
 An open issue is a **candidate** only when it has an acceptance-criteria section and every criterion of it is
 ticked, and every one of its sub-issues is closed or a candidate in the same batch (children close before
@@ -44,7 +52,14 @@ needs work or a decision, not closing. `order` is 1-based and is the order to cl
 counts closed issues whose card could not be checked because the board was not readable, and `alreadyDone`
 counts the closed ones that need nothing. Tell the user briefly, never propose it. Ticking a criterion belongs
 to the verification of the issue, with evidence (a test, a measured result, a reviewed diff), under the
-authorization for routine issue updates; this step trusts the ticks and never ticks one itself.
+authorization for routine issue updates; this step trusts the ticks and never ticks one itself. The one tick it
+asks for is not a criterion of the issue being closed but the item of its parent that cites it, below.
+
+A sub-issue candidate also carries `parentTicks`: `lines`, the numbers of the lines of its open parent's body that
+are unchecked items citing it and no other issue, and `shared`, those that cite it together with other issues
+(never ticked for one of them). Only line numbers come from the helper; the session reads the lines from its own
+copy of the parent's body (the Capture command of the recipe in `issues.md`). A sub-issue without `parentTicks`
+(no item of the parent cites it, or the parent is closed, in another repository or unknown) is only closed.
 
 `board.status` says whether cards can be moved: `unconfigured` (no board: close only), `not_read` (nothing in
 scope, so the board was not read), `unavailable` (a `gh`
@@ -60,7 +75,10 @@ title, top-level or sub-issue, criteria n/n, children, PRs, card status → Done
 pendências fora dos critérios" when `pendingOutside` is above zero) in the
 `order` of the result, and the exact `commands` that will run. Send the same text as a file with the host's
 file-sending tool when one exists, and put it in the `preview` of the approve option (show-before-approval,
-`SKILL.md`). Then ask with `AskUserQuestion`: "Fechar estas <N> issues e mover os cartões para Done?" with
+`SKILL.md`). A sub-issue with `parentTicks` gets, in its row, "marcar no corpo de #P as linhas L" with each of
+those lines shown in full, and the lines in `shared` are listed as "não marcadas: citam outras issues". When the
+list holds ticks, the question reads "Fechar estas <N> issues, mover os cartões para Done e marcar os itens dos
+pais?", and "Só fechar, sem mover" writes only the closes (no move and no tick). Then ask with `AskUserQuestion`: "Fechar estas <N> issues e mover os cartões para Done?" with
 "Sim, fechar e mover tudo" first and recommended (recommend "Escolher quais" instead when some candidate has
 `open_pr` or `pendingOutside` above zero), "Escolher quais" (a follow-up question with the candidates, at most four per call; a parent chosen without its
 candidate children is not written, it waits for them, and the user is told so), "Só fechar,
@@ -77,6 +95,19 @@ missing ones are retried, never by repeating a close that already landed; a chil
 its parent back and both are reported. Pause a few seconds between writes when the batch is large, to stay
 under the secondary rate limit. Add no comment: the closing is already on the issue.
 
+**The tick in a parent.** After a sub-issue is closed, for each of its parents in `parentTicks` (once per parent,
+with all its lines, and before that parent is closed when it is in the same list): capture the parent's body with
+the Capture command of the recipe in `issues.md` and check that each listed line of that copy is still an unticked
+item that cites the sub-issue and no other issue, and is the line the user was shown (otherwise stop and show the
+difference). Build the new body as a copy of it in which only the `[ ]` of those lines became `[x]`, by an
+exact-replace edit, and run `python "${CLAUDE_PLUGIN_ROOT}/scripts/closeout.py" tick-check --before <saved> --after
+<new> --lines <lines>`: it must answer `ok` before anything is written. Capture the body once more right before the
+write and compare it with the saved copy (the compare step of the same recipe), then write it with `gh issue edit
+<parent> --repo <repo> --body-file <file>`. Capture it again and run `tick-check` against the saved copy with the
+same lines: `ok` is the verification. A sub-issue whose close failed leaves its parent alone; a failed tick is
+recorded and only the tick is retried. After the writes run `candidates` again for the parents: one whose criteria
+and children are now complete goes through the same question.
+
 ## 4. Verify
 
 ```powershell
@@ -87,9 +118,67 @@ Report per issue whether it is closed and its card is in Done; list every `ok: f
 with code 1). GitHub is the source
 of truth: the local `.frontlights/issues/<n>/` snapshots are updated to closed with the time of the read,
 never the other way round. Put the approved list, the user's literal answer, the results and the verify
-output in the handoff.
+output in the handoff, with the `tick-check` result of each parent.
 
-## 5. Let RoadS see it
+## 5. Clean up what the work left behind (its own approval)
+
+Ask this only after the closing of the approved list was written and verified; when the user answered "Não agora"
+to the closing, ask nothing here. The worktrees and branches the work created (the `worktrees` of the
+authorization for these issues, plus an integration worktree the handoff names) are not needed once their pull
+requests were merged into the approved base, and removing them is a write of its own, with **its own approval**.
+
+```powershell
+python "${CLAUDE_PLUGIN_ROOT}/scripts/cleanup.py" plan --config <config> --root <project> --issues 12,13 --base <approved base>
+python "${CLAUDE_PLUGIN_ROOT}/scripts/cleanup.py" plan --config <config> --root <project> --issues 12,13 --base <approved base> --integration <integration worktree>
+```
+
+Run it from the folder the session stands in, with `--root` pointing at the project's main worktree: the helper
+never offers the folder it runs in, and the commands it prints carry `git -C <main worktree>`, so they work from
+anywhere. `--integration` names the local-only worktree of a family (never pushed, never a pull request): it goes
+only when its branch holds no commit of its own that is not already in a pull request that reached the base (a fix
+belongs to the member branch that owns the file). A merge counts as a commit of its own when it carries content (a
+conflict resolved by hand, a file added to it): such a branch stays, as `integration_has_unique_commits`. `candidates` lists what can go, each with its issue, worktree
+path, branch, tip, pull requests, whether the remote branch goes too, its `cautions` (`remote_branch_gone`,
+`remote_branch_moved`, `origin_is_not_the_repository`, `frontlights_records`, `ignored_files`,
+`local_only_integration`, `branch_differs_from_authorization`) and the `commands` in the order to run them.
+`ignored_files` comes with `ignoredCount` and `ignored`, the first names of what Git ignores in that worktree: those
+files go away with it. `excluded` lists what stays and why, in `reasons`: `main_worktree`, `current_directory`,
+`detached_head`, `locked_worktree`, `checked_out_elsewhere`, `not_a_worktree`, `not_found`, `path_missing`,
+`unsafe_path`, `unsafe_branch`, `protected_branch`, `uncommitted_changes`, `unreadable_status`, `open_pr`,
+`no_merged_pr`, `newer_than_merged_pr`, `merged_into_other_branch`, `ancestry_unverifiable`, `open_dependents`,
+`pull_requests_unreadable`, `integration_has_pull_request`, `integration_pushed` and
+`integration_has_unique_commits`: each needs work or a decision, never removal. `alreadyClean` counts what is gone
+already. A branch is offered only when its tip is the head of a merged pull request that reached the approved base
+(a stacked child through its parent), nothing is uncommitted, no pull request is open from or on top of it, and it is
+not protected; the remote branch goes only when `origin` is this repository and the branch still points at that
+commit.
+
+Show in the conversation, in full and in the user's language, one table with a row per candidate (issue, worktree,
+branch, pull requests, remote branch, cautions) and the exact `commands`, then the `excluded` with their reasons;
+send it as a file when the host has the tool and put it in the `preview` of the approve option (show-before-approval,
+`SKILL.md`). Say in the question that a worktree with `frontlights_records` takes those records with it and that the
+files in `ignored` go too (name them), and copy what the user wants to keep before removing. Then ask with
+`AskUserQuestion`: "Remover estas <N> worktrees e branches?" with "Sim, remover tudo" first and recommended
+(recommend "Escolher quais" instead when some candidate has `frontlights_records` or an `ignored` list with anything
+besides dependency or build folders; when in doubt, recommend choosing), "Escolher quais" (a follow-up question with the candidates, at most four per call) and
+"Não agora". "Não agora" writes nothing, and the closeout does not ask again; the user can ask for the cleanup at any time.
+Record the answer verbatim with a reference; never answer for the user.
+
+Run the approved `commands` in order (each carries `git -C <main worktree>`), each value as one double-quoted argument: first
+`git worktree remove`, then `git branch -D` (right here, because a squash merge leaves the branch "unmerged" for Git
+and the plan offers it only when its tip is the head of a merged pull request), then, when listed, `git push origin
+--delete`. Never add `--force` or `-f`. A command that fails (a path too long for Windows, a folder in use) is recorded
+and reported, and never retried with force; the rest of that item's commands are not run (a branch whose worktree
+could not be removed keeps both), and the next item goes on. Then verify:
+
+```powershell
+python "${CLAUDE_PLUGIN_ROOT}/scripts/cleanup.py" verify --config <config> --root <project> --worktree <path> --branch <name>
+```
+
+Report per item whether it is gone and list every `gone: false` (the command then exits with code 1). Put the
+approved list, the user's literal answer, the commands run and the verify output in the handoff.
+
+## 6. Let RoadS see it
 
 RoadS reads only the **Status** of the card in the Project, never whether the issue is closed: closing an issue
 without moving its card changes nothing there, and a completed item stays in its sprint, marked done, until the
@@ -102,5 +191,10 @@ on yes run the roadmap sync again as `references/roadmap-sync.md` describes. Wit
 
 - Close an issue that has no criteria section or an unticked criterion in this flow. A user who asks for a
   specific one anyway gets the unticked items shown first, and the answer is theirs, outside this list.
-- Reopen, delete, transfer or archive an issue, or edit its body, here.
+- Reopen, delete, transfer or archive an issue, or edit its body, here; the one body edit is the approved tick of the
+  item of a parent that cites a sub-issue closed in the same list (step 3).
+- Close an issue on the strength of the merge alone, or move a card or tick a parent's item that is not in the list the
+  user approved.
+- Remove a worktree or a branch that is not in an approved cleanup list, use `--force`, or remove the main worktree
+  or the folder the session stands in.
 - Merge a pull request, deploy or release: the closeout never does.

@@ -299,6 +299,11 @@ session's tool. Do not merge pull requests, write the base branch, deploy, relea
 close issues or expand scope under this charter; the only merges allowed are the ones the stacking authorization names: of a base into an issue's own
 branch, and of a family's verified branches into a local integration branch that is never pushed.
 
+After a PR is opened, wait for the user's merge by default (`references/development.md`, "After the pull
+request"): say so in one line, record it in the handoff, open no PR with a closing keyword and never merge. A
+merge into the approved base, confirmed by `closeout.py merge-status`, takes the session to stage 7 for the issues
+of that PR; a PR merged into another branch or closed unmerged closes nothing.
+
 At each material boundary reconcile GitHub, preserve evidence and check context.
 Before an issue is reported as reviewed or complete, and before a PR is opened or
 updated, every open finding has its destination (the gate of the Follow-ups section
@@ -313,9 +318,13 @@ fixture tests as live integration, human confirmation or independent review.
 
 ## 7. Closeout of finished issues (its own approval)
 
-Read `references/closeout.md`. It runs when the stage 1 closeout question is answered yes, when a family
-worked in stage 6 is reported merged, or when the user asks to close or move finished issues. It proposes
-closing every open issue and sub-issue whose acceptance criteria are all ticked (children before parents) and
-moving their board cards to Done, shows the table and the exact commands in full, and writes only after an
-explicit approval of that list, then rereads GitHub to verify and, because RoadS reads only the card Status, offers a new roadmap sync. No implementation authorization, merged PR or
-green test covers it, and it never merges, deploys, reopens or edits an issue body.
+Read `references/closeout.md`. It runs when the stage 1 closeout question is answered yes, when the wait of
+stage 6 finds a pull request merged into the approved base (or a family worked in stage 6 is reported merged),
+or when the user asks to close or move finished issues. It proposes closing every open issue and sub-issue
+whose acceptance criteria are all ticked (children before parents) and moving their board cards to Done, adds
+for a closed sub-issue the tick of the parent's item that cites it, shows the table and the exact commands in
+full, and writes only after an explicit approval of that list, then rereads GitHub to verify, asks separately
+whether to remove the worktrees and branches the work created (`scripts/cleanup.py`, its own approval) and,
+because RoadS reads only the card Status, offers a new roadmap sync. No implementation authorization, merged PR or
+green test covers it, and it never merges, deploys or reopens an issue; the only issue body it edits is the
+approved tick in a parent.

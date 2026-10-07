@@ -487,8 +487,40 @@ essas pendências para os critérios é uma escrita à parte, com texto aprovado
 O RoadS lê só o **Status** do cartão no Project, nunca se a issue está fechada: fechar sem mover o cartão não muda nada
 lá, e um item concluído fica na sprint (marcado como concluído) até a rotação semanal removê-lo; por isso, depois de mover
 cartões, o Frontlights oferece sincronizar de novo. Nenhuma autorização de implementação, merge ou teste verde
-substitui essa aprovação. O utilitário é
-`python scripts/closeout.py candidates|verify --config <config> [--issues 12,13] [--all]` e só lê.
+substitui essa aprovação. Os utilitários são
+`python scripts/closeout.py candidates|verify|merge-status|tick-check ...` e
+`python scripts/cleanup.py plan|verify ...`, e só leem.
+
+#### Esperar o merge, fechar, marcar no pai e limpar
+
+Depois de abrir uma PR, o Frontlights **aguarda o seu merge por padrão** (você pode dizer "não aguardar" a qualquer
+momento): ele avisa em uma linha o que espera, registra "Aguardando o merge" no handoff e segue com o trabalho
+independente. A PR nunca leva palavra de fechamento (`Closes`, `Fixes`, `Resolves`) no corpo nem nos commits, porque
+fechar uma issue tem aprovação própria. O aviso do ambiente (uma inscrição na PR ou um monitor em segundo plano) é só o
+gatilho: a cada despertar roda `closeout.py merge-status`, e só vale o merge **na branch base aprovada**. Merge de uma
+filha na branch do pai, PR fechada sem merge ou PR não encontrada não fecham nada. Se o ambiente não oferece gatilho, ou
+a sessão acaba, a pergunta de fechamento do início da próxima sessão encontra o trabalho mesclado.
+
+Com o merge confirmado, em aprovações separadas, nesta ordem:
+
+1. **Issue** com todos os critérios marcados: pergunta se pode fechá-la e mover o cartão para Done.
+   **Sub-issue** com todos os critérios marcados: pergunta se pode fechá-la e marcar, no corpo da issue pai, o item que a
+   cita. Só entra um item que cita apenas essa filha (`parentTicks`, por número de linha); a escrita troca somente `[ ]`
+   por `[x]`, com o corpo anterior guardado e conferido por `closeout.py tick-check` antes e depois. Sem item citando a
+   filha, ela só fecha. Depois, o pai pode passar a ser candidato e entra na mesma pergunta. Issue com critério
+   desmarcado não é oferecida: o Frontlights diz quais faltam.
+2. **Limpeza**, só depois de o fechamento ser escrito e conferido: pergunta se pode remover as worktrees e branches criados
+   que deixaram de ser necessários (`cleanup.py plan`). Só entram os que têm o tip igual à cabeça de uma PR mesclada que
+   chegou à base aprovada (o filho empilhado, pelo pai), sem alteração pendente, sem PR aberta a partir ou em cima da
+   branch, que não são protegidos, nem a worktree principal, nem a pasta em que a sessão está. A branch remota só é
+   apagada se `origin` é o repositório configurado e ela ainda aponta para esse mesmo commit. Nunca usa `--force`; a
+   lista e os comandos são mostrados na íntegra antes, e `cleanup.py verify` confere depois. Uma worktree com registros
+   do `.frontlights` dentro leva esses registros junto, e os arquivos que o Git ignora (um `.env`, `node_modules`)
+   também: o aviso lista os nomes antes da pergunta. A worktree de integração local da família (nunca enviada, sem PR)
+   entra quando não guarda commit próprio (nem merge com conteúdo, como um conflito resolvido à mão) fora das PRs já entregues.
+
+Responder "Não agora" ao fechamento não gera a pergunta da limpeza. A espera é regra da skill, não barreira do plugin:
+nada a impõe mecanicamente, e o gatilho do ambiente nunca vale como prova do merge.
 
 ## Fluxo de trabalho e utilitários
 
@@ -497,7 +529,8 @@ quando há versão nova no GitHub) →
 pedido e dimensionamento → inspeção → entrevista de decisões → PRD mostrado na
 íntegra e aprovado →
 plano de issues verticais aprovado e publicado → autorização delimitada de
-implementação → desenvolvimento orientado a testes (TDD), revisão e evidências.
+implementação → desenvolvimento orientado a testes (TDD), revisão e evidências →
+espera do seu merge e, com ele confirmado, fechamento, marcação no pai e limpeza das worktrees (cada um com aprovação própria).
 Uma issue vertical entrega um resultado observável de ponta a ponta, incluindo as
 camadas necessárias, em vez de separar tickets apenas por banco de dados, API ou tela.
 Uma issue e as sub-issues abertas dela andam juntas: ao agir sobre uma issue, o Frontlights

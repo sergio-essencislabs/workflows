@@ -99,7 +99,7 @@ question says so.
   child brings it in with `git merge <dependency-branch>`, reruns its tests and
   refreshes the evidence; the new hashes invalidate the earlier review. Check
   `git merge-base --is-ancestor` at each material boundary.
-- After a human merges the parent PR, run `git fetch origin` and retarget each child
+- After a human merges the parent PR (the wait below is how the session learns it), run `git fetch origin` and retarget each child
   PR to the base the parent's PR merged into (`<parent-pr-base>`, which is the
   approved base branch and not always the default one). GitHub usually does it when
   the parent branch is deleted on merge; reread the PR's base to confirm, otherwise
@@ -282,3 +282,38 @@ blocked issues with the precise pending question and continue independent ones.
 Report each issue's state, branch/PR, exact tests/results, review evidence,
 the findings left unfixed with the destination of each, remaining risk and next
 action. Leave worktrees and evidence intact for recovery.
+
+## After the pull request: waiting for the merge
+
+Opening a PR does not end the work on an issue, and the session does not expect to be told that it was merged.
+By default, as soon as a PR of the family is open, the session waits for the user's merge. The user can say
+"não aguardar" at any time: the wait ends and the closeout question of the next session picks the work up.
+
+- **Say it and record it.** One line to the user, in their language: which PRs the session waits for and what
+  happens at the merge. In the handoff (`Aguardando o merge`): each PR number with its issue, head and base
+  branch, the approved base, and when the wait began.
+- **No closing keyword.** A PR opened by this plugin never carries `Closes`, `Fixes`, `Resolves` or a variant of
+  them, in its body or in its commits: closing an issue has its own approval, and a merge that closed it would skip
+  that approval and ignore the criteria still unticked. Cite the issue by number instead.
+- **What wakes the session.** Whatever the host offers: a subscription to the PR's activity, or a background
+  monitor that runs `python "${CLAUDE_PLUGIN_ROOT}/scripts/closeout.py" merge-status --config <config> --prs 12,13
+  --base <approved base>` every few minutes. Either is only a trigger. On every wake run `merge-status` and act only
+  on its answer, never on the notification. A subscription to the PR's activity may not report a merge at all, so the
+  monitor is the dependable trigger: it prints one short line only when the set of `ready` or `settled` PRs changes
+  (never the whole JSON every cycle) and uses the plugin's resolved path, because `${CLAUDE_PLUGIN_ROOT}` may be unset
+  in a background shell. The user can also say "mesclei", and the session runs `merge-status` at once. A monitor must run with the same GitHub account as the session's `gh`
+  for that repository. When the host offers neither, say so in the handoff and stop waiting: nothing is lost, the
+  closeout question of the next session finds the merged work.
+- **What counts as merged.** `ready` lists the PRs merged into the approved base. A PR merged into another
+  branch (a stacked parent), closed without a merge, or not found is never ready: its issue is not proposed for
+  closing, and the session says why. With stacked branches a child's PR targets its parent's branch and, merged
+  there, shows as `merged_elsewhere`: its work reaches the base through the parent, so its issue enters the closeout
+  together with the parent's, once the parent's PR is `ready` with a `mergedAt` later than the child's (both are in
+  `merge-status`). A child PR not merged yet is retargeted when the parent merges (rule above), and the wait goes on
+  for it.
+- **At the merge.** When at least one PR is ready, read `references/closeout.md` and run it for the issues of the
+  ready PRs: the closing (with the tick in a parent, for a sub-issue) and the cleanup of worktrees and branches are two
+  separate approvals, in that order. An issue whose criteria are not all ticked is not offered: say which are left, and tick only what
+  the evidence supports. The PRs still open keep waiting.
+- **Other work goes on.** The wait never blocks independent issues. It ends when every PR is merged or closed, or
+  when the user ends it.

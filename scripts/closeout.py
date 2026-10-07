@@ -16,6 +16,13 @@ Operations (each prints one JSON object on stdout):
               .frontlights/issues, ids in .frontlights/authorization*.json and .frontlights/plan.json)
               together with their sub-issues.
   verify      reread --issues and say, for each, whether it is closed and its card is in Done.
+  merge-status  for pull requests named with --prs 12,13, whether each is still open, was merged into the
+              approved base (--base, else the repository's default branch), was merged into some other branch
+              or was closed unmerged. This is what the session waits on after it opened its pull requests: only
+              `merged_into_base` lets an issue be proposed for closing.
+  tick-check  local files only: confirms that --after is --before with nothing changed but the `[ ]` of the
+              items on --lines turned into `[x]`. It checks the body of a parent that was edited to tick the
+              item that cites a closed sub-issue; the edit itself is the session's.
 
 An open issue is a candidate only when its body has an acceptance-criteria section with at least one
 checklist item and every item checked, and every sub-issue is closed or a candidate in the same batch. A
@@ -25,6 +32,11 @@ A known leftover is an acceptance criterion like any other, so it is counted wit
 before that rule may hold the leftovers in a section of their own ("Pendencias conhecidas") outside the
 criteria: such a candidate is still proposed, with the `pending_outside_criteria` caution and the number of
 open items in `pendingOutside`, so the user is told before closing it. The caution informs and never blocks.
+
+A sub-issue candidate also carries `parentTicks`: the line numbers of the unchecked items of its open parent's
+body that cite it and no other issue (`lines`), and those that cite it together with other issues (`shared`,
+never offered for ticking). Only line numbers are reported; the session reads the lines from its own copy of the
+body, so no body text is ever echoed here.
 
 Exit codes: 0 done; 1 refusal (bad usage or configuration, a failed read) or, for verify, an issue that is not
 finished yet (`ok` is false and `issues` says which). A refusal is JSON, never a traceback.
@@ -63,12 +75,16 @@ LINE_CAP = 2000          # a checklist item or a title never needs more than thi
 FENCE = re.compile(r'^[ \t]*(`{3,}|~{3,})(.*)$')
 ITEM = re.compile(r'^[ \t]*(?:[-*+]|[0-9]{1,9}[.)])[ \t]+\[([ xX])\](?=[ \t]|$)')
 FEATURES = 'GraphQL-Features: issue_types'
+BRANCH = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,199}')
+PR_VIEW = 'number state merged mergedAt url baseRefName headRefName headRefOid'
 
 VIEW = '''number state stateReason title url body
-  parent { number }
+  parent { number repository { nameWithOwner } }
   subIssuesSummary { total completed }
   subIssues(first: 100) { totalCount nodes { number state repository { nameWithOwner } } }
-  closedByPullRequestsReferences(first: 20, includeClosedPrs: true) { totalCount nodes { number state merged url } }'''
+  closedByPullRequestsReferences(first: 20, includeClosedPrs: true) { totalCount nodes { number state merged url repository { nameWithOwner } } }
+  timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) { totalCount nodes {
+    ... on CrossReferencedEvent { source { ... on PullRequest { number state merged url repository { nameWithOwner } } } } } }'''
 CARDS = '''
   projectItems(first: 20) { totalCount nodes { id
     project { number owner { ... on Organization { login } ... on User { login } } }
@@ -109,6 +125,30 @@ def strip_comments(line):
         line = line[:start] + line[end + 3:]
 
 
+def visible_lines(body):
+    """(line number, text) of every line of a body that lies outside fenced code and HTML comments, without
+    its comments and cut at LINE_CAP. Line numbers count from 1 over the body's own line endings (LF, CRLF or a
+    lone CR), the way `tick-check` and the session count them."""
+    fence = None      # (character, length) inside fenced code
+    comment = False   # inside a multi-line HTML comment
+    for number, raw in enumerate(re.split(r'\r\n|\r|\n', body), 1):
+        if comment:
+            end = raw.find('-->')
+            if end < 0:
+                continue
+            raw, comment = raw[end + 3:], False
+        if fence:
+            if re.match(r'^[ \t]*' + re.escape(fence[0]) + '{%d,}[ \t]*$' % fence[1], raw):
+                fence = None
+            continue
+        line, comment = strip_comments(raw)
+        opened = FENCE.match(line)   # linear, so it reads the whole line: a cut line could look like a fence
+        if opened and not (opened.group(1)[0] == '`' and '`' in opened.group(2)):
+            fence = (opened.group(1)[0], len(opened.group(1)))
+            continue
+        yield number, line[:LINE_CAP]
+
+
 def criteria(body):
     """(checked, total) for the checklist items of the body's acceptance-criteria section, or None when the
     body has no such section. The section is a markdown heading (any level) whose text, without accents and
@@ -130,24 +170,7 @@ def scan(body):
     found = False
     level = None      # depth of the section being read; None outside one
     kind = None       # what that section holds: 'criteria' or 'pending'
-    fence = None      # (character, length) inside fenced code
-    comment = False   # inside a multi-line HTML comment
-    for raw in re.split(r'\r\n|\r|\n', body):
-        if comment:
-            end = raw.find('-->')
-            if end < 0:
-                continue
-            raw, comment = raw[end + 3:], False
-        if fence:
-            if re.match(r'^[ \t]*' + re.escape(fence[0]) + '{%d,}[ \t]*$' % fence[1], raw):
-                fence = None
-            continue
-        line, comment = strip_comments(raw)
-        opened = FENCE.match(line)   # linear, so it reads the whole line: a cut line could look like a fence
-        if opened and not (opened.group(1)[0] == '`' and '`' in opened.group(2)):
-            fence = (opened.group(1)[0], len(opened.group(1)))
-            continue
-        line = line[:LINE_CAP]
+    for _, line in visible_lines(body):
         heading = HEADING.match(line)
         if heading:
             depth = len(heading.group(1))
@@ -171,15 +194,55 @@ def scan(body):
     return ((checked, total) if found else None), pending
 
 
+REF = re.compile(r'(?<![\w/#&])#([0-9]{1,9})(?![\w-])')
+URL_REF = re.compile(r'https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/issues/([0-9]{1,9})(?![\w-])', re.I)
+SHORT_REF = re.compile(r'(?<![\w/.-])([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([0-9]{1,9})(?![\w-])')
+LOOSE_REF = re.compile(r'(?<![A-Za-z0-9&])#([0-9]{1,9})|\bGH-([0-9]{1,9})', re.I)
+
+
+def issue_refs(line, repository):
+    """(exact, every): the issues a line cites, as (repository or None for this one, number). `exact` holds what
+    unmistakably names an issue: `#12` between plain characters, `owner/name#12` and the full URL of an issue.
+    `every` adds each other shape that looks like a reference (`#12/#13`, `_#13_`, `GH-13`), so that an item that
+    names one issue plainly and another sloppily is still seen as citing two."""
+    exact = {(None, int(n)) for n in REF.findall(line)}
+    for name, n in SHORT_REF.findall(line) + URL_REF.findall(line):
+        exact.add((None if name.casefold() == repository.casefold() else name.casefold(), int(n)))
+    return exact, exact | {(None, int(a or b)) for a, b in LOOSE_REF.findall(line)}
+
+
+def citing_items(body, child, repository):
+    """(lines, shared): the line numbers of the unchecked checklist items of `body` that cite issue `child` and
+    no other issue, and of those that cite it together with others (a shared item is never ticked for one of
+    them). Fenced code and HTML comments are skipped, as everywhere else."""
+    if not isinstance(body, str):
+        return [], []
+    lines, shared = [], []
+    for number, line in visible_lines(body):
+        item = ITEM.match(line)
+        if not item or item.group(1) != ' ':
+            continue
+        exact, every = issue_refs(line, repository)
+        if (None, child) in exact:
+            (lines if every == {(None, child)} else shared).append(number)
+    return lines, shared
+
+
 # ---------------------------------------------------------------- scope
 
 def valid_number(value):
     return type(value) is int and 0 < value <= 999_999_999
 
 
-def parse_numbers(value):
+def valid_branch(name):
+    """A branch name this helper will type into a command: plain characters, no `..`, no empty part, and none
+    of the endings Git refuses."""
+    return (isinstance(name, str) and BRANCH.fullmatch(name) is not None and '..' not in name and '//' not in name
+            and not name.endswith(('/', '.', '.lock')))
+
+
+def parse_numbers(value, message='issue numbers must be positive integers, as in --issues 12,13'):
     """Issue numbers as typed after --issues (`12, 13`) or given as a list of integers: sorted, no repeats."""
-    message = 'issue numbers must be positive integers, as in --issues 12,13'
     if isinstance(value, str):
         parts = [part.strip() for part in value.split(',')]
         require(all(NUMBER.fullmatch(part) for part in parts), message)
@@ -380,9 +443,15 @@ def parse_view(number, node, repository, board, with_cards):
     opened = [c['number'] if c['external'] is None else f"{c['external']}#{c['number']}"
               for c in sorted(children, key=lambda c: (c['external'] is not None, c['number'])) if c['state'] != 'CLOSED']
     prs, _ = page(node.get('closedByPullRequestsReferences'))   # a cut list only hides a caution: never a reason to skip
-    linked = []
+    # The pull requests of this plugin carry no closing keyword, so GitHub does not list them above: they show up as
+    # cross references (a pull request that merely cites the issue; an issue that cites it has no number here).
+    mentions, _ = page(node.get('timelineItems'))
+    prs = prs + [event['source'] for event in mentions if isinstance(event.get('source'), dict)]
+    linked, seen = [], set()
     for pr in prs:
-        if valid_number(pr.get('number')):
+        # a pull request of another repository that cites this issue is no pull request of this one
+        if valid_number(pr.get('number')) and pr['number'] not in seen and not other_repository(pr, repository):
+            seen.add(pr['number'])
             url = pr.get('url')
             linked.append({'number': pr['number'], 'state': rs.clean(pr['state']) if isinstance(pr.get('state'), str) else None,
                            'merged': pr.get('merged') is True,
@@ -418,6 +487,7 @@ def parse_view(number, node, repository, board, with_cards):
             'criteria': None if counts is None else {'checked': counts[0], 'total': counts[1]},
             'pendingOutside': pending,
             'parent': parent['number'] if isinstance(parent, dict) and valid_number(parent.get('number')) else None,
+            'parentRepository': other_repository(parent, repository) if isinstance(parent, dict) else None,
             'children': {'total': total, 'completed': completed, 'open': opened, 'nodes': children},
             'prs': linked, 'card': card, 'cardsRead': with_cards, 'truncated': truncated}
 
@@ -563,6 +633,7 @@ def assess(views, repository, board, info):
                                                       '--value', done_value]})
         return {'number': number, 'title': view['title'], 'url': url, 'level': level, 'parent': view['parent'],
                 'criteria': view['criteria'], 'pendingOutside': 0 if closed else view['pendingOutside'],
+                'parentTicks': None,
                 'children': {key: view['children'][key] for key in ('total', 'completed', 'open')},
                 'state': view['state'], 'action': 'move_only' if closed else 'close_and_move' if move else 'close',
                 'prs': view['prs'],
@@ -590,6 +661,22 @@ def assess(views, repository, board, info):
     for position, record in enumerate(ordered, 1):
         record['order'] = position
     return ordered, excluded, already, unchecked
+
+
+def add_parent_ticks(gh, repository, ordered, views):
+    """Give every sub-issue that will be closed the `parentTicks` of its open parent: the items of the parent's
+    body that cite it. A parent in another repository, a closed one or one GitHub does not know has none."""
+    wanted = sorted({c['parent'] for c in ordered
+                     if c['level'] == 'sub' and c['state'] == 'OPEN' and not views[c['number']]['parentRepository']})
+    nodes = read_aliases(gh, repository, wanted, 'number state body') if wanted else {}
+    for candidate in ordered:
+        node = nodes.get(candidate['parent'])
+        if (candidate['level'] != 'sub' or candidate['state'] != 'OPEN' or views[candidate['number']]['parentRepository']
+                or not isinstance(node, dict) or node.get('state') != 'OPEN'):
+            continue
+        lines, shared = citing_items(node.get('body'), candidate['number'], repository)
+        if lines or shared:
+            candidate['parentTicks'] = {'parent': candidate['parent'], 'lines': lines, 'shared': shared}
 
 
 def closing_order(found, views):
@@ -661,6 +748,7 @@ def op_candidates(config, root='.', explicit=None, all_flag=False, gh=None):
     result['board'] = info
     views = read_board_views(gh, repository, scope['numbers'], board, info)
     ordered, excluded, already, unchecked = assess(views, repository, board, info)
+    add_parent_ticks(gh, repository, ordered, views)
     result.update(candidates=ordered, excluded=excluded, alreadyDone=already, ask=bool(ordered))
     result['closedUnchecked'] = unchecked
     moves = sum(c['action'] == 'move_only' for c in ordered)
@@ -670,6 +758,10 @@ def op_candidates(config, root='.', explicit=None, all_flag=False, gh=None):
     if pending:
         parts.append('Open leftovers outside the acceptance criteria in ' + ', '.join(f'#{n}' for n in pending)
                      + ' (pendingOutside): tell the user before closing them.')
+    ticks = [c['number'] for c in ordered if c['parentTicks'] and c['parentTicks']['lines']]
+    if ticks:
+        parts.append('Sub-issue(s) ' + ', '.join(f'#{n}' for n in ticks)
+                     + ' have an item to tick in their parent (parentTicks): show the lines and ask.')
     if excluded:
         parts.append(f'{len(excluded)} excluded (see excluded for the reason of each).')
     if already:
@@ -725,12 +817,124 @@ def op_verify(config, root='.', explicit=None, gh=None):
     return result
 
 
-def run(operation, config, root='.', issues=None, all_flag=False, gh=None):
+def read_pull_requests(gh, repository, numbers):
+    """({number: GraphQL node, or None for a number GitHub does not know}, the repository's default branch)."""
+    owner, name = repository.split('/')
+    nodes, default = {}, None
+    for start in range(0, len(numbers), rs.GAPS_BATCH):
+        chunk = numbers[start:start + rs.GAPS_BATCH]
+        body = ' '.join(f'p{n}: pullRequest(number: {n}) {{ {PR_VIEW} }}' for n in chunk)
+        data = rs.graphql(gh, 'query { repository(owner: "%s", name: "%s") { defaultBranchRef { name } %s } }'
+                          % (owner, name, body), missing_ok={f'p{n}' for n in chunk})
+        repo = data.get('repository') or {}
+        branch = repo.get('defaultBranchRef')
+        default = branch.get('name') if isinstance(branch, dict) and isinstance(branch.get('name'), str) else default
+        for n in chunk:
+            value = repo.get(f'p{n}')
+            nodes[n] = value if isinstance(value, dict) else None
+    return nodes, default
+
+
+def pull_request_entry(number, node, expected):
+    """What the session needs from one pull request: `status` is `open`, `merged_into_base` (the only one that
+    lets an issue be proposed for closing), `merged_elsewhere` (merged into another branch, such as a stacked
+    parent), `closed_unmerged`, `not_found` or `unknown`."""
+    if node is None:
+        return {'number': number, 'status': 'not_found'}
+    state = node.get('state') if isinstance(node.get('state'), str) else None
+    base = node.get('baseRefName') if isinstance(node.get('baseRefName'), str) else None
+    merged = state == 'MERGED' or node.get('merged') is True
+    status = ('open' if state == 'OPEN' else
+              ('merged_into_base' if base == expected else 'merged_elsewhere') if merged else
+              'closed_unmerged' if state == 'CLOSED' else 'unknown')
+    head = node.get('headRefOid')
+    url = node.get('url')
+    return {'number': number, 'status': status, 'state': state, 'merged': merged,
+            'mergedAt': rs.clean(node['mergedAt'], 40) if isinstance(node.get('mergedAt'), str) else None,
+            'base': rs.clean(base, 200) if base else None,
+            'head': rs.clean(node['headRefName'], 200) if isinstance(node.get('headRefName'), str) else None,
+            'headOid': head if isinstance(head, str) and re.fullmatch(r'[0-9a-f]{40,64}', head) else None,
+            'url': rs.clean(url) if isinstance(url, str) and url.startswith('https://') else None}
+
+
+def op_merge_status(config, prs, base=None, gh=None):
+    """Read only: where each named pull request stands, against the approved base."""
+    gh = gh or rs.gh_default
+    repository, _ = load_project(config)
+    require(prs is not None and prs != '' and prs != [], 'merge-status needs the pull requests to check: pass --prs 12,13')
+    numbers = parse_numbers(prs, 'pull request numbers must be positive integers, as in --prs 12,13')
+    require(len(numbers) <= MAX_ALL, f'name at most {MAX_ALL} pull requests')
+    require(base is None or valid_branch(base), '--base must be a plain branch name')
+    nodes, default = read_pull_requests(gh, repository, numbers)
+    expected = base or default
+    require(isinstance(expected, str) and valid_branch(expected),
+            'the approved base is unknown: pass --base <branch> (the repository default could not be read)')
+    entries = [pull_request_entry(n, nodes[n], expected) for n in numbers]
+    by = lambda status: [e['number'] for e in entries if e['status'] == status]
+    ready, waiting = by('merged_into_base'), by('open')
+    others = [e['number'] for e in entries if e['status'] not in ('merged_into_base', 'open')]
+    parts = [f'{len(ready)} of {len(entries)} pull request(s) merged into {rs.clean(expected, 200)}.']
+    if waiting:
+        parts.append('Still open: ' + ', '.join(f'#{n}' for n in waiting) + '.')
+    if others:
+        parts.append('Merged into another branch, closed unmerged or unknown: ' + ', '.join(f'#{n}' for n in others)
+                     + '; their issues are not proposed for closing.')
+    return {'ok': True, 'exitCode': 0, 'project': repository, 'repository': repository, 'expectedBase': expected,
+            'baseSource': 'argument' if base else 'default_branch', 'pullRequests': entries, 'ready': ready,
+            'waiting': waiting, 'settled': not waiting, 'message': ' '.join(parts)}
+
+
+def read_body_file(path):
+    """The text of a local file, for tick-check: UTF-8, a regular file, and no larger than a record."""
+    file = Path(path) if isinstance(path, (str, os.PathLike)) and str(path) else None
+    require(file is not None and file.is_file(), f'tick-check could not read {rs.clean(str(path), 200)}: pass an existing file')
+    require(file.stat().st_size <= MAX_RECORD_BYTES, 'tick-check reads files of up to 2 MiB')
+    try:
+        return file.read_bytes().decode('utf-8')
+    except UnicodeDecodeError:
+        raise Refusal(f'{rs.clean(file.name, 100)} is not UTF-8 text')
+
+
+def op_tick_check(before, after, lines):
+    """Local files only: `after` must be `before` with, on the listed lines and nowhere else, the `[ ]` of an
+    open checklist item turned into `[x]`. Line endings are not compared, only the lines."""
+    require(before and after, 'tick-check needs the saved body and the new one: pass --before and --after')
+    require(lines is not None and lines != '' and lines != [], 'tick-check needs the lines that were ticked: pass --lines 14,22')
+    wanted = parse_numbers(lines, 'line numbers must be positive integers, as in --lines 14,22')
+    old = re.split(r'\r\n|\r|\n', read_body_file(before))
+    new = re.split(r'\r\n|\r|\n', read_body_file(after))
+    problems = []
+    if len(old) != len(new):
+        problems.append({'reason': 'line_count', 'before': len(old), 'after': len(new)})
+    else:
+        for number, (x, y) in enumerate(zip(old, new), 1):
+            if number in wanted:
+                item = ITEM.match(x)
+                if not item or item.group(1) != ' ':
+                    problems.append({'line': number, 'reason': 'not_an_open_item'})
+                elif y != x[:item.start(1)] + 'x' + x[item.end(1):]:
+                    problems.append({'line': number, 'reason': 'not_ticked_exactly'})
+            elif x != y:
+                problems.append({'line': number, 'reason': 'changed_outside_the_ticks'})
+        problems += [{'line': n, 'reason': 'line_out_of_range'} for n in wanted if n > len(old)]
+    total = len(problems)
+    ok = not problems
+    return {'ok': ok, 'exitCode': 0 if ok else 1, 'lines': wanted, 'problems': problems[:20], 'problemCount': total,
+            'message': (f'Only the {len(wanted)} listed item(s) were ticked.' if ok else
+                        f'{total} problem(s): the new body is not the saved one with just those items ticked; '
+                        'do not write it (or, if it was written, show the difference and ask).')}
+
+
+def run(operation, config=None, root='.', issues=None, all_flag=False, gh=None, **options):
     try:
         if operation == 'candidates':
             result = op_candidates(config, root, issues, all_flag, gh)
         elif operation == 'verify':
             result = op_verify(config, root, issues, gh)
+        elif operation == 'merge-status':
+            result = op_merge_status(config, options.get('prs'), options.get('base'), gh)
+        elif operation == 'tick-check':
+            result = op_tick_check(options.get('before'), options.get('after'), options.get('lines'))
         else:
             raise Refusal(f'Unknown operation: {rs.clean(operation, 40)}')
     except (Refusal, ValueError) as error:
@@ -760,13 +964,24 @@ def build_parser():
         command.add_argument('--issues', help='issue numbers, such as 12,13' + ('' if name == 'candidates' else ' (required)'))
         if name == 'candidates':
             command.add_argument('--all', action='store_true', dest='all_flag', help='every open issue of the repository')
+    status = sub.add_parser('merge-status', allow_abbrev=False)
+    status.add_argument('--config', required=True, help="the project's .frontlights/config.json")
+    status.add_argument('--prs', help='pull request numbers, such as 12,13 (required)')
+    status.add_argument('--base', help="the approved base branch; without it, the repository's default branch")
+    ticks = sub.add_parser('tick-check', allow_abbrev=False)
+    ticks.add_argument('--before', help='the saved body of the parent (required)')
+    ticks.add_argument('--after', help='the body about to be written, or read back after the write (required)')
+    ticks.add_argument('--lines', help='the line numbers that were ticked, such as 14,22 (required)')
     return parser
 
 
 def main(argv=None):
     try:
         args = build_parser().parse_args(argv)
-        result = run(args.operation, args.config, args.root, args.issues, getattr(args, 'all_flag', False))
+        result = run(args.operation, getattr(args, 'config', None), getattr(args, 'root', '.'), getattr(args, 'issues', None),
+                     getattr(args, 'all_flag', False), prs=getattr(args, 'prs', None), base=getattr(args, 'base', None),
+                     before=getattr(args, 'before', None), after=getattr(args, 'after', None),
+                     lines=getattr(args, 'lines', None))
     except Refusal as error:
         result = {'ok': False, 'exitCode': 1, 'message': str(error)}
     print(json.dumps(result, indent=2, ensure_ascii=True))

@@ -106,6 +106,19 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     de cada um". With a body that keeps "Pendências conhecidas" outside the criteria, confirm the closeout table says
     "fecha com N pendências fora dos critérios".
 
+17. Merge wait, closing, parent tick and cleanup (`evals/merge-wait-and-cleanup.md`). On a disposable family (a parent whose body
+    has an unticked item citing a sub-issue, two sub-issues with their own branches, worktrees and draft PRs, one stacked on
+    the parent), let the session open the PRs. Confirm it says in one line that it waits, records "Aguardando o merge" and
+    puts no closing keyword in a PR or commit. Merge the stacked child into the parent's branch: `merge-status` reports it
+    merged elsewhere and nothing is offered. Merge into the approved base: the closeout question lists the sub-issue with
+    "marcar no corpo de #P a linha L", the line shown in full, and the approved write changes the parent body only on
+    that line (`tick-check` ok before and after). After the closing is verified, a second question offers to remove the
+    worktrees and branches; the main worktree, the folder the session stands in, a worktree with uncommitted changes and a
+    branch with an open pull request stay, with their reasons; no command uses `--force`; `cleanup.py verify` reports
+    everything gone. "Não agora" to the closing asks no cleanup question; without a wake mechanism the next `/frontlights`
+    start finds the merged work. The cleanup question names the files a worktree ignores, and the local-only integration
+    worktree of the family goes only when it holds no commit of its own outside the delivered pull requests.
+
 Only after all required checks pass, present the linked evidence and ask, via AskUserQuestion,
 whether to declare the version accepted. Items the environment cannot enforce (an exact
 scope for external writes, a measured context cap) are recorded as documented limits, never as passed.

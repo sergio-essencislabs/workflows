@@ -35,7 +35,7 @@ REFUSED = ('gh refused the GitHub read; check the active account, the repository
 
 
 def node(number, *, state='OPEN', reason=None, text=DONE_ALL, title=None, parent=None, children=(), prs=DEFAULT,
-         card=DEFAULT, card_owner='OWNER', totals=None):
+         card=DEFAULT, card_owner='OWNER', totals=None, parent_repo=None, mentions=()):
     """A GraphQL issue node. `children` holds (number, state[, repository]); `prs` holds (number, state, merged);
     `card` maps a board field to its value, or is None for 'not on the board'; `totals` overrides a totalCount."""
     totals = totals or {}
@@ -55,9 +55,14 @@ def node(number, *, state='OPEN', reason=None, text=DONE_ALL, title=None, parent
                   'fieldValues': {'nodes': [{'name': 'Done', 'field': {'name': 'Status'}}], 'totalCount': 1}})
     return {'number': number, 'state': state, 'stateReason': reason or ('COMPLETED' if state == 'CLOSED' else None),
             'title': title if title is not None else f'Issue {number}', 'url': URL % number, 'body': text,
-            'parent': {'number': parent} if parent else None,
+            'parent': ({'number': parent, **({'repository': {'nameWithOwner': parent_repo}} if parent_repo else {})}
+                       if parent else None),
             'subIssuesSummary': {'total': len(kids), 'completed': sum(1 for k in kids if k['state'] == 'CLOSED')},
             'subIssues': {'totalCount': totals.get('children', len(kids)), 'nodes': kids},
+            'timelineItems': {'totalCount': len(mentions), 'nodes': [
+                {'source': ({'number': m[0], 'state': m[1], 'merged': m[2], 'url': f'https://github.com/OWNER/REPOSITORY/pull/{m[0]}',
+                             **({'repository': {'nameWithOwner': m[3]}} if len(m) > 3 else {})}
+                            if m else {})} for m in mentions]},
             'closedByPullRequestsReferences': {
                 'totalCount': totals.get('prs', len(prs)),
                 'nodes': [{'number': n, 'state': s, 'merged': m, 'url': f'https://github.com/OWNER/REPOSITORY/pull/{n}'}
@@ -65,13 +70,22 @@ def node(number, *, state='OPEN', reason=None, text=DONE_ALL, title=None, parent
             'projectItems': {'totalCount': totals.get('cards', len(items)), 'nodes': items}}
 
 
+def pr(number, *, state='OPEN', merged=None, base='main', head=None, oid=None):
+    """A GraphQL pull request node."""
+    merged = (state == 'MERGED') if merged is None else merged
+    return {'number': number, 'state': state, 'merged': merged, 'mergedAt': '2026-10-06T12:00:00Z' if merged else None,
+            'url': f'https://github.com/OWNER/REPOSITORY/pull/{number}', 'baseRefName': base,
+            'headRefName': head or f'claude/issue-{number}', 'headRefOid': oid or f'{number:040x}'}
+
+
 class FakeGh:
     """Answers `gh api graphql` reads from canned nodes and records every argv. Anything that is not a plain read
     (another command, a mutation) is recorded in `violations` and fails."""
 
     def __init__(self, nodes=None, layout=None, open_numbers=(), deny_project=False, deny_cards=False,
-                 fail_issues=False, cursor=None):
+                 fail_issues=False, cursor=None, pull_requests=None, default_branch='main'):
         self.nodes = dict(nodes or {})
+        self.pull_requests, self.default_branch = dict(pull_requests or {}), default_branch
         self.layout = LAYOUT if layout is None else layout
         self.open_numbers = list(open_numbers)
         self.deny_project, self.deny_cards, self.fail_issues, self.cursor = deny_project, deny_cards, fail_issues, cursor
@@ -92,6 +106,8 @@ class FakeGh:
             return {'data': {'owner': {'project': {'id': 'PVT_x', 'fields': {'nodes': self.layout}}}}}
         if 'issues(states: OPEN' in query:
             return self.page(query)
+        if 'pullRequest(number' in query:
+            return self.pulls(query)
         if self.fail_issues or (self.deny_cards and 'projectItems' in query):
             raise rs.Refusal(REFUSED)
         repo, errors = {}, []
@@ -102,6 +118,18 @@ class FakeGh:
                 errors.append({'type': 'NOT_FOUND', 'path': ['repository', alias], 'message': 'Could not resolve'})
             else:
                 repo[alias] = {k: v for k, v in raw.items() if k != 'projectItems' or 'projectItems' in query}
+        answer = {'data': {'repository': repo}}
+        if errors:
+            answer['errors'] = errors
+        return answer
+
+    def pulls(self, query):
+        repo, errors = {'defaultBranchRef': None if self.default_branch is None else {'name': self.default_branch}}, []
+        for alias, number in re.findall(r'(p\d+): pullRequest\(number: (\d+)\)', query):
+            raw = self.pull_requests.get(int(number))
+            repo[alias] = raw
+            if raw is None:
+                errors.append({'type': 'NOT_FOUND', 'path': ['repository', alias], 'message': 'Could not resolve'})
         answer = {'data': {'repository': repo}}
         if errors:
             answer['errors'] = errors
@@ -612,7 +640,7 @@ class EligibilityTests(CloseoutCase):
         self.assertEqual(entry['number'], 12)
         self.assertEqual({k: v for k, v in entry.items() if k != 'commands'}, {
             'number': 12, 'title': 'Issue 12', 'url': URL % 12, 'level': 'top', 'parent': None,
-            'criteria': {'checked': 2, 'total': 2}, 'pendingOutside': 0,
+            'criteria': {'checked': 2, 'total': 2}, 'pendingOutside': 0, 'parentTicks': None,
             'children': {'total': 0, 'completed': 0, 'open': []},
             'state': 'OPEN', 'action': 'close_and_move',
             'prs': [{'number': 1012, 'state': 'MERGED', 'merged': True, 'url': 'https://github.com/OWNER/REPOSITORY/pull/1012'}],
@@ -753,6 +781,37 @@ class EligibilityTests(CloseoutCase):
                 entry = result['candidates'][0]
                 self.assertEqual(entry['cautions'], cautions)
                 self.assertEqual([p['number'] for p in entry['prs']], [p[0] for p in prs])
+
+    def test_a_pull_request_without_a_closing_keyword_is_still_found_as_a_cross_reference(self):
+        cases = {'open': ([(30, 'OPEN', False)], ['open_pr']), 'merged': ([(30, 'MERGED', True)], []),
+                 'closed': ([(30, 'CLOSED', False)], [])}
+        for name, (mentions, cautions) in cases.items():
+            with self.subTest(case=name):
+                result, _ = self.candidates({12: node(12, prs=[], mentions=mentions)})
+                entry = result['candidates'][0]
+                self.assertEqual((entry['cautions'], [p['number'] for p in entry['prs']]), (cautions, [30]))
+
+    def test_a_pull_request_listed_twice_counts_once_and_an_issue_that_cites_it_is_no_pull_request(self):
+        result, _ = self.candidates({12: node(12, prs=[(30, 'MERGED', True)], mentions=[(30, 'MERGED', True), (31, 'OPEN', False)])})
+        self.assertEqual([p['number'] for p in result['candidates'][0]['prs']], [30, 31])
+        result, _ = self.candidates({12: node(12, prs=[], mentions=[()])})
+        entry = result['candidates'][0]
+        self.assertEqual((entry['prs'], entry['cautions']), ([], ['no_pr']))
+
+    def test_the_query_asks_for_the_cross_references_of_pull_requests_only(self):
+        _, gh = self.candidates({12: node(12)})
+        # the newest cross references, not the oldest, and the repository each pull request lives in
+        self.assertTrue(any('timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT])' in q
+                            and '... on PullRequest { number state merged url repository { nameWithOwner } }' in q
+                            for q in gh.queries()))
+        self.assertTrue(any('closedByPullRequestsReferences(first: 20, includeClosedPrs: true) { totalCount nodes { number state merged url repository { nameWithOwner } } }' in q
+                            for q in gh.queries()))
+
+    def test_a_pull_request_of_another_repository_is_no_pull_request_of_this_issue(self):
+        result, _ = self.candidates({12: node(12, prs=[], mentions=[(30, 'OPEN', False, 'OTHER/REPOSITORY'),
+                                                                    (31, 'MERGED', True, 'owner/repository')])})
+        entry = result['candidates'][0]
+        self.assertEqual(([p['number'] for p in entry['prs']], entry['cautions']), ([31], []))
 
     def test_cautions_never_keep_a_candidate_out_and_come_in_a_fixed_order(self):
         result, _ = self.candidates({12: node(12, prs=[(30, 'OPEN', False)], card=None)})
@@ -1237,6 +1296,302 @@ class ReadOnlyTests(CloseoutCase):
         self.assertNotIn('write_bytes', source)
 
 
+class CitingItemsTests(unittest.TestCase):
+    """The unchecked items of a parent's body that cite one sub-issue: the ones to tick when it is closed."""
+
+    def cites(self, body, child=12):
+        return closeout.citing_items(body, child, REPO)
+
+    def test_open_items_that_cite_only_the_child_are_offered_by_line_number(self):
+        body = '## Plan\n\n- [ ] Screen #12\n- [x] Done thing #12\n- [ ] Other #13\n- [ ] #12 again\n'
+        self.assertEqual(self.cites(body), ([3, 6], []))
+
+    def test_every_spelling_of_the_reference_counts(self):
+        for item in ('#12', 'OWNER/REPOSITORY#12', 'owner/repository#12', 'https://github.com/OWNER/REPOSITORY/issues/12',
+                     'https://github.com/owner/repository/issues/12#issuecomment-1', 'see (#12).', 'Do it (#12)'):
+            with self.subTest(item=item):
+                self.assertEqual(self.cites(f'- [ ] {item}\n'), ([1], []))
+
+    def test_other_numbers_and_look_alikes_are_not_the_child(self):
+        for item in ('#123', '#1', 'x#12', '&#12;', '#12abc', '#12-3', 'OTHER/REPO#12', 'https://github.com/OTHER/REPO/issues/12',
+                     'https://example.com/#12', 'https://github.com/OWNER/REPOSITORY/pull/12', 'no reference'):
+            with self.subTest(item=item):
+                self.assertEqual(self.cites(f'- [ ] {item}\n'), ([], []))
+
+    def test_an_item_that_cites_other_issues_too_is_shared_and_never_offered(self):
+        body = '- [ ] #12 and #13\n- [ ] #12 with OTHER/REPO#4\n- [ ] #12\n'
+        self.assertEqual(self.cites(body), ([3], [1, 2]))
+
+    def test_an_item_that_names_another_issue_in_any_shape_is_shared(self):
+        for item in ('#12/#13', '#12 e _#13_', '#12 e GH-13', '#12, gh-13', '#12 (#13)', '#12 e #13abc', '#12 & #13'):
+            with self.subTest(item=item):
+                self.assertEqual(self.cites(f'- [ ] {item}\n'), ([], [1]))
+        self.assertEqual(self.cites('- [ ] #12-#13\n', child=13), ([], [1]))
+        self.assertEqual(self.cites('- [ ] #12-#13\n', child=12), ([], []))   # not plainly named: never offered
+
+    def test_checked_items_prose_fences_and_comments_are_skipped(self):
+        body = '- [x] #12\nSee #12\n```\n- [ ] #12\n```\n<!-- - [ ] #12 -->\n- [ ] #12 <!-- #13 -->\n'
+        self.assertEqual(self.cites(body), ([7], []))
+
+    def test_line_numbers_follow_the_bodys_own_line_endings(self):
+        for separator in ('\n', '\r\n', '\r'):
+            with self.subTest(separator=repr(separator)):
+                self.assertEqual(self.cites(separator.join(['## Plan', '', '- [ ] #12', ''])), ([3], []))
+
+    def test_numbered_and_indented_items_count_and_a_body_that_is_not_text_is_empty(self):
+        self.assertEqual(self.cites('1. [ ] #12\n   - [ ] #12\n'), ([1, 2], []))
+        for body in (None, 5, ['- [ ] #12']):
+            with self.subTest(body=body):
+                self.assertEqual(self.cites(body), ([], []))
+
+
+PARENT_BODY = '## Slices\n\n- [ ] Screen: #12\n- [ ] API: #13\n\n## Acceptance criteria\n- [ ] Everything works\n'
+
+
+class ParentTicksTests(CloseoutCase):
+    """A sub-issue that will be closed names the items of its parent that the session may tick."""
+
+    def asked(self, gh, number):
+        return [q for q in gh.queries() if f'i{number}: issue(number: {number})' in q]
+
+    def test_a_sub_issue_to_close_carries_the_lines_of_the_parent_that_cite_it(self):
+        result, _ = self.candidates({12: node(12, parent=5), 5: node(5, text=PARENT_BODY)})
+        entry = result['candidates'][0]
+        self.assertEqual((entry['level'], entry['parent']), ('sub', 5))
+        self.assertEqual(entry['parentTicks'], {'parent': 5, 'lines': [3], 'shared': []})
+        self.assertIn('#12', result['message'])
+        self.assertIn('parentTicks', result['message'])
+        self.assertNotIn('Screen', json.dumps(result))   # only line numbers: the body is never echoed
+
+    def test_shared_items_are_reported_apart_and_a_sub_issue_with_only_those_is_not_in_the_message(self):
+        body = '- [ ] #12 and #13\n'
+        result, _ = self.candidates({12: node(12, parent=5), 5: node(5, text=body)})
+        self.assertEqual(result['candidates'][0]['parentTicks'], {'parent': 5, 'lines': [], 'shared': [1]})
+        self.assertNotIn('parentTicks', result['message'])
+
+    def test_nothing_to_tick_means_none(self):
+        for text in ('Just a description.', '- [x] Screen #12\n', '- [ ] API #13\n'):
+            with self.subTest(text=text):
+                result, _ = self.candidates({12: node(12, parent=5), 5: node(5, text=text)})
+                self.assertIsNone(result['candidates'][0]['parentTicks'])
+
+    def test_a_top_level_issue_reads_no_parent(self):
+        result, gh = self.candidates({12: node(12)})
+        self.assertIsNone(result['candidates'][0]['parentTicks'])
+        self.assertEqual(len(gh.queries()), 2)   # the board layout and the issue
+
+    def test_a_closed_unknown_or_foreign_parent_is_left_alone(self):
+        cases = {'closed': ({12: node(12, parent=5), 5: node(5, state='CLOSED', text=PARENT_BODY)}, True),
+                 'unknown': ({12: node(12, parent=5)}, True),
+                 'foreign': ({12: node(12, parent=5, parent_repo='OTHER/REPOSITORY'), 5: node(5, text=PARENT_BODY)}, False)}
+        for name, (nodes, reads) in cases.items():
+            with self.subTest(case=name):
+                result, gh = self.candidates(nodes)
+                self.assertIsNone(result['candidates'][0]['parentTicks'])
+                self.assertEqual(bool(self.asked(gh, 5)), reads)
+
+    def test_a_foreign_parent_is_skipped_for_its_own_candidate_even_when_a_local_parent_has_the_same_number(self):
+        nodes = {12: node(12, parent=5, parent_repo='OTHER/REPOSITORY'), 13: node(13, parent=5),
+                 5: node(5, text='- [ ] Screen #12\n- [ ] API #13\n')}
+        result, _ = self.candidates(nodes, issues='12,13')
+        ticks = {c['number']: c['parentTicks'] for c in result['candidates']}
+        self.assertEqual(ticks, {12: None, 13: {'parent': 5, 'lines': [2], 'shared': []}})
+
+    def test_a_sub_issue_that_is_only_moved_has_nothing_to_tick(self):
+        result, gh = self.candidates({12: node(12, state='CLOSED', parent=5, card={'Status': 'Todo'}),
+                                      5: node(5, text=PARENT_BODY)})
+        self.assertEqual(result['candidates'][0]['action'], 'move_only')
+        self.assertIsNone(result['candidates'][0]['parentTicks'])
+        self.assertEqual(self.asked(gh, 5), [])
+
+    def test_siblings_share_one_read_of_their_parent(self):
+        nodes = {12: node(12, parent=5), 13: node(13, parent=5), 5: node(5, text=PARENT_BODY)}
+        result, gh = self.candidates(nodes, issues='12,13')
+        ticks = {c['number']: c['parentTicks']['lines'] for c in result['candidates']}
+        self.assertEqual(ticks, {12: [3], 13: [4]})
+        self.assertEqual(len(self.asked(gh, 5)), 1)
+
+
+class MergeStatusTests(CloseoutCase):
+    """`merge-status`: where the pull requests the session opened stand, against the approved base."""
+
+    def status(self, pulls, prs='11,12', base=None, gh=None, **fake):
+        gh = gh or FakeGh(pull_requests=pulls, **fake)
+        result = closeout.run('merge-status', self.config, self.root, None, False, gh, prs=prs, base=base)
+        self.assertEqual(gh.violations, [])
+        return result, gh
+
+    def test_a_pull_request_merged_into_the_base_is_ready_and_an_open_one_is_waiting(self):
+        result, _ = self.status({11: pr(11, state='MERGED'), 12: pr(12)})
+        self.assertTrue(result['ok'], result['message'])
+        self.assertEqual((result['ready'], result['waiting'], result['settled']), ([11], [12], False))
+        self.assertEqual({e['number']: e['status'] for e in result['pullRequests']}, {11: 'merged_into_base', 12: 'open'})
+        self.assertEqual((result['expectedBase'], result['baseSource']), ('main', 'default_branch'))
+        self.assertIn('Still open: #12', result['message'])
+
+    def test_everything_settled_is_reported_as_such(self):
+        result, _ = self.status({11: pr(11, state='MERGED'), 12: pr(12, state='MERGED')})
+        self.assertEqual((result['ready'], result['waiting'], result['settled']), ([11, 12], [], True))
+
+    def test_a_merge_into_another_branch_does_not_count_as_delivered(self):
+        result, _ = self.status({11: pr(11, state='MERGED', base='claude/issue-10'), 12: pr(12, state='CLOSED')})
+        self.assertEqual({e['number']: e['status'] for e in result['pullRequests']},
+                         {11: 'merged_elsewhere', 12: 'closed_unmerged'})
+        self.assertEqual((result['ready'], result['waiting'], result['settled']), ([], [], True))
+        self.assertIn('not proposed for closing', result['message'])
+
+    def test_the_approved_base_overrides_the_default_branch(self):
+        pulls = {11: pr(11, state='MERGED', base='release/1.2'), 12: pr(12, state='MERGED', base='main')}
+        result, _ = self.status(pulls, base='release/1.2')
+        self.assertEqual((result['ready'], result['expectedBase'], result['baseSource']), ([11], 'release/1.2', 'argument'))
+
+    def test_an_unknown_pull_request_is_reported_and_never_ready(self):
+        result, _ = self.status({11: pr(11, state='MERGED')})
+        self.assertEqual({e['number']: e['status'] for e in result['pullRequests']}, {11: 'merged_into_base', 12: 'not_found'})
+        self.assertEqual(result['ready'], [11])
+
+    def test_the_merged_flag_alone_is_enough_and_an_odd_state_is_unknown(self):
+        result, _ = self.status({11: pr(11, state='CLOSED', merged=True), 12: pr(12, state='WEIRD')})
+        self.assertEqual({e['number']: e['status'] for e in result['pullRequests']}, {11: 'merged_into_base', 12: 'unknown'})
+
+    def test_what_comes_from_github_is_cleaned_and_a_bad_object_id_is_dropped(self):
+        node = pr(11, state='MERGED')
+        node.update(headRefName='bad<script>name', headRefOid='not-a-hash', url='javascript:alert(1)')
+        entry = self.status({11: node}, prs='11')[0]['pullRequests'][0]
+        self.assertEqual((entry['head'], entry['headOid'], entry['url']), ('badscriptname', None, None))
+
+    def test_the_pull_requests_are_required_and_must_be_numbers(self):
+        for prs in (None, '', [], 'a', '0', '12,,13', '1.5'):
+            with self.subTest(prs=prs):
+                result, gh = self.status({}, prs=prs)
+                self.assertFalse(result['ok'])
+                self.assertEqual(gh.calls, [])
+
+    def test_a_base_that_is_not_a_plain_branch_name_is_refused_before_any_read(self):
+        for base in ('main; rm', 'a..b', '-x', 'x/', '$HOME', 'a b', ''):
+            with self.subTest(base=base):
+                result, gh = self.status({}, prs='11', base=base)
+                self.assertFalse(result['ok'])
+                self.assertEqual(gh.calls, [])
+
+    def test_without_a_default_branch_the_base_must_be_named(self):
+        result, _ = self.status({11: pr(11)}, prs='11', default_branch=None)
+        self.assertFalse(result['ok'])
+        self.assertIn('--base', result['message'])
+
+    def test_a_repository_less_project_has_nothing_to_read(self):
+        self.configure(repository=None)
+        result, gh = self.status({11: pr(11)}, prs='11')
+        self.assertFalse(result['ok'])
+        self.assertEqual(gh.calls, [])
+
+    def test_a_refused_read_is_a_refusal_in_json(self):
+        result, _ = self.status({11: pr(11)}, prs='11', gh=RaisingGh())
+        self.assertEqual((result['ok'], result['exitCode']), (False, 1))
+
+
+class RaisingGh:
+    violations = []
+    calls = []
+
+    def __call__(self, argv):
+        raise rs.Refusal(REFUSED)
+
+
+class TickCheckTests(unittest.TestCase):
+    """`tick-check`: the new body is the saved one with nothing but the listed items ticked."""
+
+    BEFORE = '## Slices\n\n- [ ] Screen: #12\n- [ ] API: #13\n- [x] Old #9\n\nText\n'
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+
+    def check(self, after, lines='3', before=None):
+        (self.dir / 'before.md').write_bytes((self.BEFORE if before is None else before).encode('utf-8'))
+        (self.dir / 'after.md').write_bytes(after if isinstance(after, bytes) else after.encode('utf-8'))
+        return closeout.run('tick-check', before=self.dir / 'before.md', after=self.dir / 'after.md', lines=lines)
+
+    def test_only_the_listed_item_ticked_passes(self):
+        result = self.check(self.BEFORE.replace('- [ ] Screen', '- [x] Screen'))
+        self.assertTrue(result['ok'], result['message'])
+        self.assertEqual((result['exitCode'], result['lines'], result['problems']), (0, [3], []))
+
+    def test_several_lines_and_every_item_marker_pass(self):
+        before = '* [ ] a #1\n1. [ ] b #1\n   - [ ] c #1\n'
+        after = '* [x] a #1\n1. [x] b #1\n   - [x] c #1\n'
+        self.assertTrue(self.check(after, lines='1,2,3', before=before)['ok'])
+
+    def test_nothing_ticked_or_the_wrong_item_ticked_fails(self):
+        for after, reasons in ((self.BEFORE, {3: 'not_ticked_exactly'}),
+                               (self.BEFORE.replace('- [ ] API', '- [x] API'), {3: 'not_ticked_exactly', 4: 'changed_outside_the_ticks'})):
+            with self.subTest(after=after):
+                result = self.check(after)
+                self.assertFalse(result['ok'])
+                self.assertEqual(result['exitCode'], 1)
+                self.assertEqual({p['line']: p['reason'] for p in result['problems']}, reasons)
+
+    def test_any_other_change_fails_whatever_it_is(self):
+        ticked = self.BEFORE.replace('- [ ] Screen', '- [x] Screen')
+        for after in (ticked + 'Extra\n', ticked.replace('Text', 'Texto'), ticked.replace('#12', '#13'),
+                      ticked.replace('- [ ] API: #13', '- [ ] API: #13 '), ticked.replace('## Slices', '# Slices'),
+                      ticked.replace('- [x] Screen: #12', '- [x] Screen: #12 done')):
+            with self.subTest(after=after):
+                self.assertFalse(self.check(after)['ok'])
+
+    def test_a_byte_order_mark_or_a_rewritten_line_is_caught(self):
+        ticked = self.BEFORE.replace('- [ ] Screen', '- [x] Screen')
+        result = self.check(b'\xef\xbb\xbf' + ticked.encode('utf-8'))
+        self.assertEqual([p['reason'] for p in result['problems']], ['changed_outside_the_ticks'])
+
+    def test_line_endings_are_not_compared(self):
+        ticked = self.BEFORE.replace('- [ ] Screen', '- [x] Screen')
+        self.assertTrue(self.check(ticked.replace('\n', '\r\n'))['ok'])
+        self.assertTrue(self.check(ticked, before=self.BEFORE.replace('\n', '\r\n'))['ok'])
+
+    def test_an_item_that_is_not_open_cannot_be_the_one_ticked(self):
+        for lines, reason in (('5', 'not_an_open_item'), ('1', 'not_an_open_item'), ('7', 'not_an_open_item'),
+                              ('99', 'line_out_of_range')):
+            with self.subTest(lines=lines):
+                result = self.check(self.BEFORE, lines=lines)
+                self.assertIn(reason, [p['reason'] for p in result['problems']])
+                self.assertFalse(result['ok'])
+
+    def test_a_different_number_of_lines_fails_once(self):
+        result = self.check(self.BEFORE + '\nmore\n')
+        self.assertEqual([p['reason'] for p in result['problems']], ['line_count'])
+
+    def test_the_problem_list_is_bounded_and_counted(self):
+        result = self.check('x\n' * 80, before='y\n' * 80, lines='1')
+        self.assertEqual((len(result['problems']), result['problemCount']), (20, 80))
+
+    def test_unusable_input_is_a_refusal(self):
+        (self.dir / 'before.md').write_text('x', encoding='utf-8')
+        (self.dir / 'binary.md').write_bytes(b'\xff\xfe\x00')
+        for kwargs in (dict(before=self.dir / 'before.md', after=self.dir / 'missing.md', lines='1'),
+                       dict(before=self.dir / 'before.md', after=self.dir / 'binary.md', lines='1'),
+                       dict(before=self.dir / 'before.md', after=self.dir / 'before.md', lines=None),
+                       dict(before=self.dir / 'before.md', after=self.dir / 'before.md', lines='0'),
+                       dict(before=self.dir / 'before.md', after=self.dir / 'before.md', lines='a,b'),
+                       dict(before=None, after=self.dir / 'before.md', lines='1'),
+                       dict(before=self.dir, after=self.dir / 'before.md', lines='1')):
+            with self.subTest(kwargs=kwargs):
+                result = closeout.run('tick-check', **kwargs)
+                self.assertEqual((result['ok'], result['exitCode']), (False, 1))
+                self.assertTrue(result['message'])
+
+    def test_a_missing_file_name_is_said_instead_of_printed_as_none(self):
+        result = closeout.run('tick-check', before=None, after=self.dir / 'x.md', lines='1')
+        self.assertIn('--before', result['message'])
+        self.assertNotIn('None', result['message'])
+
+    def test_a_file_larger_than_a_record_is_refused(self):
+        (self.dir / 'big.md').write_bytes(b'a' * (closeout.MAX_RECORD_BYTES + 1))
+        result = closeout.run('tick-check', before=self.dir / 'big.md', after=self.dir / 'big.md', lines='1')
+        self.assertFalse(result['ok'])
+
+
 class CliTests(CloseoutCase):
     def main(self, *argv, nodes=None, **fake):
         gh = FakeGh(nodes, **fake)
@@ -1277,6 +1632,30 @@ class CliTests(CloseoutCase):
         finally:
             os.chdir(before)
         self.assertEqual(json.loads(out)['scope']['numbers'], [12])
+
+    def test_merge_status_prints_the_json_the_session_waits_on(self):
+        code, out, gh = self.main('merge-status', '--config', str(self.config), '--prs', '11,12', '--base', 'main',
+                                  pull_requests={11: pr(11, state='MERGED'), 12: pr(12)})
+        result = json.loads(out)
+        self.assertEqual((code, result['ok'], result['ready'], result['waiting']), (0, True, [11], [12]))
+        self.assertTrue(out.isascii())
+
+    def test_merge_status_without_prs_is_a_refusal_in_json(self):
+        code, out, gh = self.main('merge-status', '--config', str(self.config))
+        result = json.loads(out)
+        self.assertEqual((code, result['ok'], result['exitCode']), (1, False, 1))
+        self.assertIn('--prs', result['message'])
+        self.assertEqual(gh.calls, [])
+
+    def test_tick_check_needs_no_configuration_and_exits_1_on_a_difference(self):
+        before, after = self.root / 'before.md', self.root / 'after.md'
+        before.write_text('- [ ] a #1\n- [ ] b #2\n', encoding='utf-8')
+        after.write_text('- [x] a #1\n- [ ] b #2\n', encoding='utf-8')
+        code, out, gh = self.main('tick-check', '--before', str(before), '--after', str(after), '--lines', '1')
+        self.assertEqual((code, json.loads(out)['ok'], gh.calls), (0, True, []))
+        after.write_text('- [x] a #1\n- [x] b #2\n', encoding='utf-8')
+        code, out, _ = self.main('tick-check', '--before', str(before), '--after', str(after), '--lines', '1')
+        self.assertEqual((code, json.loads(out)['ok']), (1, False))
 
     def test_verify_without_issues_is_a_refusal_in_json(self):
         code, out, gh = self.main('verify', '--config', str(self.config))

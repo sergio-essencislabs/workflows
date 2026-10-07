@@ -11,7 +11,9 @@
 | Plano de issues | Propor entregas e dependências | Plano e corpos das issues mostrados; aprovação das gravações específicas |
 | Publicação | Somente criações e atualizações aprovadas | Nova leitura dos links, conteúdos e dependências reais |
 | Desenvolvimento | Somente issues e operações autorizadas | Testes, alterações, integração e revisão independente |
-| Fechamento | Somente fechar e mover para Done o que a pessoa aprovou na lista mostrada | Lista e comandos mostrados na íntegra, aprovação própria e nova leitura do GitHub |
+| Espera do merge | Ler o estado das PRs abertas (`closeout.py merge-status`); nada é escrito | Resposta do `merge-status` a cada despertar, nunca só o aviso do ambiente |
+| Fechamento | Somente fechar, mover para Done e marcar no corpo do pai o que a pessoa aprovou na lista mostrada | Lista e comandos mostrados na íntegra, aprovação própria e nova leitura do GitHub |
+| Limpeza | Somente remover as worktrees e branches da lista que a pessoa aprovou | Lista e comandos mostrados na íntegra, aprovação própria e nova leitura do Git e do GitHub |
 
 O bloco `monitoring` da autorização registra `mode` (`local`, `phone` ou
 `alternative`), `confirmed_by`, a identidade da sessão e o horário; sem outra
@@ -27,6 +29,21 @@ de critérios de aceitação e todos os itens marcados (e as filhas fechadas ou 
 pais) e mover o cartão para o valor `project.done` (padrão `Status` / `Done`); uma issue já fechada como concluída com o cartão
 fora de Done só é movida. Quem escreve é a sessão, com o `gh` dela e depois da aprovação da lista, e a
 conferência relê o GitHub. Nenhuma outra autorização cobre essa escrita.
+
+Depois de abrir uma PR, a sessão aguarda o merge por padrão e registra isso no handoff ("Aguardando o merge"); a PR
+nunca leva palavra de fechamento (`Closes`, `Fixes`, `Resolves`) no corpo nem nos commits. O aviso do ambiente
+(inscrição na PR ou um monitor) é só o gatilho: a cada despertar roda `closeout.py merge-status --prs ... --base
+<base aprovada>`, e só `merged_into_base` vale; merge em outra branch (pai empilhado), PR fechada sem merge ou não
+encontrada não fecha nada. Com o merge confirmado, o fechamento roda só para as issues dessas PRs, que só aparecem com
+todos os critérios marcados. Para uma sub-issue, a mesma aprovação inclui marcar no corpo do pai o item que a cita
+(`parentTicks`: números de linha, só itens que citam apenas essa filha; a escrita troca só `[ ]` por `[x]`, e
+`closeout.py tick-check` confere antes e depois). Depois do fechamento escrito e conferido, uma aprovação própria
+pergunta se pode remover as worktrees e branches criados e que deixaram de ser necessários (`scripts/cleanup.py
+plan|verify`): só entram os que têm o tip igual à cabeça de uma PR mesclada que chegou à base aprovada (o filho
+empilhado, pelo pai), sem alteração pendente, sem PR aberta a partir ou em cima da branch, que não são protegidos, nem
+a worktree principal, nem a pasta em que a sessão está; nunca com `--force`. Os arquivos ignorados pelo Git vão junto com a worktree e são
+listados antes da aprovação, e a worktree de integração local da família entra quando não guarda commit próprio (nem merge com conteúdo
+próprio) fora das PRs entregues.
 
 Nenhuma aprovação vale sem que o usuário tenha visto o conteúdo completo na sessão.
 Antes da pergunta, o texto integral vai para a conversa, o arquivo é enviado pela

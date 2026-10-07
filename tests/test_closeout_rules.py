@@ -39,8 +39,8 @@ class SkillTests(unittest.TestCase):
         stage7 = ' '.join(self.text.split('## 7.')[1].split())
         for phrase in ('Closeout of finished issues (its own approval)', 'references/closeout.md', 'all ticked',
                        'children before parents', 'exact commands', 'explicit approval of that list',
-                       'rereads GitHub to verify and, because RoadS reads only the card Status, offers a new roadmap sync', 'No implementation authorization, merged PR or green test covers it',
-                       'never merges, deploys, reopens or edits an issue body'):
+                       'rereads GitHub to verify, asks separately whether to remove the worktrees and branches the work created (`scripts/cleanup.py`, its own approval) and, because RoadS reads only the card Status, offers a new roadmap sync', 'No implementation authorization, merged PR or green test covers it',
+                       'never merges, deploys or reopens an issue; the only issue body it edits is the approved tick in a parent'):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, stage7)
 

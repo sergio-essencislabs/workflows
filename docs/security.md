@@ -140,6 +140,35 @@ O fechamento de issues (`scripts/closeout.py`) só lê:
 - fechar uma issue não é coberto por autorização de implementação, merge ou teste verde: é uma aprovação
   própria, e o plugin nunca reabre, apaga, transfere nem edita o corpo de uma issue nesse passo.
 
+O fechamento faz ainda uma escrita no corpo de uma issue: o item do pai que cita a sub-issue fechada, de `[ ]` para
+`[x]`. É da sessão, com o `gh` dela e sob as permissões vigentes, só depois da aprovação da lista que mostra as
+linhas. O corpo anterior fica guardado, o `closeout.py tick-check` (só lê dois arquivos locais) confere, antes e
+depois de escrever, que só as linhas listadas mudaram, e um item que cita outras issues junto nunca é marcado. A
+espera do merge é regra da skill: o gatilho do ambiente (inscrição na PR ou monitor) não é prova, e a sessão só age
+sobre a resposta do `merge-status`, que só lê o GitHub com `gh api graphql`; um merge em outra branch, uma PR fechada
+sem merge ou uma PR desconhecida nunca propõe fechar nada.
+
+A limpeza de worktrees e branches (`scripts/cleanup.py`) só lê:
+- usa `git --no-optional-locks` sem shell (`worktree list`, `status`, `rev-parse`, `remote get-url`, `merge-base`,
+  `rev-list`) e `gh api graphql`, e não remove, grava nem muda nada (nem o índice do Git); os nomes de branch que entram
+  nas consultas passam por uma regra de caracteres simples, e o texto que vem do GitHub chega limpo e limitado;
+- só propõe remover o que está registrado como worktree e existe (ou uma branch local cuja worktree já se foi), que não é
+  a worktree principal, nem a pasta em que o próprio processo roda, nem está travada ou em uso em outra worktree, sem
+  alteração pendente (nem arquivo novo), numa branch não protegida (`main`, `master`, a base aprovada e
+  `protected_branches`, com a mesma regra do `authorize`), cujo tip é a cabeça de uma PR mesclada que chegou à base
+  aprovada (um filho empilhado, pelo pai que foi mesclado depois e contém o commit), sem PR aberta a partir da branch nem
+  em cima dela; a branch remota só entra se `origin` é o repositório configurado e ela ainda aponta para esse mesmo
+  commit; os arquivos ignorados pelo Git vão embora com a worktree, e o aviso `ignored_files` lista os nomes; a worktree
+  de integração local (`--integration`) só entra sem PR, nunca enviada e sem commit próprio fora das PRs entregues (um merge conta como próprio quando
+  carrega conteúdo, como um conflito resolvido à mão);
+- os comandos (`git worktree remove`, `git branch -D`, `git push origin --delete`) são montados só com um caminho de
+  worktree registrado e um nome de branch simples, sem caractere que uma linha de comando não carregue, e rodados a
+  partir da worktree principal; nunca com `--force`. O `branch -D` é necessário porque um merge com squash deixa a branch
+  "não mesclada" para o Git, e por isso só é oferecido quando o tip é a cabeça de uma PR mesclada;
+- remover é uma aprovação própria da lista completa, depois do fechamento escrito e conferido; um comando que falha é
+  registrado e nunca repetido com força; os registros do `.frontlights` dentro de uma worktree somem com ela, e o aviso
+  `frontlights_records` vai na pergunta.
+
 O resumo para a diretoria (`scripts/progress_report.py`) executa comandos lidos do
 `.frontlights/config.json`, arquivo que um repositório clonado poderia trazer. Por isso:
 
