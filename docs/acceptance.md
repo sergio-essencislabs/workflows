@@ -1,4 +1,4 @@
-# Evidências de aceitação — candidata à 1.0 (0.19.0, 05/10/2026)
+# Evidências de aceitação — candidata à 1.0 (0.23.0, 07/10/2026)
 
 Este registro diz o que está **provado**, o que **falta** e quais são os **limites declarados**. Ele não traz
 saída de sessão real, endereços, nomes de produto, de cliente ou de pessoa: resume o que foi observado.
@@ -14,7 +14,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 
 ## Verificação automatizada
 
-- `python -m unittest discover -s tests -v`: **1282 testes em 24 módulos, nenhum falhando** (5 pulados por dependências ausentes no ambiente, como o Playwright; contagem da 0.22.1).
+- `python -m unittest discover -s tests -v`: **1401 testes em 27 módulos, nenhum falhando** (5 pulados por dependências ausentes no ambiente, como o Playwright; contagem da 0.23.0).
   Alguns módulos (`test_serve_ports`, `test_checks_integration`) levam vários minutos; rode por módulo.
 - `python -m compileall -q scripts tests`: passou (não há verificador de tipos externo).
 - `claude plugin validate .`: passou; `claude --plugin-dir . plugin details frontlights` carrega uma skill,
@@ -44,6 +44,8 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 | 15. Conclusões registradas nos `.md` | Pendente | implementado e testado com transporte simulado: só o `done` do estado conta, mesma aprovação, marca e verificação, sem `ack` para o que não está na fila do RoadS | falta uma sessão real: Done no quadro, Sincronizar no RoadS e a sincronização aprovada no Frontlights |
 | 16. Pendências como critério de aceitação | Pendente | regra escrita na skill, nos modelos e nos docs, e testada: o `closeout.py` conta a pendência como critério (a issue com ela aberta sai da lista) e avisa sobre a seção legada "Pendências conhecidas" fora dos critérios, com `gh` simulado | falta uma sessão real em que o portão liste os achados, o texto exato do critério seja aprovado antes da escrita e o corpo no GitHub mude só pelas linhas acrescentadas; o portão é regra da skill, não barreira |
 | 17. Espera do merge, marcação no pai e limpeza | Pendente | implementado e testado com `gh` simulado e repositórios Git reais em pasta temporária: `merge-status` só aceita merge na base aprovada, `parentTicks` e `tick-check` conferem que só `[ ]` virou `[x]`, e `cleanup.py` só propõe o que tem o tip igual à cabeça de uma PR mesclada que chegou à base, sem alteração pendente, sem PR aberta e fora da pasta da sessão, nomeia os arquivos ignorados e só oferece a worktree de integração sem commit próprio | falta uma sessão real em que uma pessoa faça o merge de uma família empilhada; o gatilho (inscrição na PR ou monitor) depende do ambiente e a espera é regra da skill, não barreira |
+| 18. Pergunta do resumo em qualquer projeto e início por linguagem natural | Pendente | implementado e testado com projetos temporários e um RoadS simulado: o bloco do próprio projeto vale primeiro, o registro assinado do usuário vale sem bloco, um registro copiado, editado ou sem assinatura vira `invalid`, as operações seguintes rodam na raiz do registro; o modelo de comando lista os gatilhos em português e o hook opcional foi testado como script | falta uma sessão real: a pergunta em dois projetos sem o bloco, o hook sendo executado pelo Claude Code a cada prompt e a frase comum abrindo o estágio 1 |
+| 19. Teste assistido por lote, antes da revisão | Pendente | implementado e testado com repositórios Git reais em pasta temporária: `browser-gate` acha a mudança visível no diff, uma decisão cobre o lote inteiro, teste, documento e fatia sem mudança visível não reabrem a pergunta, código que muda a tela a torna `stale`, e a pendência `teste_assistido` atravessa `checkpoint`, `resume` e `context` | falta uma sessão real com uma família de duas fatias de tela e uma só de API; o `browser-gate` é regra da skill conferida por script, não barreira |
 
 ## RoadS em produção
 

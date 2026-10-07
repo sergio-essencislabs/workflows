@@ -1,12 +1,13 @@
-# Browser, checks and cross-account testing at the end of an issue
+# Browser, checks and cross-account testing
 
-Read this in stage 6 after the TDD loop of an issue whose plan has the section
-`## Navegador e testes ligados` (`templates/issue.md`). It decides what runs, with
-which helper, what to ask and what to record. Everything the user reads stays in
+Read this in stage 6 whenever anything the session delivers changes what the user
+sees: the plan has the section `## Navegador e testes ligados` (`templates/issue.md`)
+with `Toca o frontend: sim`, or `browser-gate` (below) finds a visible change in the
+diff. It decides what runs, with which helper, what to ask and what to record. Everything the user reads stays in
 Portuguese. `checks integration` and `checks smoke` refuse a non-local host
 before any request; `serve start` does not check the `health` host, so keep
-`health` and `baseUrl` on `127.0.0.1`, `localhost` or `::1`, on the issue's own
-branch (a watched run also serves the base, see below); never point a test at a real, staging or production environment. Installing Playwright or a browser in the target project is out of
+`health` and `baseUrl` on `127.0.0.1`, `localhost` or `::1`, on the branch under test
+(a watched run also serves the base, see below); never point a test at a real, staging or production environment. Installing Playwright or a browser in the target project is out of
 scope: use what the session and the project already have.
 
 ## What the plan turns on
@@ -21,13 +22,107 @@ running anything:
   `permissões entre contas`, `smoke`, plus extra cases.
 
 A missing section on an issue that changes screens, or a field that contradicts the
-diff, parks the issue and goes to `AskUserQuestion`; never turn tests on or off
-alone. Run only what is on, in this order: `checks regression`, `serve start`,
+diff, parks the issue and goes to `AskUserQuestion` (`browser-gate` finds that
+contradiction from the diff); never turn tests on or off alone. Run only what is on, in this order: `checks regression`, `serve start`,
 `checks integration`, browser and cross-account steps (the browser step opens with
 the watched-run question below and, when the user watched, ends with the question of
 what to do next), `checks smoke` (it reuses the running serve),
 `serve stop`. The commands below read `browserTest` and `checks` from the project's
 `.frontlights/config.json` (main worktree included, as stage 2 says).
+
+## One watched run per batch
+
+There is one watched run per batch of work, never one per branch or worktree. The batch is
+every slice the session delivers together: the issue and its sub-issues, and any other issue
+authorized in the same run. A slice that only changes tests or only the API does not hold the
+question back.
+
+**When the question comes out.** Only at these points, each one after `browser-gate`: (a) when the
+last slice that changes the screen has closed its TDD loop, the normal moment, which comes before
+the independent review of any of them (a review of work the user then asks to change is wasted);
+(b) before an independent review of a slice that changes the screen is dispatched, once no other
+slice that changes the screen is still in its loop (otherwise that review waits for (a)); (c) before an
+issue that changes the screen (a visible file in its `by_root`, or a plan that says `sim`) is
+reported as reviewed or complete; (d) before a PR of such an issue is opened or updated; (e) when a session
+resumes with `teste_assistido` pending (it exists only once the question is due). At any other moment a `pending` is expected and asks nothing:
+a commit in a slice, or a screen slice still in its loop, is no reason to ask. A screen slice
+that is parked or dropped leaves the batch, and the question names the slices it covers; one that
+comes back later is a new decision (`stale`). The session does not
+wait for the sibling slices, their reviews or the family integration.
+
+**What runs.** One ANTES on the approved base of the batch and one DEPOIS on the delivered state of
+the slices that have closed their loop at that moment: the branch itself when the batch has one
+branch, otherwise a local integration worktree (never pushed) that merges them, the one the family
+integration of `development.md` reuses and redoes after a fix. Every `Fluxo:` of the batch runs in
+those same two passes. A slice that closes its loop after the run and changes what a `Fluxo:`
+exercises (the same screen or route) makes the session ask again by hand, with the options of `stale`, because the gate cannot see
+that; until it is answered the report says "implementada, aguardando teste assistido", never "completa".
+
+**The gate.** `python "${CLAUDE_PLUGIN_ROOT}/scripts/frontlights.py" browser-gate --config <config>
+--base <base> --root <worktree> [--root <worktree> ...] [--stacked <branch>=<target> ...] --toca
+<sim|nao|ausente> --record <result.json>`. `--base` is the approved base of the batch, the same for
+every `--root`; each `--root` is a slice's worktree; each slice stacked on another branch (the base
+the stacking authorization records for it) is named with `--stacked <its branch>=<the branch its PR
+targets>`, so only its own changes count (an API-only child stacked on a parent that changes the
+screen is then no visible root); without `--stacked` every root is measured from `--base`; `--toca` is `sim` when any slice's plan says `Toca o frontend: sim`, else what the plans
+say (`by_root` lists the visible files of each root, so compare each slice with its own plan);
+`--record` is the batch record below and may not exist yet. It reads the Git diff, not the plan's
+text, and prints `status`, `reason` and `action`. Exit code 0 means `not_needed` or `answered`, 2
+anything else, 1 an error such as an unreadable file or a base that does not exist (a `--config`
+path that does not exist is an error: leave `--config` out only when the project has none). On exit
+code 1 say the error in one line and fix the call; it is never `answered`.
+
+- `pending` (action `ask`): nobody has decided (`sem-registro`, `pendente`, `ainda-nao` or
+  `alteracao`). For `alteracao` the change comes first and the run then repeats with no new
+  "pronto para assistir?"; for the others ask the question of the next section, at the points above.
+- `contradiction` (`ask-plan`): the diff changes what the user sees and the plan says `não` or says
+  nothing. Tell them and ask with `AskUserQuestion`; options: "Rodar o teste assistido" (and fix
+  `Toca o frontend:` in the local plan with their answer; the issue body is an external write that
+  needs its own approval), "Dispensar o teste" (record `dispensado`: the
+  right answer when the change is not really visible) and "Ainda não".
+- `stale` (`ask-again`): the user decided, then code that is not a test or a document changed in a
+  slice that changes the screen (`changed_roots` names it), or the record has no `lote.roots`
+  (`sem-vinculo`). Ask with options "Assistir de novo" (a new run), "Manter a decisão anterior" (copy
+  the new `roots` into the record and write the answer verbatim in `pergunta.resposta`) and
+  "Ainda não"; in a project with no `browserTest` only the last two make sense.
+- `unconfigured` (`ask-how`): something visible changed and the project has no `browserTest`, so the
+  run cannot happen. Ask with options "Verificar à mão e dispensar" (record `dispensado` and the risk
+  in the report), "Configurar o `browserTest` agora" and "Ainda não". Never call the change checked.
+
+The visible paths are `browserTest.frontPaths` of the project's config (globs from the repository
+root: `*` stays inside one folder, so say `**/*.html` for every page; tests and documents never count
+and a screen file never counts as a test); without it the gate guesses from file names, and `inspect`
+warns about that. Limits: a script or an image inside a test or documentation folder stays out even
+when `frontPaths` names it, markdown pages never count, and an HTML fixture inside a test folder is
+asked about (answer `dispensado`).
+
+**The record.** The batch has one `result.json`, in the folder of its lead issue (the parent of a
+family, or the lowest-numbered issue of the batch): `.frontlights/issues/<lead>/browser/result.json`.
+Besides the fields of the Evidence section it carries `situacao` (`pendente`, `ainda-nao`,
+`aprovado`, `prosseguir`, `sem-assistir`, `dispensado` or `alteracao`), `lote` with `issues` (the
+numbers) and `roots` (copied from the `browser-gate` output taken when the answer was recorded,
+which is what `stale` compares with) and `pergunta.resposta`, the user's answer verbatim. "Ainda não"
+is `ainda-nao`: the run stays owed, as the `teste_assistido` pending of `checkpoint --pending` and
+`context --pending` (so `resume` reports it and a window near its limit asks before spending more),
+and the question comes back at the points above, not at every commit. It is carried that way only
+once the question is due: the last slice that changes the screen has closed its loop and the user has
+not answered, or said "Ainda não" (a slice that reopens its loop after that does not undo it: the handoff
+carries both, and the question comes out again when that slice closes). A slice of the batch that has not
+started yet counts as open. While a screen slice is still in its loop the handoff lists the open screen
+slices instead, a window near its limit just renews, and the next window continues that
+slice. "Rodar sem assistir" is
+`sem-assistir` once it ran; the user's explicit decision not to run it is `dispensado`; the closing
+question gives `aprovado`, `prosseguir` and `alteracao`. `answered` (any of `aprovado`, `prosseguir`,
+`sem-assistir` or `dispensado`) is what an independent review of a slice that changes the screen,
+"reviewed", "complete" and a PR require; there is no other way around it.
+
+A Direct change with no issue has no plan and no lead issue. Ask with `AskUserQuestion`, options "Informar a
+issue" (the issue the work belongs to, which the user names: its number serves the record, `serve` and
+`checks`), "Dispensar o teste" (record `dispensado`) and "Ainda não". Never run `serve` or `checks` with an
+invented number, and open no issue for it. `--toca` is `ausente`, so a visible diff is a `contradiction`
+(in a project with no `browserTest` it is `unconfigured`), which this same question answers. A dispensed
+Direct change keeps its record in `.frontlights/direct/<branch, slashes as dashes>/browser/result.json`
+(`--record` points there; the answer verbatim and the risk go in the handoff and the report too).
 
 ## Environment: `serve`
 
@@ -48,8 +143,7 @@ the ports. Exit `0` done, `1` refused or failed; the JSON `category` says:
 Either way, ask (see below).
 
 A project whose `browserTest` declares only the accounts (`inspect` warns about it) starts its own
-environment: skip `serve start` and `serve stop`, confirm with the user that the environment is up and on
-the issue's own branch, and never start or stop a process this session did not start.
+environment: skip `serve start` and `serve stop`, confirm with the user that the environment is up and on the branch under test, and never start or stop a process this session did not start.
 
 Ports. A process with `"port": "auto"` gets a free port reserved per process in the
 repository's Git common directory, shared by every worktree, and receives it in
@@ -105,11 +199,12 @@ and the issue never counts as passed on that test.
 
 ## Watched run: before and after, with the user watching
 
-Whenever the plan turns the browser test on (`Toca o frontend: sim`), ask once per
-family (the issue and its sub-issues that turn it on), before the browser opens its
+Whenever the plan turns the browser test on (`Toca o frontend: sim`) or `browser-gate`
+finds a visible change, ask once per batch (the section above), before the browser opens its
 first window (the servers may already be up), with `AskUserQuestion`: "Pronto para
-assistir ao teste de navegador da issue #<n>?" The text says what comes: first the
-base (ANTES), then the branch (DEPOIS), each case twice, and the window stays open
+assistir ao teste de navegador da issue #<n>?" (for a batch, "das issues #<n>, #<m> e #<k>",
+each one named in the text). The text says what comes: first the
+base (ANTES), then the delivered state (DEPOIS), each case twice, and the window stays open
 for about 45 s at the end; and, when the `Fluxo:` moves a test user to a restricted
 profile, that this changes data of the test database through the product's endpoint
 and that it will be undone. Options: "Sim, pode rodar" first and recommended;
@@ -118,9 +213,8 @@ says when ready); "Rodar sem assistir" (a hidden window is acceptable; record
 `assistido: false`). When the `Fluxo:` moves a profile, a fourth option, "Sem mudar
 perfil", runs both passes without the move and declares in the report that the
 permission behavior was not checked against the real back. Never open the browser
-before the answer. A family runs its
-browser passes one issue at a time, never several windows at once on the same
-account and database.
+before the answer. Passes never overlap: one issue at a time (a batch counts as one),
+never several windows at once on the same account and database.
 
 When the user will watch:
 
@@ -130,13 +224,15 @@ When the user will watch:
   one, the watched run did not happen: report the reason and ask; never fall back to
   a hidden window silently.
 - **Two passes, same scenario and same account.** ANTES runs the `Fluxo:` on the
-  base: `main` (or the default branch) or, for a child stacked on its parent, the
-  parent's branch, which is the base of its PR. Serve it from a checkout of that
+  approved base of the batch (`main`, or the default branch); a slice stacked on a
+  parent that is not part of the batch uses that parent's branch, the base of its PR.
+  Serve it from a checkout of that
   base, a detached-HEAD worktree made with `git worktree add` because the base
-  branch is already checked out elsewhere; a stacked child's ANTES can use the
-  parent's own worktree. It gets its own record (`serve start --root <base-checkout>
+  branch is already checked out elsewhere; for that stacked slice the
+  parent's own worktree can serve as ANTES. It gets its own record (`serve start --root <base-checkout>
   --issue <n>`). DEPOIS runs the same `Fluxo:`, same account, same data, on the
-  issue's branch, served from its worktree. Give both servers an `auto` port of their
+  delivered state (the batch's single branch, or the local integration of the slices that
+  closed their loop), served from its worktree. Give both servers an `auto` port of their
   own. A process with a fixed port runs one pass at a time, in this order: stop the
   issue's own server (the standard order started it earlier), start ANTES, run it,
   `serve stop --root <base-checkout> --issue <n>` ends ANTES before DEPOIS starts, then
@@ -147,7 +243,7 @@ When the user will watch:
   case before reporting.
 - **A strip on every page.** The test injects a fixed strip into the page (an init
   script or a DOM node, visible in the screenshots): "ANTES: <base>" ("ANTES: main"
-  on the main, the parent's branch for a stacked child) in the first pass and
+  on the main, the base's own name otherwise) in the first pass and
   "DEPOIS: branch <name>" in the second, with the branch name as Git has it. No
   login, password or local path ever goes into the strip.
 - **Pace.** Each case runs twice in each pass. Hold every popup, toast and dialog
@@ -165,26 +261,29 @@ failure.
 (`assistido: true`); a run with "Rodar sem assistir" has no one to answer it. Once the
 last window is closed and the result of each case is in the text (ANTES and DEPOIS side
 by side, with the evidence folder), ask with `AskUserQuestion`: "O que fazer depois do
-teste assistido da issue #<n>?" Options, in this order: "Assistir de novo", "Aprovado",
+teste assistido da issue #<n>?" (for a batch, "das issues #<n>, #<m> e #<k>", as in the first question)
+Options, in this order: "Assistir de novo", "Aprovado",
 "Precisa de alteração" and "Pode prosseguir", each saying what it does:
 
 - "Assistir de novo": runs both passes again as above, in a new window, with no new
-  "pronto para assistir?" (the family already answered it). Start ANTES again and, when
+  "pronto para assistir?" (the batch already answered it). Start ANTES again and, when
   the `Fluxo:` moves a profile, save the original value again, move and undo it again (the
   previous round's undo was already read back). Ask this question again at the end;
   each round adds one to `rodadas`.
 - "Aprovado": the user confirms that DEPOIS did what the `Fluxo:` expects. Record
-  `aprovacao: "aprovado"` and the answer verbatim, then go on with the order
+  `aprovacao: "aprovado"`, `situacao: "aprovado"`, the `lote` of the gate output and the answer
+  verbatim, then go on with the order
   (`checks smoke`, `serve stop`, review).
 - "Precisa de alteração": the user wants something changed. Ask what with
-  `AskUserQuestion` and record it in their own words, record `aprovacao: "alteracao"` and
+  `AskUserQuestion` and record it in their own words, record `aprovacao: "alteracao"` (and `situacao: "alteracao"`) and
   run no further step of the order; stop what this test started, with the profile already
   restored. A change inside the issue's acceptance criteria goes back to the TDD loop on
   the same branch and the watched run is repeated with no new "pronto para assistir?"; a
   change that widens the scope follows the destination ladder of the Follow-ups section
   in `issues.md`, decided as one batch, never as silent work on this branch.
 - "Pode prosseguir": the user saw the run and lets the stage go on without approving it.
-  Record `aprovacao: "prosseguir"`; the handoff and the report say the run was watched
+  Record
+  `aprovacao: "prosseguir"` and `situacao: "prosseguir"`; the handoff and the report say the run was watched
   but not approved by the user, never "aprovado".
 
 Never pick an answer for the user, never read the 45 s or a silence as an answer and
@@ -268,7 +367,8 @@ the answer is recorded verbatim.
 ## Evidence
 
 Before each browser run, take `python "${CLAUDE_PLUGIN_ROOT}/scripts/frontlights.py" evidence --root <worktree>`.
-Write `.frontlights/issues/<n>/browser/result.json` with timestamp, branch,
+Write `.frontlights/issues/<n>/browser/result.json` (for a batch, `<n>` is its lead issue and
+the file is the batch's) with timestamp, branch,
 `head`, `diff_sha256`, the account used (`conta 1` or `conta 2`, never the login),
 each step and its result, console and network errors, screenshot file names, the
 failure kind and the user's answer. A watched run adds `assistido` (true or
@@ -279,8 +379,10 @@ source of each response (`back real` or `interceptada`) and,
 when a profile was moved, only the profile field before and after the undo (never
 the whole row, which can hold a login or a password hash); its screenshots are
 named `antes-<caso>-<n>` and `depois-<caso>-<n>`. Screenshots stay in the same folder. The
-records of `.frontlights/issues/<n>/checks/` sit beside it. A later commit or
-diff makes this evidence stale: rerun before reporting. Link both folders in the
+records of `.frontlights/issues/<n>/checks/` sit beside it. The records are
+tied to the `head` they ran on: for the watched run `browser-gate` says whether the record still covers the
+code (`stale` asks again), and the `checks` records are stale after any later commit, so rerun them before
+reporting. Link both folders in the
 handoff.
 
 A summary comment on the GitHub issue is text only (no screenshots, no login,

@@ -24,6 +24,7 @@ LOCAL_HOSTS = {'127.0.0.1', 'localhost', '[::1]'}
 NAMED_HOSTS = {'127.0.0.1', 'localhost', 'exemplo.test'}
 FILE_EXTENSIONS = {'js', 'ts', 'mjs', 'cjs', 'json', 'md', 'py', 'yml', 'yaml', 'toml', 'txt'}
 CONFIG_KEYS = ('browsertest.', 'checks.', 'os.', 'sys.', 'subprocess.')
+RECORD_KEYS = {'lote.roots', 'pergunta.resposta'}   # keys of the result.json record, exactly these
 # the word may be quoted or bold (`"login":`, `'senha':`, `**senha**:`), a table cell (`| senha | x |`)
 # and the value may open with a quote or backtick
 CREDENTIAL = re.compile(r'\b(?:senha|password|passwd|login|usu[aá]rio|user)\b["\'*`]*(?:\s*([:=|])\s*|\s+)["\'`]?'
@@ -60,7 +61,7 @@ def host_leaks(text):
         token = match.group(0).lower()
         host, _, port = token.partition(':')
         allowed = host in NAMED_HOSTS or VERSION.fullmatch(token) or not port and (
-            token.rsplit('.', 1)[1] in FILE_EXTENSIONS or token.startswith(CONFIG_KEYS))
+            token.rsplit('.', 1)[1] in FILE_EXTENSIONS or token.startswith(CONFIG_KEYS)) or token in RECORD_KEYS
         if not allowed:
             leaks.append(token)
     return leaks
@@ -203,7 +204,8 @@ class BrowserFlowManifestTests(unittest.TestCase):
         known = set(re.findall(r'--[a-z][a-z-]*', serve_help))
         for sub in check_subs:
             known |= set(re.findall(r'--[a-z][a-z-]*', help_text('scripts/checks.py', sub)))
-        known |= set(re.findall(r'--[a-z][a-z-]*', help_text('scripts/frontlights.py', 'evidence')))
+        for sub in ('evidence', 'browser-gate', 'checkpoint', 'context'):
+            known |= set(re.findall(r'--[a-z][a-z-]*', help_text('scripts/frontlights.py', sub)))
         for flag in set(re.findall(r'(?<![\w-])--[a-z][a-z-]*', self.reference)):
             with self.subTest(flag=flag):
                 self.assertIn(flag, known)
@@ -242,7 +244,7 @@ class BrowserFlowManifestTests(unittest.TestCase):
 
     def test_cited_output_fields_exist_in_the_scripts(self):
         sources = read(ROOT / 'scripts' / 'serve.py') + read(ROOT / 'scripts' / 'checks.py') \
-            + read(ROOT / 'scripts' / 'frontlights.py')
+            + read(ROOT / 'scripts' / 'frontlights.py') + read(ROOT / 'scripts' / 'browser_gate.py')
         fields = set(re.findall(r'`([a-z]+(?:_[a-z0-9]+)+)`', self.reference))
         self.assertIn('reservas_compartilhadas', fields)
         for field in fields:

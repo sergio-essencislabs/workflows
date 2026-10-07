@@ -30,6 +30,7 @@
   },
   "browserTest": {
     "baseUrl": "http://127.0.0.1:{port}/",
+    "frontPaths": ["web/src/**"],
     "users": [
       {"login": "usuario1@exemplo.test", "password": "senha-ficticia"},
       {"login": "usuario2@exemplo.test", "password": "senha-ficticia"}

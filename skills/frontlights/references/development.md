@@ -61,7 +61,7 @@ hunks the child shares with it, and that merging the parent PR with a merge comm
 avoids that; how to merge stays with the human. Record the answer verbatim in the
 authorization, with the repository operations it needs: branch from a branch that is
 not the base, push it (and the dependency's branch), open a draft PR whose base is the
-dependency's branch, retarget that PR, `git merge` of a base into the issue's own branch, and `git merge` of a family's verified
+dependency's branch, retarget that PR, `git merge` of a base into the issue's own branch, and `git merge` of a family's or batch's verified
 branches into a local integration branch that is never pushed. Those are the only merges it allows: it never covers merging a PR, writing
 the base branch, deploying or releasing. Without the stacking answer, a dependent
 stays parked until its dependency is in the approved base.
@@ -121,10 +121,14 @@ can assert the very behavior another child changes on purpose, and a clean Git m
 does not make a green suite. Before any PR of a family with more than one branch is
 opened, integrate it locally: an integration worktree from the parent's branch that
 merges every verified child branch (local only: never pushed, never a PR), then run
-the full relevant suite, the type checks and, when a member turns it on, the browser
-test on it. Findings follow the destination ladder; a fix goes to the branch that owns
+the full relevant suite and the type checks. The watched browser run already happened, once
+for the batch and before the reviews; `browser-gate` says whether its record still covers this
+code, and `stale` asks again. When a local integration worktree already served that run, this
+integration is the same one: reuse it and redo it after a fix. Findings follow the destination ladder; a fix goes to the branch that owns
 the file, never to the integration branch, and the integration is redone after it.
-The PRs open only after an integration with a green suite, and each branch still needs
+A batch of independent issues watched together (no parent) gets the same kind of local
+integration worktree, cut from the approved base; the stage 6 authorization names that merge even
+when no stacking question is asked. The PRs open only after an integration with a green suite, and each branch still needs
 its own current review (`review-gate`). Record the integration worktree, the merged
 HEADs and the results in the handoff. The integration branch is evidence, never delivered.
 
@@ -214,13 +218,22 @@ syntax/build checks. Inspect the full vertical behavior, diff, regressions and
 acceptance coverage. Tests may execute arbitrary code; native permission and
 sandbox controls still apply. Unexpected effects stop the affected issue.
 
-When the issue's `## Navegador e testes ligados` turns tests on, follow
-[browser-testing.md](browser-testing.md) before review, starting with its question
-"pronto para assistir?" and, after a watched run, ending with the user's choice of
-watching again, approving, asking for a change or going on; its records join the
-evidence below.
+When anything the issue changes is visible on the screen (its `## Navegador e testes ligados`
+says so, or `frontlights.py browser-gate` finds it in the diff), the watched run belongs to the
+whole batch, not to this issue alone: [browser-testing.md](browser-testing.md) asks "pronto
+para assistir?" once the last slice of the batch that changes the screen has closed its loop,
+before the independent review of any of them, and ends with the user's choice of watching
+again, approving, asking for a change or going on; its records join the evidence below.
+Once the question is due and until the user has answered, the run is the `teste_assistido` pending of the checkpoint;
+while a screen slice is still in its loop it is not (the handoff lists the open slice).
 
 ## Review, checkpoints and renewal
+
+A slice that changes what the user sees waits for the batch's watched run, and the review of the
+first screen slice waits until the last one has closed its loop and the user has answered:
+`browser-gate` has to say `answered` (exit code 0) before its independent reviewer is dispatched, (the points where
+the question comes out are listed in browser-testing.md); exit code 2 at those points is a question to
+the user, never a skip.
 
 Require an independent reviewer to inspect the current diff and test evidence.
 They must not author the changes under review. Bind review to `frontlights.py
@@ -260,12 +273,16 @@ Save compact `templates/handoff.md` and a machine-readable checkpoint before eac
 session renewal. Include the issue URL and acceptance snapshot, repository map,
 decisions, changed files, commands/results, review evidence, blockers and next
 concrete step. `frontlights.py checkpoint` records the issue snapshot, handoff and
-current Git evidence; `frontlights.py resume` detects drift without overwriting it.
+current Git evidence, and carries open obligations with `--pending teste_assistido` (a watched run that is due and unanswered);
+`frontlights.py resume` detects drift without overwriting it and lists those obligations
+first, so the next window starts by asking the watched run.
 Read both the human handoff and current issue/diff in the fresh session.
 
 Check context using measured accumulated session usage plus a conservative next
 step reserve, not remaining context after compaction. Target renewal near 100k;
-stop before 150k. Unknown telemetry means no unattended continuation. The helper
+stop before 150k. Unknown telemetry means no unattended continuation. While a watched run is
+due and unanswered, pass `--pending teste_assistido` to `context`: on `handoff` or `stop` it also answers
+`ask_before_continuing`, and the question goes out before more is spent on reviews. The helper
 checks reported numbers, not the host's actual token meter. If the host cannot
 enforce renewal, explicitly report that hard-cap AFK acceptance is unproven.
 
@@ -277,7 +294,7 @@ names is done and its evidence exists. Closing an issue and moving its card are 
 their own approval (`references/closeout.md`). Draft PRs also require charter permission and native approval. Never
 merge a pull request, write the base branch, deploy, release, delete data or close
 issues as routine AFK work; the only merges allowed are the ones the stacking authorization names: of a base into an issue's own
-branch, and of a family's verified branches into a local integration branch that is never pushed. Park
+branch, and of a family's or batch's verified branches into a local integration branch that is never pushed. Park
 blocked issues with the precise pending question and continue independent ones.
 Report each issue's state, branch/PR, exact tests/results, review evidence,
 the findings left unfixed with the destination of each, remaining risk and next

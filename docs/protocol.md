@@ -123,9 +123,19 @@ do plugin enquanto ele executa trabalho no projeto consumidor. Estrutura recomen
   issues/<n>/browser/result.json  resultado do teste de navegador, com os prints ao lado
 ```
 
-O teste de navegador roda no fim de uma issue cujo plano tem a seção `## Navegador e testes
-ligados`, só com o que ela liga e nesta ordem: `checks regression`, `serve start`,
+O teste de navegador roda quando algo que a sessão entrega muda o que a pessoa vê (o plano tem a seção
+`## Navegador e testes ligados` com `Toca o frontend: sim`, ou o `browser-gate` acha a mudança visível no
+diff), uma vez por lote de trabalho e antes da revisão independente de qualquer fatia que muda a tela, só
+com o que o plano liga e nesta ordem: `checks regression`, `serve start`,
 `checks integration`, navegador e permissões entre contas, `checks smoke`, `serve stop`.
+O `frontlights.py browser-gate --config <config> --base <base> --root <worktree> ... [--stacked <branch>=<alvo> ...] --toca <sim|nao|ausente>
+--record <result.json>` lê o diff, devolve `not_needed`, `answered`, `pending`, `stale`, `contradiction` ou
+`unconfigured` (saída 0 para os dois primeiros, 2 para os demais) e roda onde o `review-gate` roda. O
+`result.json` do lote fica na pasta da issue líder e traz `situacao` (`pendente`, `ainda-nao`, `aprovado`,
+`prosseguir`, `sem-assistir`, `dispensado` ou `alteracao`), `lote` (`issues` e `roots`; as `roots` vêm do `browser-gate`) e
+`pergunta.resposta`; só código que não é teste nem documento, depois da decisão, a torna `stale`. A pendência
+`teste_assistido`, só quando a pergunta está devida (a última fatia de tela fechou o ciclo e não há resposta), atravessa janelas: `checkpoint --pending teste_assistido`, `resume` (o campo `pending` traz a lista, e a sessão a lê antes de tudo) e
+`context --pending teste_assistido` (com `ask_before_continuing` em `handoff` e `stop`).
 O passo do navegador começa com a pergunta "pronto para assistir?"; com o sim, roda em janela
 visível em duas passagens do mesmo cenário e da mesma conta, a base ("ANTES") e depois a branch
 ("DEPOIS"), com cada caso duas vezes e a janela aberta cerca de 45 s no fim. Ao fim, o
@@ -144,8 +154,9 @@ compartilhada pelas worktrees; fora do Git, em `.frontlights/serve/ports/`, e re
 diferentes não veem as reservas uns dos outros. Os códigos de `checks` são 0 passou, 1 falha de produto, 2
 config recusada e 3 infraestrutura. Toda falha vira pergunta por `AskUserQuestion`; sem
 navegador ou rede, o teste é registrado como não executado e não conta como aprovado. Os
-registros nunca trazem login nem senha: a conta aparece como `conta 1` ou `conta 2`. Um commit
-ou diff posterior torna essa evidência antiga.
+registros nunca trazem login nem senha: a conta aparece como `conta 1` ou `conta 2`. A evidência fica atada ao `head` em que
+rodou: no teste assistido, quem diz se ela ainda vale é o `browser-gate`; os registros de `checks` ficam
+antigos depois de qualquer commit.
 
 O contrato com o RoadS (rotas, versão, o que é mudança aditiva e a regra para uma quebra) está em
 `docs/roads-contract.md`.
@@ -180,7 +191,10 @@ permissões vigentes, só em valor vazio, e terminam relendo com `gaps`. Esse pa
 quando não há mudança pendente.
 
 O passo do resumo para a diretoria (`scripts/progress_report.py`) vem logo depois da pergunta do
-roadmap e só existe quando o bloco `roadmapSync.progress` está habilitado. A ordem é: `status`,
+roadmap, em qualquer projeto, e só existe quando há um bloco `roadmapSync.progress` habilitado: o do
+próprio projeto ou o do projeto que o usuário registrou como dono (`progress_report.py home --set`, com o sim
+dele; o `status` informa `source`, `operationsRoot` e `homeState`, e as demais operações rodam em
+`operationsRoot`). A ordem é: `status`,
 aprovação do bloco, `window`, `collect`, conferência dos números pelo usuário, arquivo de textos
 (guia `draftGuide`, roadmap e sprint da semana), prints em `shotsDir` com `captions.json` (ou, com
 `weekShots`, na pasta do resumo que `shots --to` resolve, com a issue de cada print e pelo menos um

@@ -5,16 +5,45 @@ sends the collected content to RoadS as a draft. Reviewing, editing, checking th
 to e-mail and marking as sent all happen in RoadS. Frontlights never e-mails anything and never
 marks anything as sent.
 
-This step runs only when `progress_report.py status` reports `ask` true: the project has an enabled
-`roadmapSync.progress` block in `.frontlights/config.json` (shape in `examples/config.json`).
+This step runs only when `progress_report.py status` reports `ask` true: an enabled
+`roadmapSync.progress` block in `.frontlights/config.json` (shape in `examples/config.json`), the
+project's own or the registered home's (next section).
 
 The collectors and the push command are the project's own commands, written in that config file.
 This step runs them, so the exact block must be approved by the user first (step 2). The helper is
-`python "${CLAUDE_PLUGIN_ROOT}/scripts/progress_report.py" <operation> --root <project>`. Every
+`python "${CLAUDE_PLUGIN_ROOT}/scripts/progress_report.py" <operation> --root <operationsRoot>`
+(`status` takes the project the session opened; the other operations take the `operationsRoot` it reports). Every
 operation prints one JSON object. Exit code 0 is success; 1 means the step failed and nothing is to
 be described as updated; 2 (push only) means the push command started and did not finish, so part
 of the draft may have arrived. Everything you say to the user is in their language (Portuguese);
 quote the helper's English messages only when useful.
+
+## Where the block lives
+
+The block belongs to one project (RoadS, say), but the question is asked in any project.
+`status --root <project>` uses the project's own block when it has one, enabled or not, and
+otherwise the registered home: the project the user registered once as the home of the block.
+It reports `source` (`project`, `home` or null), `operationsRoot` (the project every other
+operation runs in, because the collectors, the draft guide and the approval all live there),
+`home.root` and `homeState` (`own`, `registered`, `none` or `invalid`).
+
+- `ask` false with `homeState` `none` or `invalid`, or `source` `home` with the message that the
+  registered project no longer declares a block, after the stage 1 question of registering was answered
+  yes: find the candidates first, read-only: the folders next to the main worktree of the project the
+  session opened (the parent of `git rev-parse --path-format=absolute --git-common-dir`, never the linked
+  worktree) and any the user names, whose `.frontlights/config.json` has an enabled `roadmapSync.progress`
+  block. Check each candidate with `progress_report.py status --root <candidate>` (`source` `project`, `configured` true and `ask`
+  true); never open or print its config, which can hold test passwords. Ask with `AskUserQuestion` which folder is the home of the block: one option per
+  candidate, the folder shown in full, and "Agora não" (with no candidate, or more than two, offer
+  "Informar a pasta" and "Agora não", the free-text choice taking the folder). Say plainly that the
+  registration only says where the block is (the block there still needs its own approval, step 2) and
+  is kept in the user's home directory, never in a repository. The user's pick is the explicit yes:
+  only then run `progress_report.py home --set <project>`, then run `status` again and go on with the
+  progress question in the same session. `home` alone shows the registration; `home --clear` removes it,
+  also only after an explicit yes. A project the helper refuses (no enabled, valid block there) is
+  reported with its message.
+- A project with its own block never uses the registered home, even when its block is disabled; that is also
+  how a project opts out of the summary (keep its block with `"enabled": false`).
 
 ## Rules that hold throughout
 
@@ -78,14 +107,15 @@ quote the helper's English messages only when useful.
    write here (the file passed as `{draft}`) with the collected facts, the usage numbers, the local
    sign-in details and the screenshots, validates it and sends it. Write the texts file as one JSON
    file in a temporary place outside the repository (never inside the plugin).
-   - **Contract.** When `status` reported `draftGuide`, read that file (relative to the project root)
-     first and follow its field names and rules exactly: it describes the texts file, and this
+   - **Contract.** When `status` reported `draftGuide`, read that file (relative to the `operationsRoot`, where the block
+     lives) first and follow its field names and rules exactly: it describes the texts file, and this
      reference does not define them. When `draftGuide` is absent, ask with `AskUserQuestion` where the
      project documents the contract, and do not guess field names.
-   - **Sources.** Read the facts and usage files the block names (`factsFile`, `usageFile`), the local
-     issue records under `.frontlights/issues/`, and, when roadmap sync is configured, the roadmap file
-     and the sprint file of the current week. Find them with the read-only `python
-     "${CLAUDE_PLUGIN_ROOT}/scripts/roadmap_sync.py" status --root <project>` (no network; it reports
+   - **Sources.** Read the facts and usage files the block names (`factsFile`, `usageFile`, relative to the
+     `operationsRoot`), the local issue records under `.frontlights/issues/` of the project the session
+     opened and, when it is another one, of the `operationsRoot`, and, when roadmap sync is configured, the
+     roadmap file and the sprint file of the current week. Find them with the read-only `python
+     "${CLAUDE_PLUGIN_ROOT}/scripts/roadmap_sync.py" status --root <operationsRoot>` (no network; it reports
      the files). Read those two files, never write them here. They are the source of "Próximos passos"
      and of what is in development versus still in the backlog, so the next steps reflect the sprint of
      the week. When no sprint file for the current week exists, say so plainly to the user and write the

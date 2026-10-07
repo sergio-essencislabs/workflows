@@ -37,9 +37,11 @@ def process(**overrides):
     return item
 
 
-def with_browser(*processes, users=None, base_url=None):
+def with_browser(*processes, users=None, base_url=None, front_paths=('web/src/**',)):
     block = {'processes': list(processes) or [process()],
              'users': users if users is not None else [{'login': 'usuario@exemplo.test', 'password': PASSWORD}]}
+    if front_paths is not None:
+        block['frontPaths'] = list(front_paths)
     if base_url is not None:
         block['baseUrl'] = base_url
     return {'repository': None, 'browserTest': block}
@@ -225,6 +227,18 @@ class InspectRefusesInvalidBlocksTests(unittest.TestCase):
         self.assertIn('error', json.loads(run.stderr))
 
 
+class FrontPathsWarningTests(unittest.TestCase):
+    def test_a_browser_test_without_front_paths_warns_that_the_gate_will_guess(self):
+        result = inspect_file(with_browser(front_paths=None), ROOT)
+        self.assertEqual(len(result['warnings']), 1)
+        self.assertIn('browserTest.frontPaths', result['warnings'][0])
+        self.assertIn('browser-gate', result['warnings'][0])
+
+    def test_declaring_them_silences_it_and_no_browser_test_has_nothing_to_warn_about(self):
+        self.assertNotIn('warnings', inspect_file(with_browser(), ROOT))
+        self.assertNotIn('warnings', inspect_file({'repository': None}, ROOT))
+
+
 class AccountsOnlyBrowserTestTests(unittest.TestCase):
     """Um projeto que sobe o próprio ambiente declara só as contas (e a baseUrl) em browserTest.
 
@@ -234,6 +248,7 @@ class AccountsOnlyBrowserTestTests(unittest.TestCase):
 
     def accounts_only(self, **block):
         block.setdefault('users', [{'login': 'usuario@exemplo.test', 'password': PASSWORD}])
+        block.setdefault('frontPaths', ['web/src/**'])
         return {'repository': None, 'browserTest': block}
 
     def test_inspect_goes_on_and_warns_that_serve_has_nothing_to_start(self):

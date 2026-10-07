@@ -119,6 +119,24 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     start finds the merged work. The cleanup question names the files a worktree ignores, and the local-only integration
     worktree of the family goes only when it holds no commit of its own outside the delivered pull requests.
 
+18. Progress question in any project, and a start by plain words (`evals/progress-home.md`). With the project that declares
+    the `roadmapSync.progress` block registered as its home (`progress_report.py home --set`, after the user's yes), start
+    `/frontlights` in a project with no progress block and in one with no config at all: the "Atualizar também o Resumo
+    para a diretoria no RoadS?" question appears naming the project where the block lives, and every later operation runs
+    with `--root <operationsRoot>`. On a machine with nothing registered, a project with roadmap sync asks once "Registrar o projeto que guarda o bloco do
+    Resumo para a diretoria?" and the pick of a folder registers it. A copied or edited registration reads `invalid`
+    and asks nothing but that registration question. Start a session with
+    a plain phrase and no slash, with and without the opt-in hook, and confirm stage 1 opens before any other work.
+
+19. One watched run per batch (`evals/batch-watched-run.md`). On a disposable family with two slices that change a screen and
+    one API-only slice, confirm `browser-gate` is `pending` once the last screen slice closes its loop, before any
+    independent review of those slices, and that one "pronto para assistir?" covers both. "Ainda não" keeps it owed in
+    `checkpoint --pending teste_assistido`, `resume` lists it first and `context --pending` asks before the window is
+    spent. After "Aprovado", a test or document edit and a change to the API-only slice keep `answered`; a screen file
+    or the parent's API code gives `stale`. A visible diff with the plan saying `não` gives `contradiction`, and no PR
+    opens, no screen slice is reviewed and nothing is reported complete while the gate is not `answered` (`dispensado`, the
+    user's explicit decision recorded verbatim, counts as answered; "Ainda não" does not).
+
 Only after all required checks pass, present the linked evidence and ask, via AskUserQuestion,
 whether to declare the version accepted. Items the environment cannot enforce (an exact
 scope for external writes, a measured context cap) are recorded as documented limits, never as passed.

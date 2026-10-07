@@ -8,10 +8,24 @@ route that names the window to collect, and running the project's own collector 
 The plain-language text of the draft is written by the session; this helper never writes it and
 never e-mails or marks anything as sent.
 
+Where the block lives: the project's own `.frontlights/config.json` wins, enabled or not. A project
+without one uses the project the user registered once as the home of the block (`home --set`), so
+the question is asked in any project, whatever the folder the session opened. The registration is
+a record in the user's home directory, signed with the same key as the approvals, so a cloned
+repository can neither create nor forge it; it says only where the block is, and that block still
+needs its own approval. Every operation after `status` takes `--root <operationsRoot>` as `status`
+reports it, and also resolves the registered home by itself when it is handed a project with no block.
+
 Operations (each prints one JSON object on stdout):
   status    configuration, credential presence and approval of the block. No network, never fails
             for a missing configuration. `ask` is true only when the block is present and enabled:
-            that is the only case in which the session asks the user anything.
+            that is the only case in which the session asks the user anything. `source` says where
+            the block came from (`project`, `home` or null), `operationsRoot` is the project every
+            later operation runs in, and `homeState` is `own` (the project has its block),
+            `registered`, `none` or `invalid` (a record this machine did not sign).
+  home      `--set <project>` registers the project that declares the block (it must declare an
+            enabled, valid one); `--clear` removes the registration; with neither, shows it. Run
+            `--set` and `--clear` only after an explicit yes in the conversation.
   approve   record the user's approval of the EXACT block (endpoint URL, secret variable name, path,
             every collector and push command, timeouts and file names). Run only after an explicit
             yes in the conversation.
@@ -72,7 +86,7 @@ DEFAULT_TIMEOUT = 300
 MAX_TIMEOUT = 24 * 60 * 60
 PATH_PATTERN = r'[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*'
 DATE_PATTERN = r'\d{4}-\d{2}-\d{2}'
-OPERATIONS = ['status', 'approve', 'window', 'collect', 'shots', 'push']
+OPERATIONS = ['status', 'approve', 'window', 'collect', 'shots', 'push', 'home']
 MAX_SHOTS = 40
 MAX_SHOT_BYTES = 1024 * 1024
 MAX_CAPTIONS_BYTES = 256 * 1024
@@ -261,7 +275,12 @@ def read_user_key(create=False):
 
 
 def sign(key, block_hash):
-    return hmac.new(key.encode('utf-8'), block_hash.encode('utf-8'), hashlib.sha256).hexdigest()
+    return hmac.new(key.encode('utf-8'), block_hash.encode('utf-8', 'surrogatepass'), hashlib.sha256).hexdigest()
+
+
+def same_text(left, right):
+    """Constant-time comparison that accepts any text: a signature with a non-ASCII character is just different."""
+    return hmac.compare_digest(left.encode('utf-8', 'surrogatepass'), right.encode('utf-8', 'surrogatepass'))
 
 
 def approval_state(progress):
@@ -273,9 +292,9 @@ def approval_state(progress):
     except (OSError, ValueError, KeyError, TypeError):
         return 'unapproved'
     if not key or not isinstance(stored_hash, str) or not isinstance(signature, str) \
-            or not hmac.compare_digest(sign(key, stored_hash), signature):
+            or not same_text(sign(key, stored_hash), signature):
         return 'unapproved'
-    return 'approved' if hmac.compare_digest(stored_hash, progress.block_hash()) else 'changed'
+    return 'approved' if same_text(stored_hash, progress.block_hash()) else 'changed'
 
 
 def assert_approved(progress):
@@ -285,6 +304,91 @@ def assert_approved(progress):
              else 'The roadmapSync.progress block has never been approved')
             + f' ({state}); it runs commands and sends {progress.secret_env} to {progress.url}. Ask the user; '
               'only after an explicit yes run the approve operation.')
+
+
+# ---------------------------------------------------------------- home of the block
+
+def home_path():
+    return user_key_path().parent / 'progress-home.json'
+
+
+def sign_home(key, root):
+    return hmac.new(key.encode('utf-8'), ('progress-home\n' + root).encode('utf-8', 'surrogatepass'),
+                    hashlib.sha256).hexdigest()
+
+
+def own_block(root):
+    """Whether the project's own config declares a `roadmapSync.progress` block, enabled or not."""
+    config_file = rs.config_path(root)
+    if config_file is None:
+        return False
+    try:
+        config = rs.read_json(config_file)
+    except (OSError, ValueError):
+        return True     # a config of its own that cannot be read is the project's, broken: never swapped for the registry
+    sync = config.get('roadmapSync') if isinstance(config, dict) else None
+    return isinstance(sync, dict) and isinstance(sync.get('progress'), dict)
+
+
+def registered_home():
+    """The registered home of the block: ('registered', Path), ('none', None) or ('invalid', None) when the record
+    is unreadable or was not signed with this machine's key."""
+    try:
+        record = rs.read_json(home_path())
+        stored, signature = record['root'], record['signature']
+    except FileNotFoundError:
+        return 'none', None
+    except (OSError, ValueError, KeyError, TypeError):
+        return 'invalid', None
+    key = read_user_key()
+    if not key or not isinstance(stored, str) or not stored or not isinstance(signature, str) \
+            or not same_text(sign_home(key, stored), signature):
+        return 'invalid', None
+    return 'registered', Path(stored)
+
+
+def resolve_root(root):
+    """(project, source, homeState): the project whose block runs. The project's own block wins, enabled or not;
+    without one, the registered home. One hop only: the registered project's own block is the one used."""
+    if own_block(root):
+        return root, 'project', 'own'
+    state, home = registered_home()
+    if state == 'registered':
+        return str(home), 'home', state
+    return root, None, state
+
+
+def op_home(set_to=None, clear=False):
+    require(not (set_to and clear), 'use --set or --clear, not both')
+    path = home_path()
+    if set_to:
+        target = Path(set_to).resolve()
+        require(target.is_dir(), '--set must name an existing project folder')
+        progress = Progress(target)   # refuses a project with no enabled, valid block
+        stored = str(target)
+        rs.write_json_atomic({'schemaVersion': 1, 'root': stored, 'signature': sign_home(read_user_key(create=True), stored),
+                              'setAt': rs.now_iso()}, path)
+        return {'ok': True, 'exitCode': 0, 'homeState': 'registered', 'root': stored, 'name': progress.name,
+                'message': f'Registered {progress.name} as the home of the progress block; the block there still needs its own approval.'}
+    if clear:
+        existed = path.exists()
+        if existed:
+            path.unlink()
+        return {'ok': True, 'exitCode': 0, 'homeState': 'none',
+                'message': 'The registration was removed.' if existed else 'There was no registration.'}
+    state, home = registered_home()
+    result = {'ok': True, 'exitCode': 0, 'homeState': state}
+    if home is not None:
+        result['root'] = str(home)
+        try:
+            result['name'] = Progress(home).name
+            result['valid'] = True
+        except (Refusal, ValueError, OSError, TypeError) as error:
+            result.update(valid=False, reason=str(error))
+    result['message'] = {'registered': 'A project is registered as the home of the progress block.',
+                         'none': 'No project is registered as the home of the progress block.',
+                         'invalid': 'The registration is unreadable or was not signed on this machine; register it again.'}[state]
+    return result
 
 
 # ---------------------------------------------------------------- running commands
@@ -374,7 +478,7 @@ def parse_date(value, flag):
 
 # ---------------------------------------------------------------- operations
 
-def op_status(root):
+def project_status(root):
     result = {'configured': False, 'enabled': False, 'valid': False, 'ask': False, 'ready': False}
     try:
         config_file = rs.config_path(root)
@@ -382,7 +486,9 @@ def op_status(root):
         sync = config.get('roadmapSync') if isinstance(config, dict) else None
         block = sync.get('progress') if isinstance(sync, dict) else None
     except (OSError, ValueError):
-        block = None
+        result.update(ok=True, exitCode=0, message='The project config could not be read as JSON; fix it (while the project has '
+                                                  'a config of its own, the registered home is not used).')
+        return result
     if not isinstance(block, dict):
         result.update(ok=True, exitCode=0, message='This project has no roadmapSync.progress block; the progress step is not offered.')
         return result
@@ -409,6 +515,27 @@ def op_status(root):
     result['ready'] = secret == 'present' and approval == 'approved'
     result.update(ok=True, exitCode=0,
                   message='The progress step is ready.' if result['ready'] else 'The progress step is not ready; see the fields above.')
+    return result
+
+
+HOME_HINTS = {'none': 'No project is registered as its home either (progress_report.py home --set <project>, once, '
+                       "with the user's yes).",
+              'invalid': 'The registered home is not trusted: the record is unreadable or was not signed on this machine.'}
+
+
+def op_status(root):
+    target, source, home_state = resolve_root(root)
+    result = project_status(target)
+    result['source'] = source
+    result['homeState'] = home_state
+    if source is not None:
+        result['operationsRoot'] = str(Path(target).resolve())
+    if source == 'home':
+        result['home'] = {'root': str(Path(target).resolve())}
+        if not result['configured']:
+            result['message'] = 'The registered home of the progress block no longer declares one; register it again.'
+    elif source is None and home_state in HOME_HINTS:
+        result['hint'] = HOME_HINTS[home_state]
     return result
 
 
@@ -659,11 +786,16 @@ def op_push(root, draft, shots, captions, date_to=None, date_from=None, meeting=
     return {'ok': False, 'exitCode': 1, **result, 'message': f'The push command {why}; nothing was sent.'}
 
 
-def run(operation, root='.', transport=None, date_from=None, date_to=None, draft=None, shots=(), captions=(), meeting=None):
+def run(operation, root='.', transport=None, date_from=None, date_to=None, draft=None, shots=(), captions=(), meeting=None,
+        home_set=None, home_clear=False):
     transport = transport or rs.http_default
     try:
+        if operation not in ('status', 'home'):
+            root = resolve_root(root)[0]
         if operation == 'status':
             result = op_status(root)
+        elif operation == 'home':
+            result = op_home(home_set, home_clear)
         elif operation == 'approve':
             result = op_approve(root)
         elif operation == 'window':
@@ -690,7 +822,10 @@ def render(result):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('operation', choices=OPERATIONS)
-    parser.add_argument('--root', default='.', help='project whose .frontlights/config.json declares roadmapSync.progress')
+    parser.add_argument('--root', default='.', help='project the session is in: its own roadmapSync.progress block wins, '
+                                                     'else the registered home (the other operations take the operationsRoot that status reports)')
+    parser.add_argument('--set', dest='home_set', help='project that declares the block, to register as its home (home)')
+    parser.add_argument('--clear', dest='home_clear', action='store_true', help='remove the registered home (home)')
     parser.add_argument('--from', dest='date_from', help='first day to collect, YYYY-MM-DD (collect)')
     parser.add_argument('--to', dest='date_to', help='last day of the period, inclusive, YYYY-MM-DD (collect; shots and push with weekShots)')
     parser.add_argument('--meeting', help='the presentation Monday the route sent as weekMeeting, YYYY-MM-DD; only when the period is the window of the last window answer (shots, push)')
@@ -699,7 +834,8 @@ def main():
     parser.add_argument('--caption', action='append', default=[], help="caption of the matching --shot, in order (push)")
     args = parser.parse_args()
     result = run(args.operation, args.root, date_from=args.date_from, date_to=args.date_to, draft=args.draft,
-                 shots=args.shot, captions=args.caption, meeting=args.meeting)
+                 shots=args.shot, captions=args.caption, meeting=args.meeting, home_set=args.home_set,
+                 home_clear=args.home_clear)
     print(render(result))
     return int(result['exitCode'])
 

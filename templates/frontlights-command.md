@@ -1,5 +1,5 @@
 ---
-description: Inicia a sessão Frontlights
+description: "Inicia a sessão Frontlights (etapas 0 e 1: atualização, roadmap, resumo e fechamento). Use quando a pessoa citar 'frontlights' para iniciar, ativar, atuar, atacar ou retomar uma issue, com ou sem a barra: 'frontlights, ataque a issue <n>', 'ativar frontlights', 'vamos usar o frontlights'."
 ---
 
 Você vai conduzir esta sessão com as instruções da skill única do plugin
@@ -28,6 +28,10 @@ acima do `SKILL.md` encontrado.
 Se nenhum dos caminhos existir, não invente um caminho nem tente reconstruir o
 fluxo de memória: diga que o plugin frontlights não foi encontrado, mostre onde
 procurou e peça que o usuário instale o plugin ou informe o diretório.
+
+Quando este comando foi acionado por uma frase comum, sem a barra, o pedido da pessoa é a
+frase dela, e "frontlights" nela é este plugin, não uma sessão ou um projeto de mesmo nome (o
+repositório do próprio plugin), a não ser que ela peça claramente para falar com essa sessão.
 
 O pedido do usuário, se houver, segue abaixo. Trate-o como o ponto de partida e a
 autoridade sobre o escopo:

@@ -623,7 +623,18 @@ def drift(snapshot, current):
             if snapshot.get(key) != current.get(key)]
 
 
-def checkpoint(root, issue, handoff, next_step):
+PENDING_NAME = re.compile(r'[a-z][a-z0-9_]{0,39}')
+
+
+def pending_names(pending):
+    """Open obligations a session carries over (`teste_assistido`, say): short lowercase names, no repeats."""
+    names = list(pending or [])
+    require(all(isinstance(name, str) and PENDING_NAME.fullmatch(name) for name in names),
+            'pending names are short lowercase words, for example teste_assistido')
+    return sorted(set(names))
+
+
+def checkpoint(root, issue, handoff, next_step, pending=()):
     root, handoff = Path(root).resolve(strict=True), Path(handoff).resolve()
     require(handoff.is_file(), 'durable handoff file required')
     require(number(issue.get('number')) and nonempty(issue.get('body')) and
@@ -633,7 +644,7 @@ def checkpoint(root, issue, handoff, next_step):
     return {'version': 1, 'created_at': dt.datetime.now(dt.timezone.utc).isoformat(),
             'root': str(root), 'issue': issue, 'git': git_evidence(root),
             'handoff_sha256': hashlib.sha256(handoff.read_bytes()).hexdigest(),
-            'next_step': next_step}
+            'next_step': next_step, 'pending': pending_names(pending)}
 
 
 def resume(root, saved, current_issue, handoff):
@@ -650,7 +661,8 @@ def resume(root, saved, current_issue, handoff):
     handoff_changed = hashlib.sha256(Path(handoff).read_bytes()).hexdigest() != saved['handoff_sha256']
     return {'state': 'reconcile' if changed or git_changed or handoff_changed else 'unchanged',
             'issue_drift': changed, 'git_drift': git_changed, 'handoff_changed': handoff_changed,
-            'next_step': saved['next_step'], 'required': 'Read current GitHub issue, handoff and diff before continuing.'}
+            'pending': pending_names(saved.get('pending')), 'next_step': saved['next_step'],
+            'required': 'Read current GitHub issue, handoff and diff before continuing.'}
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -718,6 +730,13 @@ def validate_test_blocks(config, path):
                 warnings.append('browserTest.processes não está declarado: o serve não tem o que subir, então o ambiente precisa '
                                 'estar no ar antes do teste (só as contas e a baseUrl foram conferidas).')
             checks.require_local_declarations(path)
+            if browser.get('frontPaths') is not None:
+                import browser_gate
+                browser_gate.validate_front_paths(browser['frontPaths'])
+            else:
+                warnings.append('browserTest.frontPaths não está declarado: o browser-gate estima os arquivos visíveis pelo nome '
+                                '(telas, estilos, imagens de assets); declare os caminhos de tela do projeto para que nenhuma '
+                                'mudança visível passe em silêncio.')
         if block is not None:
             if not isinstance(block, dict):
                 raise checks.Refused('checks precisa ser um objeto com regression, integration ou smoke.')
@@ -891,6 +910,7 @@ def main():
     p = sub.add_parser('context')
     p.add_argument('--used', type=int)
     p.add_argument('--reserve', type=int, required=True)
+    p.add_argument('--pending', action='append', default=[], help='open obligation, e.g. teste_assistido; repeatable')
     p = sub.add_parser('inspect')
     p.add_argument('--config', required=True)
     p.add_argument('--root', default='.')
@@ -899,6 +919,14 @@ def main():
     p = sub.add_parser('review-gate')
     p.add_argument('--root', default='.')
     p.add_argument('--review', required=True, help='saved evidence output taken when the independent review was bound')
+    p = sub.add_parser('browser-gate')
+    p.add_argument('--root', action='append', required=True, help='worktree of a slice of the batch; repeatable')
+    p.add_argument('--base', required=True, help='approved base of the batch (the branch its PRs target), the same for every --root')
+    p.add_argument('--config', help='.frontlights/config.json (browserTest and browserTest.frontPaths)')
+    p.add_argument('--toca', choices=['sim', 'nao', 'não', 'ausente'], help="the plan's `Toca o frontend:`")
+    p.add_argument('--record', help='the batch result.json, which may not exist yet')
+    p.add_argument('--stacked', action='append', default=[], metavar='BRANCH=TARGET',
+                   help='a stacked slice and the branch its PR targets (its base in the stacking authorization); repeatable')
     sub.add_parser('update-check')
     for name in ('checkpoint', 'resume'):
         p = sub.add_parser(name)
@@ -907,6 +935,7 @@ def main():
         p.add_argument('--handoff', required=True)
         if name == 'checkpoint':
             p.add_argument('--next-step', required=True)
+            p.add_argument('--pending', action='append', default=[], help='open obligation, e.g. teste_assistido; repeatable')
         else:
             p.add_argument('--checkpoint', required=True)
     p = sub.add_parser('drift')
@@ -928,6 +957,11 @@ def main():
             result = authorize(load(args.charter), load(args.operation))
         elif args.command == 'context':
             result = {'action': context_action(args.used, args.reserve)}
+            if args.pending:
+                result['pending'] = pending_names(args.pending)
+                if 'teste_assistido' in result['pending'] and result['action'] in ('handoff', 'stop'):
+                    # The watched run must not be the last thing a window pays for: ask it before spending more.
+                    result['ask_before_continuing'] = ['teste_assistido']
         elif args.command == 'inspect':
             result = inspect(load(args.config), args.root, args.config)
         elif args.command == 'evidence':
@@ -935,10 +969,13 @@ def main():
         elif args.command == 'review-gate':
             result = review_gate(load(args.review), git_evidence(args.root))
             code = 0 if result['status'] == 'current' else 2
+        elif args.command == 'browser-gate':
+            import browser_gate
+            result, code = browser_gate.run_cli(args.root, args.base, args.config, args.toca, args.record, args.stacked)
         elif args.command == 'update-check':
             result = update_check()
         elif args.command == 'checkpoint':
-            result = checkpoint(args.root, load(args.issue), args.handoff, args.next_step)
+            result = checkpoint(args.root, load(args.issue), args.handoff, args.next_step, args.pending)
         elif args.command == 'resume':
             result = resume(args.root, load(args.checkpoint), load(args.issue), args.handoff)
         else:

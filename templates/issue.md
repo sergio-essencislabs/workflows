@@ -59,6 +59,10 @@ Uma sub-issue copia só as linhas que ela cobre.
 Contas e processos vêm de `browserTest` no `.frontlights/config.json` do projeto,
 nunca deste texto: aqui não entram login, senha nem URL.
 
+`Toca o frontend:` é uma declaração, e o `browser-gate` a confere com o diff: uma mudança visível
+com `não` vira pergunta. O teste assistido é um por lote de trabalho, antes da revisão, não um por
+issue nem por branch.
+
 ## Dependencies
 
 Depends on: none

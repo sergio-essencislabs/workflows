@@ -1,5 +1,10 @@
 # Autorização e limites de aplicação das permissões
 
+O plugin não instala hooks, inclusive o de lembrete: o `templates/frontlights-prompt-hook.py` é um
+modelo que o usuário copia para o `~/.claude/hooks/` e registra no próprio `settings.json`; ele só
+injeta um texto no turno, lê o prompt e o conteúdo do transcrito (só para procurar duas marcas de que o
+Frontlights já foi aberto) e sai sempre com 0, sem bloquear.
+
 Este plugin **não** instala hooks de permissão, altera configurações globais ou
 ativa modos de contorno das proteções. Os controles existentes do Claude e do
 GuardianS são preservados. As skills orientam o comportamento; não transformam
@@ -177,6 +182,12 @@ O resumo para a diretoria (`scripts/progress_report.py`) executa comandos lidos 
   comando, com os prazos). Qualquer mudança nele volta o estado para `changed`, e nada roda até
   nova aprovação. O registro da aprovação é assinado com uma chave que fica só no diretório do
   usuário; um registro versionado num repositório não vale em outra máquina.
+- **Registro do projeto dono do bloco:** `progress_report.py home --set <projeto>` grava, só depois do sim do
+  usuário, o caminho do projeto que declara o bloco, num arquivo do diretório pessoal assinado com a mesma
+  chave da aprovação; um registro copiado, editado ou sem assinatura vale `invalid` e não pergunta nada.
+  O registro só diz onde o bloco está: o bloco continua exigindo a própria aprovação, o projeto com bloco
+  próprio nunca usa o registro, e um arquivo de configuração de repositório não consegue apontar para
+  outra pasta (o ponteiro só existe no diretório pessoal). As demais operações rodam na raiz do registro.
 - **Comandos sem shell:** cada comando é uma lista de argumentos executada diretamente, a partir da
   raiz do projeto, com prazo; `{from}`, `{to}` e `{draft}` entram como argumentos inteiros.
 - **Segredo:** só o comando de envio o recebe, pela variável de ambiente configurada; os coletores
@@ -257,11 +268,15 @@ executam comandos lidos do `.frontlights/config.json` (blocos `browserTest` e `c
   resposta do usuário à pergunta de fechamento ("Aprovado", "Pode prosseguir", "Assistir de novo"
   ou "Precisa de alteração"): o Frontlights nunca grava `aprovacao: "aprovado"` por conta própria,
   nem trata o silêncio ou o fim da janela como resposta, e "Pode prosseguir" não vira aprovação no
-  relatório.
+  relatório. O teste é um por lote, antes da revisão, e o `browser-gate` confere no diff (não no texto do
+  plano) se algo visível mudou e se a decisão registrada ainda vale; ele é uma regra da skill conferida por
+  um script, não uma barreira: um modelo que não o chame não é impedido por ele. A dispensa do teste (`dispensado`) é
+  decisão explícita do usuário, gravada com a resposta literal; sem ela, nenhuma revisão de fatia que muda a
+  tela, nenhum relato de "completa" e nenhuma PR seguem enquanto o teste estiver devido.
 - **Branches empilhadas:** a autorização que as permite nomeia as operações que elas exigem
   (criar branch a partir de outra branch que não a base, enviá-la, abrir PR rascunho com a
   branch da dependência como base, redirecionar esse PR, trazer uma base por `git merge` para a branch da própria issue e juntar as branches
-verificadas de uma família numa branch de integração local, que nunca é enviada). Esses são os únicos merges permitidos. O utilitário `authorize`
+verificadas de uma família ou de um lote numa branch de integração local, que nunca é enviada). Esses são os únicos merges permitidos. O utilitário `authorize`
   continua só conferindo `edit`, `test` e `checkpoint` e rejeitando merge, e essas operações
   externas seguem as permissões nativas e a aprovação humana. O merge de PR, a escrita na
   branch base, o deploy e a publicação de versões continuam fora de qualquer autorização comum.

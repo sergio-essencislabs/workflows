@@ -67,6 +67,40 @@ parar de usá-lo, encerre a sessão e inicie outra sem `--plugin-dir`. Preserve 
 pontos de retomada e as cópias de trabalho isoladas do Git (worktrees). Nenhuma
 configuração ou rotina automática de interceptação (hook) é instalada.
 
+#### Início por linguagem natural
+
+Uma frase comum ("frontlights, ataque a issue <n>", "ativar frontlights") pode abrir o mesmo estágio 1,
+se o modelo decidir invocar o comando. A `description` do modelo de comando lista esses gatilhos,
+então recopie `templates/frontlights-command.md` depois de atualizar o plugin. Isso reduz a falha,
+mas não a elimina: já houve a frase lida como pedido à sessão vizinha do próprio plugin, com o
+estágio 1 só abrindo quando a pessoa escreveu de novo.
+
+Para um lembrete a cada prompt há um hook **opcional**, que o plugin não instala: o modelo
+`templates/frontlights-prompt-hook.py` (evento `UserPromptSubmit`). Ele só injeta um lembrete de abrir o
+`/frontlights` quando o prompt cita o plugin; não decide nada pelo modelo, nunca bloqueia (sai sempre com
+0) e fica calado se o prompt já é o comando, se a palavra está num caminho ou nome de arquivo, se a
+sessão está aberta na pasta do próprio plugin ou se o transcrito já mostra o Frontlights aberto. Para ligar:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME/.claude/hooks" | Out-Null
+Copy-Item templates/frontlights-prompt-hook.py "$HOME/.claude/hooks/frontlights-prompt-hook.py"
+```
+
+e acrescente ao `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "python \"$HOME/.claude/hooks/frontlights-prompt-hook.py\"" } ] }
+    ]
+  }
+}
+```
+
+Ajuste o caminho se o seu shell não expandir `$HOME`. Os testes cobrem o script; a execução dele pelo
+Claude Code a cada prompt ainda não foi homologada numa sessão real.
+
 ## Acompanhar pelo celular (máquina fixa no app)
 
 O `/frontlights` não verifica o Remote Control ao começar e não faz pergunta
@@ -342,10 +376,17 @@ chaves extras ali, remova-as.
 
 ### Resumo para a diretoria (opcional)
 
-Se o projeto tiver o bloco `roadmapSync.progress` habilitado, logo depois da pergunta do roadmap
-(inclusive quando não havia nada pendente, ou quando você respondeu "não") o `/frontlights`
-pergunta: "Atualizar também o Resumo para a diretoria no RoadS?". Sem o bloco, nada muda e a
-pergunta não aparece. Com a resposta "sim", o Frontlights:
+O bloco `roadmapSync.progress` mora em um projeto só (por exemplo, o RoadS), e a pergunta aparece
+em qualquer projeto: logo depois da pergunta do roadmap (inclusive quando não havia nada pendente, ou
+quando você respondeu "não") o `/frontlights` pergunta: "Atualizar também o Resumo para a diretoria no
+RoadS?". O projeto que tem o próprio bloco usa o dele (mesmo desabilitado); os outros usam o projeto que
+você registrou uma vez como dono do bloco, com `python scripts/progress_report.py home --set <projeto>`,
+só depois do seu sim. O registro fica no diretório pessoal, assinado com a chave do usuário, nunca num
+repositório, e diz só onde o bloco está: o bloco lá continua precisando da própria aprovação. O
+`status` informa `source`, `operationsRoot` (o projeto em que as demais operações rodam), `home` e
+`homeState`; sem bloco e sem registro a pergunta não aparece e, se o projeto usa a sincronização do
+roadmap, o Frontlights pergunta uma vez por sessão se você quer registrar o projeto dono do bloco
+(e oferece como opção cada pasta vizinha que tenha um). Com a resposta "sim", o Frontlights:
 
 1. pergunta ao RoadS qual período coletar;
 2. roda os coletores que o próprio projeto configurou e mostra a tabela de conferência dos números;
@@ -414,12 +455,12 @@ Como esse bloco faz o plugin executar comandos lidos de um arquivo de configura�
 nenhuma chamada é feita antes de você aprovar o bloco exato (endereço, variável, rota e cada
 comando). Qualquer mudança nele pede nova aprovação. Os coletores não recebem o segredo; só o
 comando de envio o recebe, pela variável de ambiente. Este repositório não traz coletor nenhum. O
-utilitário é `python scripts/progress_report.py status|approve|window|collect|shots|push --root <projeto>`.
+utilitário é `python scripts/progress_report.py status|approve|window|collect|shots|push --root <projeto>` (e `home --set|--clear`, sem `--root`, que registra o projeto dono do bloco).
 
 ### Teste de navegador e verificações (opcional)
 
-No fim de uma issue cujo plano liga o teste de navegador, o Frontlights sobe o ambiente da
-própria branch, roda as verificações e entra no app com as contas de teste. Os blocos
+Quando algo que a sessão entrega muda o que a pessoa vê (o plano liga o teste de navegador, ou o
+`browser-gate` acha a mudança visível no diff), o Frontlights sobe o ambiente da branch entregue, roda as verificações e entra no app com as contas de teste. Os blocos
 `browserTest` e `checks` ficam no `.frontlights/config.json` do projeto (veja
 `examples/config.json`):
 
@@ -449,10 +490,10 @@ são mascarados em toda saída e registro, e um valor com menos de 4 caracteres 
 navegador ou rede, o teste é relatado como não executado e nunca conta como aprovado. O app de
 exemplo em `examples/browser-app/` mostra o fluxo de ponta a ponta.
 
-Antes de abrir o navegador, o Frontlights pergunta (uma vez por família de issues) se você está
+Antes de abrir o navegador, o Frontlights pergunta (uma vez por lote de trabalho) se você está
 pronto para assistir. Com o sim, o teste roda em um Chrome de janela visível, nunca oculta e com
 perfil descartável, em duas passagens do mesmo cenário, com a mesma conta: primeiro a base (faixa
-na página "ANTES: main") e depois a branch da issue ("DEPOIS: branch X"). Cada caso roda duas
+na página "ANTES: main") e depois a branch entregue ("DEPOIS: branch X"). Cada caso roda duas
 vezes, os avisos ficam na tela o tempo necessário para serem lidos e a janela permanece aberta
 cerca de 45 s no fim. Prefere-se o back real e, quando o assunto é permissão, um perfil restrito
 real: o usuário de teste muda de perfil pelo endpoint do próprio produto, depois de você confirmar
@@ -469,6 +510,30 @@ para o ajuste, sem seguir para as próximas etapas) ou "Pode prosseguir" (segue 
 relatório diz que foi assistido, não aprovado). Ele nunca escolhe por você nem trata o silêncio como
 resposta. O registro traz `rodadas` e `aprovacao`. Se um caso da DEPOIS falhar, a pergunta de falha
 vem antes e substitui esta.
+
+**Um teste por lote, antes da revisão.** O teste assistido é um só para tudo o que a sessão entrega
+junto (a issue e as sub-issues, e qualquer outra issue autorizada na mesma execução), nunca um por
+branch ou worktree. A pergunta sai quando a última fatia que muda a tela fecha o ciclo de testes,
+antes da revisão independente de qualquer uma delas: as fatias só de API ou só de testes não seguram a
+pergunta, e um `pending` antes disso é esperado e não pergunta nada. O DEPOIS roda no estado entregue das
+fatias que já fecharam o ciclo: a própria branch, quando o lote tem uma só, ou uma worktree de integração
+local, nunca enviada, que junta todas; a integração da família reaproveita essa worktree e não repete o teste.
+
+O `python scripts/frontlights.py browser-gate --config <config> --base <base> --root <worktree> ...
+[--stacked <branch>=<alvo> ...] --toca <sim|nao|ausente> --record <result.json>` lê o diff, não o texto do plano, e devolve
+`not_needed`, `answered`, `pending`, `stale`, `contradiction` ou `unconfigured` (código 0 para os dois
+primeiros, 2 para os demais). Os caminhos visíveis vêm de `browserTest.frontPaths` (globs a partir da raiz do repositório: `*` não
+atravessa pasta, então `**/*.html` pega todas as páginas; testes e documentos nunca contam); sem ele, a
+estimativa sai do nome do arquivo e o `inspect` avisa. Cada fatia empilhada entra com `--stacked
+<sua branch>=<a branch que a PR dela mira>`, para só o trabalho dela contar. O `result.json` do lote fica na
+pasta da issue líder e traz `situacao` (`pendente`, `ainda-nao`, `aprovado`, `prosseguir`,
+`sem-assistir`, `dispensado` ou `alteracao`), `lote` (`issues` e `roots`) e `pergunta`; `dispensado` é a sua
+decisão explícita de não rodar o teste, gravada com a resposta literal. Depois de uma decisão, só
+código que não é teste nem documento volta a abrir a pergunta (`stale`). "Ainda não" mantém a pendência:
+ela segue em `checkpoint --pending teste_assistido` e `context --pending teste_assistido`, o `resume` a
+lista primeiro e uma janela perto do limite pergunta antes de gastar mais. Revisão de fatia que muda a tela, "completa" e PR só
+seguem com `answered` (inclusive `dispensado`). É uma regra da skill conferida por um script,
+não uma barreira técnica: nada impede um modelo de deixar de chamá-lo.
 
 Limites: só o Windows foi exercitado (POSIX não). O `inspect` confere nesses blocos as regras do
 `serve` e do `checks` que dependem só do config: formato dos blocos, shell embutido nos argv de
