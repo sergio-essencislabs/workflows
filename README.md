@@ -261,8 +261,9 @@ Toda sessão `/frontlights` começa perguntando se a sprint e o roadmap devem se
 de acordo com o RoadS. Com a resposta "sim", o Frontlights:
 
 1. pede ao RoadS que sincronize o quadro (o mesmo "Sincronizar" do botão) e informa quantos
-   itens entraram e saíram. Se o RoadS sincronizou há menos de 30 s, só avisa. Se a
-   sincronização falhar, pergunta se você quer seguir com o último estado;
+   itens entraram e saíram (e quantos foram renomeados, quando o RoadS informa). Se o RoadS
+   sincronizou há menos de 30 s, só avisa. Se a sincronização falhar, pergunta se você quer
+   seguir com o último estado;
 2. lê o estado do roadmap (sprints, datas, itens e limite) e busca as mudanças que um Scrum
    Master fez no Roadmap do RoadS. Sem esse estado, a sincronização para com um erro claro: não há
    alternativa automática. Se a cópia do quadro no RoadS tiver mais de 24 h, ou nunca tiver sido
@@ -292,6 +293,13 @@ de acordo com o RoadS. Com a resposta "sim", o Frontlights:
 Quem decide o limite de itens por sprint é o RoadS: o Frontlights escreve na sprint só os itens
 dentro do limite e avisa, sem perguntar, quais ficaram de fora; as mudanças desses itens vão só
 para o roadmap.
+
+Quando uma issue é renomeada no GitHub, o RoadS faz o item acompanhar o título e enfileira um `modify` só com o
+título novo. O Frontlights acha a entrada pelo número da issue que a mudança traz (o `#N` ou o link que os arquivos
+citam), e não pelo título, que nos arquivos pode ser o antigo: troca o título antigo pelo novo no `ROADMAP.md` e em
+cada `SPRINT_*.md` do plano, sem tocar no resto, e diz quantos `modify` de título o plano tem. Sem número (um item
+ainda sem issue, por exemplo), acha pelo título e pela lane. Se um `modify` ou `move_lane` não achar entrada no roadmap,
+ou se achar mais de uma, ele pergunta em vez de abrir uma segunda.
 
 Quem escreve os arquivos é sempre esta máquina: o RoadS não alcança a pasta onde eles ficam.
 

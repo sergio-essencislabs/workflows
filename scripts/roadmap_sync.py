@@ -803,6 +803,8 @@ def board_result(text):
         synced = timestamp(answer.get('syncedAt'), 'sync-board syncedAt') if isinstance(answer.get('syncedAt'), str) else None
         result = {'ok': True, 'ran': answer.get('ran') is True, 'syncedAt': synced[0] if synced else None,
                   'added': count('added'), 'removed': count('removed'), 'issuesCreated': count('issuesCreated')}
+        if 'retitled' in roadmap:   # optional and additive: items whose title followed a renamed issue on GitHub
+            result['retitled'] = count('retitled')
         if roadmap.get('error'):
             result['error'] = safe_string(roadmap['error'], 'sync-board roadmap.error', FIELD_LIMITS['error'])
         return result

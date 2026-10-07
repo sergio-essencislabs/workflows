@@ -69,6 +69,11 @@ o botão e com a rotina diária: uma segunda chamada dentro dele responde `ran: 
   "roadmap": { "added": 2, "removed": 1, "issuesCreated": 0 } }
 ```
 
+Campos opcionais que o RoadS acrescentou em 06/10/2026 (aditivos, `schemaVersion` continua 1) no resumo `roadmap`:
+`retitled` (inteiro: itens cujo título acompanhou uma issue renomeada no GitHub, cada um como um `modify` na fila) e
+`sprint` (contagens: `pulled`, `released`, `written`, `wouldWrite`, `failed`, `stuck` e, opcionalmente, `error`). O plugin
+relata `retitled` e ignora `sprint`.
+
 Falha de negócio, com HTTP 200: `{ "schemaVersion": 1, "ok": false, "reason": "no_access", "message": "texto curto" }`. A falha do
 `sync-board` nunca interrompe a busca: o plugin a relata e pergunta se segue com o último estado.
 
@@ -164,9 +169,19 @@ Informado pelo RoadS a partir do código dele; vale como contrato do lado de que
   (backlog), onde o item sai com uma mudança `remove`.
 - **Painel e Roadmap usam o mesmo snapshot.** Os contadores do Dashboard são calculados no servidor a partir do
   Roadmap guardado cruzado com o **último** snapshot, nunca do GitHub ao vivo: "Development" (itens da sprint atual em
-  desenvolvimento), "Concluídas na sprint X de Y" (Y são os itens da sprint atual agora e X os que estão em Done; um
-  item removido pela rotação sai das duas contas), "Bloqueios" (a coluna Blocker do Project inteiro), "Esta sprint",
-  "Em paralelo" (em desenvolvimento fora da sprint atual) e "Próxima sprint".
+  desenvolvimento), "Concluídas" (X de Y: Y são os itens da sprint atual agora e X os que estão em Done; um item
+  removido pela rotação sai das duas contas), "Bloqueios" (a coluna Blocker do Project inteiro) e "Sprint". Em
+  06/10/2026 o RoadS tirou do Dashboard os blocos "Em paralelo" e "Próxima semana" e o card "Resumo" (o Resumo
+  continua na aba Resumo), renomeou "Concluídas na sprint" e "Esta sprint" e acrescentou o bloco "Slices" (as
+  sub-issues das issues da sprint atual, lidas do GitHub na mesma sincronização). Nada disso é rota do contrato.
+- **A sprint segue o Status do Project.** Em 06/10/2026 o RoadS passou a seguir o Project nos dois sentidos: "está na
+  sprint atual" é "Status Development" (a próxima e a terceira sprint existem só no RoadS), o RoadS só age quando os
+  dois lados discordam (vale quem mexeu por último; empate vale o RoadS) e a escrita dele no Project nasce desligada.
+  A fila de mudanças (`fetch`, `apply` e `ack`) não escreve no Project, e o plugin só escreve nele em passos próprios
+  que o usuário aprova, como o `gaps` e o fechamento: um `move_lane` com `payload.origin` `project` (o conjunto de valores,
+  `app`, `rotation`, `label` e `project`, é aberto e informativo) vai para os arquivos como qualquer outro e nunca volta
+  ao Project. Um `add` pode trazer `lane_id` `atual`, e um `modify` pode só trocar o título: os arquivos ainda têm o
+  título antigo, então a entrada se acha pelo número da issue e não pelo título.
 - **Quando aparece.** Ao apertar Sincronizar, na hora. Uma sincronização feita até 30 s depois de outra (de qualquer
   origem: botão, rotina diária, `sync-board` do plugin) não consulta o GitHub e devolve o snapshot anterior. Sem
   sincronizar, recarregar a página só relê o que está guardado.

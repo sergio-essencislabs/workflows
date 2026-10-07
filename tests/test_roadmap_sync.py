@@ -478,6 +478,12 @@ class SyncBoardTests(RoadmapSyncTestCase):
         self.assertFalse(result['syncBoardFailed'])
         self.assertTrue(transport.calls[0]['url'].endswith('/sync-board'))
 
+    def test_the_number_of_retitled_items_reaches_the_report_only_when_the_service_sends_it(self):
+        board = {'ok': True, 'ran': True, 'syncedAt': '2026-09-28T11:59:00Z',
+                 'roadmap': {'added': 0, 'removed': 0, 'issuesCreated': 0, 'retitled': 19}}
+        result, _ = self.approve_and_fetch(board=board)
+        self.assertEqual(result['syncBoard']['retitled'], 19)
+
     def test_cooldown_only_informs(self):
         board = {'ok': True, 'ran': False, 'syncedAt': '2026-09-28T11:50:00Z',
                  'roadmap': {'added': 0, 'removed': 0, 'issuesCreated': 0}}

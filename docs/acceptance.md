@@ -14,7 +14,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 
 ## Verificação automatizada
 
-- `python -m unittest discover -s tests -v`: **1265 testes em 23 módulos, nenhum falhando** (5 pulados por dependências ausentes no ambiente, como o Playwright; contagem da 0.22.0).
+- `python -m unittest discover -s tests -v`: **1282 testes em 24 módulos, nenhum falhando** (5 pulados por dependências ausentes no ambiente, como o Playwright; contagem da 0.22.1).
   Alguns módulos (`test_serve_ports`, `test_checks_integration`) levam vários minutos; rode por módulo.
 - `python -m compileall -q scripts tests`: passou (não há verificador de tipos externo).
 - `claude plugin validate .`: passou; `claude --plugin-dir . plugin details frontlights` carrega uma skill,

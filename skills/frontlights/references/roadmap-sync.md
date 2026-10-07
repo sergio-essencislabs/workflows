@@ -71,6 +71,27 @@ their language; quote the helper's English messages only when useful.
   an entry in the sprint it joined); `remove` (`itemMissing` true, identified by
   `itemId` and `item.title`) records the removal in the roadmap. A change whose `knownAction` is
   false is described to the user and handled only as they direct.
+- Find the existing entry of a `modify`, `move_lane`, `remove` or `completed` (when the file already has one) by the
+  issue number the change carries (the `#N` of `item.githubIssueUrl`, or its URL, as the files cite it), never by title
+  alone, because the title in the files may be older than the one in the change; when the files cite the same number for
+  more than one repository or product, tell them apart by the repository in the URL (and `item.produto`), and ask if
+  that does not settle it. A change without an issue number (a `remove` whose payload has no `github_issue_url`, an
+  item with no issue yet) or the `modify` that only adds the link (the files cannot cite it yet) is found by title and
+  by the lane the item was in (`payload.from_lane_id` for a `move_lane`, `payload.lane_id` for a `remove`, `item.lane`
+  otherwise; when the lane is missing, by title alone, asking if more than one entry matches). Look in the roadmap and,
+  for a `modify` and a `completed`, in the file of each sprint in `change.sprintTargets`. A missing entry is expected,
+  and handled by the rules above, for a `move_lane` into a sprint (its entry is written in the sprint it joined), for a
+  sprint file that does not exist yet, for a `remove` (recorded in the roadmap even for an item never written) and for a
+  `completed` (its line goes into a new entry); a `modify` with no entry in a sprint file that exists leaves that file as
+  it is and says so. Ask with `AskUserQuestion` when a `modify` or `move_lane` finds no entry in the roadmap. Ask also
+  when any of the four finds more than one. Ask once, listing every such change and proposing the closest candidate in
+  the item's lane, and never open a second entry. A row of a table and the section of the same item are one entry; a
+  mention inside another entry is not. A
+  `modify` that only changes `item.title` (its `payload` says the title follows the issue on GitHub) replaces the old
+  title with the new one in the entry, in the roadmap and in the file of every sprint in `change.sprintTargets`, and
+  touches nothing else (the change's marker aside); the old title is not in the change, so read it from the entry found
+  by number. Tell the user how many title-only `modify` changes the plan holds (it may differ from
+  `syncBoard.retitled`, which counts only what this run's board sync renamed).
 - `completed` (`synthetic` true) is not a change RoadS queued: roadmap-state shows the item as done
   in a sprint within the limit, and that flag is the only evidence. Write one short line of prose,
   in the roadmap and in the file of every sprint in `change.sprintTargets`, saying the item is
@@ -114,7 +135,8 @@ their language; quote the helper's English messages only when useful.
 3. **Fetch.** Run `fetch`. It first syncs the RoadS board, then reads `roadmap-state` and the
    pending changes. Before anything else, report the board sync from `syncBoard`:
    - `ok` and `ran` true: say "`added` entraram, `removed` saíram" (and `issuesCreated` issues
-     criadas when above zero); when `syncBoard.error` is present, say it too.
+     criadas when above zero, and `retitled` itens renomeados when `retitled` is present and above zero); when
+     `syncBoard.error` is present, say it too.
    - `ran` false: only inform that RoadS synced moments ago (`syncedAt`) and nothing new was pulled.
    - `syncBoardFailed` true (`reason`, `message`): tell the user the board sync failed and ask with
      `AskUserQuestion` whether to go on with the last state RoadS holds. On no, end the route:
@@ -137,8 +159,8 @@ their language; quote the helper's English messages only when useful.
    must be checked for duplicates.
 4. **Draft.** Summarise the plan for the user (how many changes, of which kind, how many of them
    are new completions read from the state rather than queued by RoadS, which sprint files they
-   touch, which sprint files are new, and which items are `outOfLimit`), then write every pending
-   change into the staged copies under the content rules, each with its marker.
+   touch, which sprint files are new, how many are title-only renames, and which items are `outOfLimit`), then write
+   every pending change into the staged copies under the content rules, each with its marker.
 5. **Approve the diff.** Show the full diff of each staged copy against its target in the
    conversation (for example `git diff --no-index -- <target> <staged>`; for a target with `exists`
    false, show the whole staged copy as a new file and say which folder will be created), send it as
