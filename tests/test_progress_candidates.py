@@ -255,6 +255,13 @@ class TextTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
 
+    def test_the_family_rule_leaves_the_count_to_the_email_and_reports_a_cut_read(self):
+        text = self.flat('skills', 'frontlights', 'references', 'progress-report.md')
+        for phrase in ('do not repeat the count in the text', '`slices.closed`', '`slices.blocked`', 'Product scope'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+        self.assertIn('ignored.cut', self.flat('docs', 'roads-contract.md'))
+
     def test_the_watched_test_keeps_clean_prints_for_the_summary(self):
         text = self.flat('skills', 'frontlights', 'references', 'browser-testing.md')
         for phrase in ('Prints kept for the progress summary', 'candidates.json', 'DEPOIS only, never ANTES', 'visibleFiles',

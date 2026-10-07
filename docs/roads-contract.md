@@ -201,11 +201,14 @@ página não se aplica a eles, mas o que o plugin faz com cada um está na refer
 - `scope` (texto): o produto do resumo. Entregas, dificuldades e próximos passos saem só dele; o uso do Claude é a única
   exceção e cobre os projetos conectados.
 - `entries[].subIssues` (`{ "total", "done" }`): as **partes** da família, contadas pelas folhas da árvore inteira (uma
-  sub-issue que tem filhas conta pelas filhas), e quantas estão prontas. O plugin escreve "5 de 8 partes prontas" em
-  português simples; número de issue nunca vai ao texto.
-- `entries[].slices` (opcional): `{ "closed": [{ "title", "closedAt" }], "blocked": [{ "title" }] }`, as partes fechadas no
-  período e as bloqueadas, só como evidência para quem escreve (não vão ao e-mail). O RoadS define e documenta como
-  decide que uma parte está bloqueada.
+  sub-issue que tem filhas conta pelas filhas; folha fechada como não planejada fica fora dos dois números), e
+  quantas estão prontas. O e-mail e a visão semanal do RoadS escrevem "X de Y partes prontas" sozinhos, então o
+  texto do plugin não repete a contagem; número de issue nunca vai ao texto.
+- `entries[].slices` (só em entrega com sub-issues): `{ "closed": [{ "title", "closedAt" }], "blocked": [{ "title" }] }`,
+  as partes de qualquer nível fechadas como concluídas no período e as bloqueadas (aberta com o rótulo
+  `status:blocker`, ou com cartão em Blocker no fim do período), só como evidência para quem escreve: não vão ao
+  e-mail nem ao conteúdo montado. Se o RoadS cortar a leitura da árvore, `ignored.cut` conta quantas issues ficaram
+  sem leitura completa e a entrada traz a linha de evidência dizendo isso: o plugin repassa o aviso ao usuário.
 - **Atividade da família.** PR mesclado ou aberto, commit e fechamento de qualquer descendente dentro do período contam
   como atividade da entrega. Uma entrega com partes entregues no período nunca fica em `proximo` (que dispensa o print).
   O `status` continua vindo do coletor e só dele.

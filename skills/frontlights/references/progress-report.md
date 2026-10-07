@@ -129,11 +129,14 @@ operation runs in, because the collectors, the draft guide and the approval all 
      `operationsRoot` or the one the session opened. The Claude usage numbers are the one exception: they
      cover every connected project and are not edited here.
    - **Families.** An entry stands for a whole family: the issue and every sub-issue under it, however deep.
-     When the entry carries `subIssues` (`total` parts, `done` ready), the sentence says it in plain words
-     ("5 de 8 partes prontas"): a count of parts is allowed, an issue number is not. What changed in the period
-     comes from `slices.closed` (the parts closed in the period, with their titles) when the facts carry it,
-     else from the local records. Each part in `slices.blocked` is a difficulty: what blocks it and what is
-     needed, from whom. Parts that are ready never make the entry "Concluído"; its status is the facts'.
+     When the entry carries `subIssues` (`total` parts, `done` ready), the e-mail and the weekly view show
+     "X de Y partes prontas" under the sentence by themselves: do not repeat the count in the text. Use the
+     sentence for what became ready in the period, in plain words, from `slices.closed` (the parts closed in
+     the period, with their titles, which are rewritten like any other text) when the facts carry it, else
+     from the local records. Each part in `slices.blocked` is a difficulty: what blocks it and what is needed,
+     from whom. When the facts report `ignored.cut` above zero, or an entry's evidence says the reading of
+     its sub-issues was cut, tell the user before drafting: that count is partial. Parts that are ready never
+     make the entry "Concluído"; its status is the facts'.
    - Never invent a fact that is not in the collected facts, the local issue records or those files;
      when something is missing, leave it out or ask. Language rules for every text in the draft:
      - Plain Portuguese for someone who does not read technical issues. No acronyms, no file names, no

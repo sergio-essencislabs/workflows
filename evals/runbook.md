@@ -147,7 +147,8 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     visible code changed is not offered.
 
 21. Progress of the whole family in the summary. With a facts file whose entry carries `subIssues` over the whole tree and
-    `slices`, confirm the draft sentence says "X de Y partes prontas" in plain words (no issue number), takes what changed
+    `slices`, confirm the draft sentence does not repeat the "X de Y partes prontas" count the e-mail and the weekly view show by
+    themselves (no issue number either), takes what changed
     from `slices.closed`, turns each `slices.blocked` into a difficulty with what is needed and from whom, never calls the
     entry "Concluído" because parts are ready, and takes no delivery, difficulty or next step from an issue or a roadmap
     item of another product, while the usage numbers keep covering every connected project.
