@@ -40,6 +40,11 @@ Operations (each prints one JSON object on stdout):
             the period; the folder is `<week of the next Monday>/<weekShots>/<dd_MM of --to>` under
             scrumRoot, one per summary; `--meeting` only for the window of the last `window` answer)
             and create it when missing.
+  candidates  read-only, no network, no approval, run in the project the session opened: the prints that
+            watched browser tests kept for the summary (`.frontlights/issues/<n>/browser/resumo/candidates.json`),
+            taken up to `--to`, each with its `cover` (the delivery's issue), whether the code it shows is still
+            the code of `--ref` (default HEAD), and its problems; with `--repository OWNER/REPOSITORY` (the
+            facts file's repository) a print recorded for another repository is a problem. It copies nothing.
   push      run the configured push command with `{draft}` substituted (plus --shot/--caption when the
             config names no `shotsDir` nor `weekShots`; the project's push command reads `shotsDir`
             itself). With `weekShots` (and `--to`), first check the summary folder's `captions.json` and
@@ -86,7 +91,7 @@ DEFAULT_TIMEOUT = 300
 MAX_TIMEOUT = 24 * 60 * 60
 PATH_PATTERN = r'[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*'
 DATE_PATTERN = r'\d{4}-\d{2}-\d{2}'
-OPERATIONS = ['status', 'approve', 'window', 'collect', 'shots', 'push', 'home']
+OPERATIONS = ['status', 'approve', 'window', 'collect', 'shots', 'push', 'home', 'candidates']
 MAX_SHOTS = 40
 MAX_SHOT_BYTES = 1024 * 1024
 MAX_CAPTIONS_BYTES = 256 * 1024
@@ -706,6 +711,143 @@ def deliveries_without_prints(facts, texts, captions):
     return missing
 
 
+CANDIDATE_FIELDS = {'file', 'caption', 'issue', 'cover', 'repository', 'takenAt', 'head', 'visibleFiles'}
+MAX_VISIBLE_FILES = 200
+REPOSITORY = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*')
+BLOB_ID = re.compile(r'[0-9a-f]{40}')
+REF_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/~^-]*')
+SAO_PAULO = dt.timezone(dt.timedelta(hours=-3))   # no daylight saving since 2019
+
+
+def image_problems(folder, name):
+    """Why `name` cannot be a print of the summary, or [] when it can (same checks as captions.json)."""
+    if not isinstance(name, str) or not SHOT_NAME.fullmatch(name):
+        return ['file must be a plain .png, .jpg or .jpeg name in the print folder']
+    path = os.path.join(folder, name)
+    tag = rs.reparse_tag(path)
+    if not (tag == 0 or rs.cloud_tag(tag)) or not os.path.isfile(path):
+        return [f'{name} is missing, a link or another reparse point']
+    if os.stat(path).st_size > MAX_SHOT_BYTES:
+        return [f'{name} is larger than 1 MB']
+    with open(path, 'rb') as handle:
+        head = handle.read(8)
+    if not (head.startswith(b'\x89PNG\r\n\x1a\n') or head.startswith(b'\xff\xd8\xff')):
+        return [f'{name} is not a PNG or JPEG image']
+    return []
+
+
+def blob_at(root, ref, path):
+    """The Git blob id of `path` in `ref`, or None when it is not there (or Git cannot say)."""
+    try:
+        done = subprocess.run(['git', '-C', str(root), 'rev-parse', '--verify', '--quiet', f'{ref}:{path}'],
+                              capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    answer = done.stdout.strip()
+    if done.returncode != 0 or not BLOB_ID.fullmatch(answer):
+        return None
+    try:   # a tree (a folder) has an id too: only a file counts
+        kind = subprocess.run(['git', '-C', str(root), 'cat-file', '-t', answer], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return answer if kind.returncode == 0 and kind.stdout.strip() == 'blob' else None
+
+
+def freshness(root, ref, visible):
+    """(fresh, reason): the code a print shows is still the code in `ref` when every visible file it names
+    has the blob id it had in the DEPOIS pass. No visible files recorded means it cannot be told: not fresh."""
+    if not isinstance(visible, dict) or not visible:
+        return False, 'the print records no visible files, so it cannot be told whether the code changed'
+    if len(visible) > MAX_VISIBLE_FILES:
+        return False, f'visibleFiles lists more than {MAX_VISIBLE_FILES} files'
+    for path, blob in visible.items():
+        if (not isinstance(path, str) or not path or path.startswith(('/', '-', '\\')) or '..' in path.split('/')
+                or not isinstance(blob, str) or not BLOB_ID.fullmatch(blob)):
+            return False, 'visibleFiles must map a relative path to a 40-character Git blob id'
+        if blob_at(root, ref, path) != blob:
+            return False, f'{path} is not what it was when the print was taken'
+    return True, None
+
+
+def candidate_entry(root, ref, folder, record, item, last_day, repository=None):
+    """One candidate of a candidates.json, with its problems; None when it is outside the period."""
+    problems = []
+    if not isinstance(item, dict) or not set(item) <= CANDIDATE_FIELDS:
+        return {'cover': None, 'issue': None, 'file': None, 'caption': None, 'takenAt': None, 'head': None, 'fresh': False,
+                'usable': False, 'record': record,
+                'problems': ['not a {file, caption, issue, cover, takenAt, head, visibleFiles} object']}
+    for field in ('issue', 'cover'):
+        if type(item.get(field)) is not int or item[field] < 1:
+            problems.append(f'{field} must be a positive integer')
+    if not isinstance(item.get('caption'), str) or not item['caption'].strip():
+        problems.append('caption must be a sentence')
+    taken_day = None
+    try:
+        taken = dt.datetime.fromisoformat(str(item.get('takenAt')))
+        if taken.tzinfo is None:
+            problems.append('takenAt must carry its offset')
+        else:
+            taken_day = taken.astimezone(SAO_PAULO).date()
+    except (ValueError, OverflowError):
+        problems.append('takenAt must be an ISO 8601 instant with its offset')
+    if taken_day is not None and taken_day > last_day:
+        return None
+    if repository is not None:
+        own = item.get('repository')
+        if not isinstance(own, str) or not REPOSITORY.fullmatch(own):
+            problems.append('repository must be OWNER/REPOSITORY, so the print can be tied to the product of the summary')
+        elif own.casefold() != repository.casefold():
+            problems.append('the print belongs to another repository than the summary')
+    shot = image_problems(folder, item.get('file'))
+    problems += shot
+    fresh, why = freshness(root, ref, item.get('visibleFiles'))
+    if not fresh:
+        problems.append(why)
+    return {'cover': item.get('cover'), 'issue': item.get('issue'), 'file': None if shot else os.path.join(folder, item['file']),
+            'caption': item.get('caption'), 'repository': item.get('repository'), 'takenAt': item.get('takenAt'), 'head': item.get('head'),
+            'fresh': fresh, 'usable': not problems, 'problems': problems, 'record': record}
+
+
+def op_candidates(root, date_to, ref=None, repository=None):
+    """The prints the watched browser tests kept for the summary (`.frontlights/issues/<n>/browser/resumo/`),
+    taken up to the last day of the period, each with whether the code it shows is still the code in `ref`
+    (default HEAD of `root`). Read-only: no network, no approval, nothing is copied."""
+    last_day = parse_date(date_to, '--to') if date_to else None
+    require(last_day is not None, '--to is required: the last day of the period, inclusive, YYYY-MM-DD')
+    ref = ref or 'HEAD'
+    require(repository is None or (isinstance(repository, str) and REPOSITORY.fullmatch(repository)),
+            '--repository must be OWNER/REPOSITORY')
+    require(REF_NAME.fullmatch(ref) and '..' not in ref, '--ref must be a branch, tag or commit name')
+    base = Path(root) / '.frontlights' / 'issues'
+    found, warnings = [], []
+    if base.is_dir():
+        for lead in sorted(os.listdir(base), key=lambda name: (len(name), name)):
+            folder = os.path.join(base, lead, 'browser', 'resumo')
+            listing = os.path.join(folder, 'candidates.json')
+            if not os.path.isfile(listing):
+                continue
+            tag = rs.reparse_tag(listing)
+            if not (tag == 0 or rs.cloud_tag(tag)) or os.path.getsize(listing) > MAX_CAPTIONS_BYTES:
+                warnings.append(f'issue {lead}: candidates.json is a link or larger than 256 KB; skipped')
+                continue
+            try:
+                items = read_json_file(listing, f'candidates.json of issue {lead}')
+            except Refusal as error:
+                warnings.append(str(error))
+                continue
+            if not isinstance(items, list):
+                warnings.append(f'issue {lead}: candidates.json must be a list; skipped')
+                continue
+            for item in items[:MAX_SHOTS * 2]:
+                entry = candidate_entry(root, ref, folder, lead, item, last_day, repository)
+                if entry is not None:
+                    found.append(entry)
+    found.sort(key=lambda entry: (entry.get('cover') or 0, entry.get('takenAt') or ''))
+    return {'ok': True, 'exitCode': 0, 'ref': ref, 'candidates': found, 'warnings': warnings,
+            'message': f'{sum(1 for entry in found if entry["usable"])} of {len(found)} print(s) from watched tests can be reused; '
+                       'copy the chosen ones into the summary folder, never move them.'}
+
+
 def week_arguments(date_from, meeting):
     """`--from` named the folder before the day folder existed; it is refused so a stale call cannot pick the wrong week."""
     require(date_from is None, '--from no longer names the folder: pass --to, the last day of the period (inclusive), '
@@ -787,10 +929,10 @@ def op_push(root, draft, shots, captions, date_to=None, date_from=None, meeting=
 
 
 def run(operation, root='.', transport=None, date_from=None, date_to=None, draft=None, shots=(), captions=(), meeting=None,
-        home_set=None, home_clear=False):
+        home_set=None, home_clear=False, ref=None, repository=None):
     transport = transport or rs.http_default
     try:
-        if operation not in ('status', 'home'):
+        if operation not in ('status', 'home', 'candidates'):
             root = resolve_root(root)[0]
         if operation == 'status':
             result = op_status(root)
@@ -804,6 +946,8 @@ def run(operation, root='.', transport=None, date_from=None, date_to=None, draft
             result = op_collect(root, date_from, date_to)
         elif operation == 'shots':
             result = op_shots(root, date_to, date_from, meeting)
+        elif operation == 'candidates':
+            result = op_candidates(root, date_to, ref, repository)
         elif operation == 'push':
             result = op_push(root, draft, shots, captions, date_to, date_from, meeting)
         else:
@@ -829,13 +973,15 @@ def main():
     parser.add_argument('--from', dest='date_from', help='first day to collect, YYYY-MM-DD (collect)')
     parser.add_argument('--to', dest='date_to', help='last day of the period, inclusive, YYYY-MM-DD (collect; shots and push with weekShots)')
     parser.add_argument('--meeting', help='the presentation Monday the route sent as weekMeeting, YYYY-MM-DD; only when the period is the window of the last window answer (shots, push)')
+    parser.add_argument('--ref', help='branch, tag or commit whose files the kept prints are compared with; default HEAD (candidates)')
+    parser.add_argument('--repository', help='OWNER/REPOSITORY of the product of the summary; prints recorded for another one are refused (candidates)')
     parser.add_argument('--draft', help='path of the draft file the push command reads (push)')
     parser.add_argument('--shot', action='append', default=[], help='screenshot to attach; repeatable (push)')
     parser.add_argument('--caption', action='append', default=[], help="caption of the matching --shot, in order (push)")
     args = parser.parse_args()
     result = run(args.operation, args.root, date_from=args.date_from, date_to=args.date_to, draft=args.draft,
                  shots=args.shot, captions=args.caption, meeting=args.meeting, home_set=args.home_set,
-                 home_clear=args.home_clear)
+                 home_clear=args.home_clear, ref=args.ref, repository=args.repository)
     print(render(result))
     return int(result['exitCode'])
 

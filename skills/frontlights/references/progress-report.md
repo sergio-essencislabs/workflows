@@ -122,6 +122,18 @@ operation runs in, because the collectors, the draft guide and the approval all 
      next steps only from the facts.
    - **Statuses.** The status of each person's delivery comes from the collected facts, never from
      your own guess.
+   - **Product scope.** The summary is about the product the facts file names in `scope` (PRODUCT, say).
+     Deliveries, difficulties and next steps come only from issues of that product: the entries of the facts
+     and their families, the local records of those issues, and the roadmap and sprint items whose `produto`
+     is that product. Records and items of any other project are never a source, even when that project is the
+     `operationsRoot` or the one the session opened. The Claude usage numbers are the one exception: they
+     cover every connected project and are not edited here.
+   - **Families.** An entry stands for a whole family: the issue and every sub-issue under it, however deep.
+     When the entry carries `subIssues` (`total` parts, `done` ready), the sentence says it in plain words
+     ("5 de 8 partes prontas"): a count of parts is allowed, an issue number is not. What changed in the period
+     comes from `slices.closed` (the parts closed in the period, with their titles) when the facts carry it,
+     else from the local records. Each part in `slices.blocked` is a difficulty: what blocks it and what is
+     needed, from whom. Parts that are ready never make the entry "Concluído"; its status is the facts'.
    - Never invent a fact that is not in the collected facts, the local issue records or those files;
      when something is missing, leave it out or ask. Language rules for every text in the draft:
      - Plain Portuguese for someone who does not read technical issues. No acronyms, no file names, no
@@ -150,11 +162,28 @@ operation runs in, because the collectors, the draft guide and the approval all 
    With `weekShots`, prints are required: every delivery of the facts file that stays visible (its
    `hidden` in the texts file when that is `true` or `false`, otherwise the collector's) and whose
    status is not `proximo` needs at least one print with its issue number. Tell the user which
-   deliveries need one, then ask with `AskUserQuestion` how to get each (capture now, use an image of
-   code or of the database when there is no screen, or hide the delivery in the texts file). Without
+   deliveries need one, then ask with `AskUserQuestion` how to get each (below). Without
    `weekShots`, ask whether the summary should carry screenshots and, if so, for which deliveries.
-   - For each print, offer to capture it from the product running on this computer, following the
-     project's own instructions for running it. Use only test data, never real person or customer
+   - **Prints the watched tests kept.** Before asking, run `python
+     "${CLAUDE_PLUGIN_ROOT}/scripts/progress_report.py" candidates --root <the main worktree of the project
+     the session opened> --repository <the facts file's `repository`> --to <to>` (read-only, no network, no
+     approval, nothing is copied; add `--ref <branch>` for work that is not on `HEAD` yet). A project other
+     than the summary's product has none of its prints offered: the `--repository` check says so. It lists the prints that watched browser tests kept for the summary
+     (`browser-testing.md`, "Prints kept for the progress summary"): `cover` (the delivery's issue), `issue`
+     (the slice), `file`, `caption`, `takenAt`, `fresh` (the code the print shows is still the code of the
+     ref) and `problems`. Match them to the deliveries by `cover` = the entry's issue. A candidate with
+     `problems` (not `fresh`, or an unreadable image) is not offered: say why in one line.
+   - **The question, per delivery that needs a print.** `AskUserQuestion` with the options "Usar os do teste
+     assistido" (only when it has a usable candidate; first and recommended), "Capturar novos", "Misturar"
+     (use some, capture the rest) and "Outra forma" (an image of code or of the database when there is no
+     screen, or hide the delivery in the texts file). Several deliveries go in one question each, never one
+     answer for all.
+   - **Using a kept print.** Copy, never move: copy the chosen file into the summary folder under a plain name
+     that starts with the cover's number, look at the image again (a person's name or data, a login, a path or
+     the ANTES/DEPOIS strip means retake or drop it), and list it in `captions.json` with `issue` the cover's
+     number, never the slice's. The original stays where it is.
+   - To capture a new print ("Capturar novos", and what "Misturar" leaves out), offer to capture it from the
+     product running on this computer, following the project's own instructions for running it. Use only test data, never real person or customer
      data, and never production. Crop out the browser chrome and the identity of the signed-in user.
      JPEG or PNG, at most 1 MB and about 1920 px wide each, at most 40 in total.
    - Save the images in that folder and write `captions.json` there, from scratch on every run, never appending to an earlier one: the week folder holds one folder per summary, and this one is the

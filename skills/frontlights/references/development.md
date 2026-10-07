@@ -223,7 +223,8 @@ says so, or `frontlights.py browser-gate` finds it in the diff), the watched run
 whole batch, not to this issue alone: [browser-testing.md](browser-testing.md) asks "pronto
 para assistir?" once the last slice of the batch that changes the screen has closed its loop,
 before the independent review of any of them, and ends with the user's choice of watching
-again, approving, asking for a change or going on; its records join the evidence below.
+again, approving, asking for a change or going on; its records join the evidence below. Any brief that hands the
+run to a subagent carries that reference's rule on test data: create what the flow needs, remove it afterwards.
 Once the question is due and until the user has answered, the run is the `teste_assistido` pending of the checkpoint;
 while a screen slice is still in its loop it is not (the handoff lists the open slice).
 

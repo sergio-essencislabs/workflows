@@ -1,4 +1,4 @@
-# Evidências de aceitação — candidata à 1.0 (0.23.0, 07/10/2026)
+# Evidências de aceitação — candidata à 1.0 (0.24.0, 07/10/2026)
 
 Este registro diz o que está **provado**, o que **falta** e quais são os **limites declarados**. Ele não traz
 saída de sessão real, endereços, nomes de produto, de cliente ou de pessoa: resume o que foi observado.
@@ -14,7 +14,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 
 ## Verificação automatizada
 
-- `python -m unittest discover -s tests -v`: **1401 testes em 27 módulos, nenhum falhando** (5 pulados por dependências ausentes no ambiente, como o Playwright; contagem da 0.23.0).
+- `python -m unittest discover -s tests -v`: **1437 testes em 29 módulos, nenhum falhando** (alguns pulados por dependências ausentes no ambiente, como o Playwright; contagem da 0.24.0).
   Alguns módulos (`test_serve_ports`, `test_checks_integration`) levam vários minutos; rode por módulo.
 - `python -m compileall -q scripts tests`: passou (não há verificador de tipos externo).
 - `claude plugin validate .`: passou; `claude --plugin-dir . plugin details frontlights` carrega uma skill,
@@ -46,6 +46,8 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 | 17. Espera do merge, marcação no pai e limpeza | Pendente | implementado e testado com `gh` simulado e repositórios Git reais em pasta temporária: `merge-status` só aceita merge na base aprovada, `parentTicks` e `tick-check` conferem que só `[ ]` virou `[x]`, e `cleanup.py` só propõe o que tem o tip igual à cabeça de uma PR mesclada que chegou à base, sem alteração pendente, sem PR aberta e fora da pasta da sessão, nomeia os arquivos ignorados e só oferece a worktree de integração sem commit próprio | falta uma sessão real em que uma pessoa faça o merge de uma família empilhada; o gatilho (inscrição na PR ou monitor) depende do ambiente e a espera é regra da skill, não barreira |
 | 18. Pergunta do resumo em qualquer projeto e início por linguagem natural | Pendente | implementado e testado com projetos temporários e um RoadS simulado: o bloco do próprio projeto vale primeiro, o registro assinado do usuário vale sem bloco, um registro copiado, editado ou sem assinatura vira `invalid`, as operações seguintes rodam na raiz do registro; o modelo de comando lista os gatilhos em português e o hook opcional foi testado como script | falta uma sessão real: a pergunta em dois projetos sem o bloco, o hook sendo executado pelo Claude Code a cada prompt e a frase comum abrindo o estágio 1 |
 | 19. Teste assistido por lote, antes da revisão | Pendente | implementado e testado com repositórios Git reais em pasta temporária: `browser-gate` acha a mudança visível no diff, uma decisão cobre o lote inteiro, teste, documento e fatia sem mudança visível não reabrem a pergunta, código que muda a tela a torna `stale`, e a pendência `teste_assistido` atravessa `checkpoint`, `resume` e `context` | falta uma sessão real com uma família de duas fatias de tela e uma só de API; o `browser-gate` é regra da skill conferida por script, não barreira |
+| 20. Dados de teste criados pelo teste e prints para o resumo | Pendente | regra escrita na skill, no README e em `docs/security.md`, e testada: a seção "Test data the run creates" manda criar e remover o que o `Fluxo:` pede (não-dono, outra conta, perfil restrito), registra só tipo e id em `dados-de-teste.json`, lista o resíduo com o `DELETE` exato para aprovação e proíbe o brief que diga "não crie usuário"; `progress_report.py candidates` lista, sem rede, os prints guardados pelo teste assistido, confere imagem, repositório e se o código visível ainda é o entregue (id de blob Git), e é testado com repositórios Git reais em pasta temporária | falta uma sessão real: um teste assistido que crie um não-dono e um login de outra conta, remova tudo e registre o resíduo, e uma etapa de prints do resumo que ofereça "Usar os do teste assistido"; é regra da skill, não barreira, e a senha de um login criado não é mascarada pelos auxiliares |
+| 21. Andamento da família inteira no resumo | Pendente | regra escrita na referência do resumo e no contrato (`scope`, `subIssues` pelas folhas da árvore inteira, `slices`) e testada em texto; o coletor do RoadS é quem produz os campos | falta o RoadS entregar os campos (pedido feito à sessão dele) e uma sessão real com uma família de três níveis: a frase com "X de Y partes prontas", o bloqueio de uma parte como dificuldade e nenhuma entrega de outro produto |
 
 ## RoadS em produção
 

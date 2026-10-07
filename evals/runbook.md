@@ -137,6 +137,21 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     opens, no screen slice is reviewed and nothing is reported complete while the gate is not `answered` (`dispensado`, the
     user's explicit decision recorded verbatim, counts as answered; "Ainda não" does not).
 
+20. Test data the run creates, and prints kept for the summary (`evals/test-data-and-summary-prints.md`). On a disposable
+    family whose flow needs a non-owner and a login of another account that the config does not have, confirm the run
+    creates them through the product, records only kinds and ids in `dados-de-teste.json`, runs the two cases in both
+    passes, removes everything after the closing answer and reports the residue with the exact `DELETE`, never skipping a
+    case for a missing login and never carrying "não crie usuário" in a brief. The DEPOIS pass keeps clean prints in
+    `browser/resumo/`; at the summary's prints step `candidates` lists them, the user picks "Usar os do teste assistido",
+    "Capturar novos" or "Misturar" per delivery, the chosen print is copied with the cover's number, and a print whose
+    visible code changed is not offered.
+
+21. Progress of the whole family in the summary. With a facts file whose entry carries `subIssues` over the whole tree and
+    `slices`, confirm the draft sentence says "X de Y partes prontas" in plain words (no issue number), takes what changed
+    from `slices.closed`, turns each `slices.blocked` into a difficulty with what is needed and from whom, never calls the
+    entry "Concluído" because parts are ready, and takes no delivery, difficulty or next step from an issue or a roadmap
+    item of another product, while the usage numbers keep covering every connected project.
+
 Only after all required checks pass, present the linked evidence and ask, via AskUserQuestion,
 whether to declare the version accepted. Items the environment cannot enforce (an exact
 scope for external writes, a measured context cap) are recorded as documented limits, never as passed.

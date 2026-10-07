@@ -394,10 +394,19 @@ roadmap, o Frontlights pergunta uma vez por sessão se você quer registrar o pr
 4. redige o arquivo de textos em linguagem simples, seguindo o guia que o projeto indica
    (`draftGuide`) e a partir dos fatos coletados, dos registros locais e, quando a sincronização do
    roadmap está configurada, do roadmap e da sprint da semana (que alimentam os próximos passos); o
-   próprio projeto monta o rascunho final com fatos, uso, dados de acesso locais e prints;
+   próprio projeto monta o rascunho final com fatos, uso, dados de acesso locais e prints. O resumo é
+   do produto que o `facts.json` nomeia em `scope` (entregas, dificuldades e próximos passos só dele; o uso
+   do Claude cobre todos os projetos conectados). Cada entrega é uma issue de topo e representa a família
+   inteira, em qualquer profundidade: o texto diz quantas partes estão prontas ("5 de 8 partes prontas"),
+   o que fechou no período e o que bloqueia (campos `subIssues` e `slices` do coletor, contrato em
+   `docs/roads-contract.md`);
 5. cuida dos prints e, para cada um, oferece capturar a tela do produto rodando neste computador (só
    dados de teste, nunca dados reais nem produção, sem a barra do navegador nem a identidade de quem
-   está logado; JPEG ou PNG, até 1 MB e cerca de 1920 px de largura, no máximo 40). Grava as imagens
+   está logado; JPEG ou PNG, até 1 MB e cerca de 1920 px de largura, no máximo 40). Antes de perguntar,
+   lista os prints que os testes assistidos guardaram para o resumo (`progress_report.py candidates`,
+   só leitura) e, por entrega, pergunta se usa esses, captura novos ou mistura; o print guardado só é
+   oferecido enquanto o código que ele mostra é o código entregue, e é copiado (nunca movido) com o
+   número da entrega, não o da parte. Grava as imagens
    na pasta dos prints e reescreve o `captions.json` a cada execução, nunca acrescentando ao anterior
    (imagens que não estão nele são ignoradas). Cada item é `{"file", "caption", "issue"}`, com
    `issue` opcional: o número inteiro da issue da entrega. Com `weekShots`, a pasta é a do resumo (`<semana>/<weekShots>/<dd_MM do último dia>`) e
@@ -455,7 +464,7 @@ Como esse bloco faz o plugin executar comandos lidos de um arquivo de configura�
 nenhuma chamada é feita antes de você aprovar o bloco exato (endereço, variável, rota e cada
 comando). Qualquer mudança nele pede nova aprovação. Os coletores não recebem o segredo; só o
 comando de envio o recebe, pela variável de ambiente. Este repositório não traz coletor nenhum. O
-utilitário é `python scripts/progress_report.py status|approve|window|collect|shots|push --root <projeto>` (e `home --set|--clear`, sem `--root`, que registra o projeto dono do bloco).
+utilitário é `python scripts/progress_report.py status|approve|window|collect|shots|push|candidates --root <projeto>` (e `home --set|--clear`, sem `--root`, que registra o projeto dono do bloco).
 
 ### Teste de navegador e verificações (opcional)
 
@@ -489,6 +498,21 @@ são mascarados em toda saída e registro, e um valor com menos de 4 caracteres 
 `serve` e por `checks integration` e `checks smoke` (o `checks regression` não recusa). Sem
 navegador ou rede, o teste é relatado como não executado e nunca conta como aprovado. O app de
 exemplo em `examples/browser-app/` mostra o fluxo de ponta a ponta.
+
+**Dados de teste que o teste cria.** Regra permanente, para todo projeto: o teste de navegador e o de
+permissões entre contas criam os usuários, contas ou tenants, empresas, perfis, concessões e demais dados
+que o `Fluxo:` precisa para rodar completo (o não-dono da mesma conta, um login de outra conta, um perfil
+restrito) e os removem no fim. Falta de login nunca é motivo para pular um caso, e nenhum texto delegado a
+um subagente proíbe a criação. Só no banco local e descartável, pelos endpoints do próprio produto, nunca em
+produção nem com dado de pessoa ou cliente real. Os ids criados ficam em `dados-de-teste.json` (nunca login
+ou senha), a remoção é conferida item a item, e o que o produto não apaga (excluir um usuário só o
+anonimiza) é listado com o `DELETE` exato, só dos ids criados, para você aprovar.
+
+**Prints para o resumo.** Na passada DEPOIS o teste assistido também guarda, para cada caso visível, um
+print limpo (sem a faixa, sem a barra do navegador, sem identidade nem dado de pessoa) em
+`.frontlights/issues/<n>/browser/resumo/` da worktree principal (a limpeza das worktrees entregues leva o
+`.frontlights` delas), com um `candidates.json` que diz a parte, a entrega (`cover`), o repositório, o instante e os arquivos visíveis com o id Git que tinham. Nada sai do projeto nessa hora: o resumo só copia o
+que você escolher na etapa dos prints.
 
 Antes de abrir o navegador, o Frontlights pergunta (uma vez por lote de trabalho) se você está
 pronto para assistir. Com o sim, o teste roda em um Chrome de janela visível, nunca oculta e com

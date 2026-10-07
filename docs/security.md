@@ -197,7 +197,13 @@ O resumo para a diretoria (`scripts/progress_report.py`) executa comandos lidos 
 - **Prints:** a captura roda o produto do próprio usuário neste computador, só com o consentimento
   dado na etapa dos prints, com dados de teste. `draftGuide` e `shotsDir` são caminhos relativos
   dentro do projeto (sem caminho absoluto, `..` ou `~`) e fazem parte do bloco aprovado. Nada é
-  enviado antes da aprovação do rascunho completo.
+  enviado antes da aprovação do rascunho completo. Os prints que o teste assistido guardou para o
+  resumo (`.frontlights/issues/<n>/browser/resumo/`) ficam dentro do projeto e não são versionados; a
+  operação `candidates` só os lista (sem rede, sem aprovação, nada é copiado) e só o que o usuário
+  escolhe é copiado para a pasta sincronizada, depois de a sessão olhar a imagem de novo à procura de
+  nome ou dado de pessoa, login, caminho ou da faixa ANTES/DEPOIS. Um print guardado só é oferecido
+  enquanto o código visível que ele mostra tem o id Git que tinha na passada DEPOIS (a conferência é
+  um script, não uma barreira: um print de código mudado depois só é barrado se a skill o consultar).
 - **Prints na pasta da semana (`weekShots`):** é a única gravação do resumo fora do projeto. O dia da pasta
   vem do último dia do período; um `--meeting` ou um `weekMeeting` do RoadS precisa ser uma segunda-feira
   posterior a esse dia e no máximo oito semanas depois da usual, senão é recusado, para um valor velho
@@ -249,6 +255,19 @@ executam comandos lidos do `.frontlights/config.json` (blocos `browserTest` e `c
   contas de teste, nunca para contas reais ou de produção. Os dois valores são mascarados em toda
   saída e registro (também codificados em URL); um valor com menos de 4 caracteres ou com o texto
   do marcador de máscara é recusado, porque não pode ser ocultado com segurança.
+- **Dados que o teste cria:** o usuário decidiu, de forma permanente e para todo projeto, que o teste de
+  navegador e o de permissões entre contas criam os usuários, contas ou tenants, empresas, perfis e demais
+  dados de teste que o `Fluxo:` pede, e os removem no fim; faltar login nunca é motivo para pular um caso e
+  nenhum texto delegado a um subagente pode proibir a criação. Os limites são os do teste assistido: só o
+  banco local e descartável, pelos endpoints do próprio produto, nunca produção, homologação nem dado de
+  pessoa ou cliente real. A senha de um login criado fica só em arquivo local fora do Git e chega ao
+  navegador por variável de ambiente do processo. Os ids criados ficam em `dados-de-teste.json` (nunca
+  login, senha ou a linha inteira); a remoção é conferida item a item e uma sessão que ache uma entrada
+  sem `removido: true` remove antes de tudo. O que o produto não apaga é listado com o `DELETE` exato, só dos
+  ids criados, e roda depois da aprovação do usuário; a escrita direta fora dos endpoints continua só
+  com a instrução exata aprovada. É uma regra da skill, não uma barreira técnica; e as máscaras do plugin cobrem só os valores de
+  `browserTest.users`, então a senha de um login criado pelo teste não é mascarada pelos auxiliares: ela nunca é
+  impressa, gravada em registro nem repetida na conversa.
 - **Teste assistido e perfil de teste:** o teste com o usuário assistindo só roda depois da
   resposta dele à pergunta "pronto para assistir?", no ambiente local e com contas de
   `browserTest.users`. Quando o ponto é permissão, ele pode mover um usuário de teste de perfil

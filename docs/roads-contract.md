@@ -191,6 +191,27 @@ Informado pelo RoadS a partir do código dele; vale como contrato do lado de que
   como "concluída", com a data da sincronização, mesmo sem mudança na fila, e nunca a confirma ao RoadS. Um item
   concluído que fica na sprint tem, então, o registro de conclusão e, depois da rotação, o `remove`.
 
+## Fatos do resumo: a família inteira de cada entrega
+
+O `facts.json` é gerado pelo coletor do projeto (no RoadS, `scripts/progress/github.ts`); o plugin só o lê. Uma entrega
+é uma issue de topo e **representa a família inteira**: ela e todas as sub-issues abaixo dela, em qualquer profundidade.
+Os campos abaixo são **aditivos** (o plugin ignora o que falta e não quebra com o que sobra); a regra de quebra desta
+página não se aplica a eles, mas o que o plugin faz com cada um está na referência `progress-report.md`.
+
+- `scope` (texto): o produto do resumo. Entregas, dificuldades e próximos passos saem só dele; o uso do Claude é a única
+  exceção e cobre os projetos conectados.
+- `entries[].subIssues` (`{ "total", "done" }`): as **partes** da família, contadas pelas folhas da árvore inteira (uma
+  sub-issue que tem filhas conta pelas filhas), e quantas estão prontas. O plugin escreve "5 de 8 partes prontas" em
+  português simples; número de issue nunca vai ao texto.
+- `entries[].slices` (opcional): `{ "closed": [{ "title", "closedAt" }], "blocked": [{ "title" }] }`, as partes fechadas no
+  período e as bloqueadas, só como evidência para quem escreve (não vão ao e-mail). O RoadS define e documenta como
+  decide que uma parte está bloqueada.
+- **Atividade da família.** PR mesclado ou aberto, commit e fechamento de qualquer descendente dentro do período contam
+  como atividade da entrega. Uma entrega com partes entregues no período nunca fica em `proximo` (que dispensa o print).
+  O `status` continua vindo do coletor e só dele.
+- **Prints.** O print é exigido por entrega (a issue de topo). O plugin guarda o print de uma parte com o número da
+  entrega em `captions.json`, então o RoadS não precisa aceitar número de sub-issue ali.
+
 ## Pasta dos prints do resumo (`weekShots`)
 
 `<scrumRoot>/<weekFolderPattern da segunda>/<weekShots>/<dd_MM do último dia do período>`, em que a segunda

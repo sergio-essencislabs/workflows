@@ -287,7 +287,8 @@ answers from the diff even when the plan says `não`. The watched browser run is
 never one per branch or worktree: it comes out when the last slice that changes the screen closes
 its TDD loop, before the independent review of any of them, covers all of them together, starts
 with the "pronto para assistir?" question and ends by asking the user to watch again, approve, ask
-for a change or go on. Test-only or API-only slices never hold it back. The scope is the whole family: the issue and its open sub-issues. Inventory hooks,
+for a change or go on. The run creates and later removes the test users, accounts and data its flow needs, so a
+missing login is never a reason to skip a case and no brief to a subagent forbids creating them. Test-only or API-only slices never hold it back. The scope is the whole family: the issue and its open sub-issues. Inventory hooks,
 permission settings, confirmation requirements and integration access without
 exposing secrets. Do not disable hooks or request bypass mode. Then recommend the
 highest safe parallelism and ask the concurrency question and one bounded

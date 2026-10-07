@@ -8,7 +8,9 @@ Portuguese. `checks integration` and `checks smoke` refuse a non-local host
 before any request; `serve start` does not check the `health` host, so keep
 `health` and `baseUrl` on `127.0.0.1`, `localhost` or `::1`, on the branch under test
 (a watched run also serves the base, see below); never point a test at a real, staging or production environment. Installing Playwright or a browser in the target project is out of
-scope: use what the session and the project already have.
+scope: use what the session and the project already have. A run never stops or skips a case
+for lack of test data: it creates what the `Fluxo:` needs and removes it afterwards (section "Test data the
+run creates").
 
 ## What the plan turns on
 
@@ -205,7 +207,8 @@ first window (the servers may already be up), with `AskUserQuestion`: "Pronto pa
 assistir ao teste de navegador da issue #<n>?" (for a batch, "das issues #<n>, #<m> e #<k>",
 each one named in the text). The text says what comes: first the
 base (ANTES), then the delivered state (DEPOIS), each case twice, and the window stays open
-for about 45 s at the end; and, when the `Fluxo:` moves a test user to a restricted
+for about 45 s at the end; that the run creates the test data the `Fluxo:` needs (users, accounts and
+the like) and removes it afterwards; and, when the `Fluxo:` moves a test user to a restricted
 profile, that this changes data of the test database through the product's endpoint
 and that it will be undone. Options: "Sim, pode rodar" first and recommended;
 "Ainda não" (park the browser test and go on with other work, run nothing; the user
@@ -293,9 +296,9 @@ covers a change and a new run); this one is asked only when the user watched and
 product failure remains.
 
 **Real back first.** Prefer the real back end and real data. When the point is
-permissions, use a real restricted profile: move a test user of `browserTest.users`
-to that profile through the product's own endpoint, called with a login of
-`browserTest.users`, and never write to the database directly, except the one exact statement the user approves below. Before the move, make
+permissions, use a real restricted profile: move a test user of `browserTest.users`, or one the run
+created (see "Test data the run creates"), to that profile through the product's own endpoint, called
+with a login of `browserTest.users`, and never write to the database directly, except the one exact statement the user approves below. Before the move, make
 sure the database behind the server is disposable: the host check only covers
 `baseUrl` and `health`, and a local back end can still point at a shared remote
 database, so ask the user to confirm it in the question above when the project does
@@ -316,9 +319,9 @@ write the database yourself: stop and ask with `AskUserQuestion` whether to acce
 and declare the residual difference in the report, or to approve one exact restoring
 statement shown in full (local test database, the test user's id, only the changed
 columns), which is then run and the row compared. A direct write without that
-approval is a failure of the test. When no login of
-`browserTest.users` can call the endpoint or undo the move (the only admin demoted,
-say), stop and ask; never demote the account that performs the undo. Forcing a response by network
+approval is a failure of the test. When only one login of
+`browserTest.users` can call the endpoint or undo the move (the only admin, say), create another
+test user that can before the move, through the product; never demote the account that performs the undo. Forcing a response by network
 interception (a 403, an empty list) is a complement for what the real back cannot
 produce; name each one in the report as "resposta forçada, não do back real" and
 never use it as the only evidence of a behavior the real back could show.
@@ -329,6 +332,41 @@ the issue. `serve start` does not look at a fixed port before spawning, so check
 first (`Get-NetTCPConnection -LocalPort <port>`). When it already answers and no
 record of this issue explains it, it belongs to another session: leave it alone, do
 not start on top of it, and ask (switch to `auto`, wait, or another port).
+
+## Test data the run creates
+
+The user's standing decision, for every project and every run (watched or not): a browser or cross-account
+test creates the test data the `Fluxo:` needs to run completely and removes it afterwards. Missing data is
+never a reason to skip a case, shorten a pass, park the run or ask the user to supply a login.
+
+- **What.** Users (the owner and a non-owner of the same account, a user with a restricted profile), a
+  second account or tenant for the cross-account case, companies, profiles, grants and any record the
+  `Fluxo:` touches, as far as the product lets a test create them.
+- **How.** Through the product's own endpoints and screens, called with a login of `browserTest.users`.
+  The only exception to "never write the database directly" is the one exact statement the user approves
+  (see "Real back first" and "Cleanup" below).
+- **Where.** Only on the disposable local database that "Real back first" already requires. Never
+  production, staging or a shared remote database. Never read, change or reuse a real person's or customer's
+  user, profile or data: the run touches only what it created or the logins of `browserTest.users`.
+- **Record.** Before the first creation write `.frontlights/issues/<n>/browser/dados-de-teste.json` (the
+  lead issue's folder) and add each item as it is created: its kind and id, `removido: false`. Never the
+  login, the password or a whole row. The password of a created login goes only into a git-ignored local
+  file of the project and reaches the browser through an environment variable of the process; never into
+  a record, a caption, the strip, a screenshot, the conversation or a brief.
+- **Cleanup.** At the end of the run: after the closing answer of a watched one (not after "Assistir de
+  novo", where the data stays for the next round, and after "Precisa de alteração" only once the changed
+  flow has run again and been answered), and right after the last case of a run with no watcher. Remove the items in reverse order of creation through the same endpoints, in a `finally`,
+  read each one back and set `removido: true`. A session that finds a `dados-de-teste.json` with an entry
+  not marked `removido: true` removes it first, as it does for `perfil-original.json`. What the product
+  cannot remove (deleting a user only anonymizes it, say) is never left unreported: list it in the report
+  with the exact `DELETE` statement of each id this run created (local test database, only those ids),
+  and run them only after the user approves the statements shown in full with `AskUserQuestion`.
+- **Briefs.** Every brief handed to a subagent or another session that runs the test carries this
+  section's rule. A brief never says "não crie usuário", "pare se faltar login" or "espere a decisão";
+  a brief that runs the test says to create what is missing and to remove it afterwards.
+- **Not a question.** This is not asked per run; the watched-run question only says that it happens.
+  Ask only about what this section does not settle: a statement outside the product's endpoints, and the
+  residue statements above.
 
 ## Cross-account permissions
 
@@ -343,8 +381,8 @@ Account 1 runs every browser test. Account 2 enters only when `Conta:` names it 
 3. Repeat the other way when the plan says the data is private to both.
 
 Any data of one account visible to, or changeable by, the other is a
-product failure. A missing account 2 in the config is a config gap: ask, never
-reuse account 1 as both.
+product failure. A missing account 2, or an account 2 that is the same account or tenant as account 1 when the
+case is cross-tenant, is test data the run creates (previous section): create it, never reuse account 1 as both.
 
 ## Every failure is a question
 
@@ -378,7 +416,7 @@ per pass (`ANTES`/`DEPOIS`, with the branch and `head` served and `repeticoes: 2
 source of each response (`back real` or `interceptada`) and,
 when a profile was moved, only the profile field before and after the undo (never
 the whole row, which can hold a login or a password hash); its screenshots are
-named `antes-<caso>-<n>` and `depois-<caso>-<n>`. Screenshots stay in the same folder. The
+named `antes-<caso>-<n>` and `depois-<caso>-<n>`. Screenshots stay in the same folder, and so do `perfil-original.json` and `dados-de-teste.json`. The
 records of `.frontlights/issues/<n>/checks/` sit beside it. The records are
 tied to the `head` they ran on: for the watched run `browser-gate` says whether the record still covers the
 code (`stale` asks again), and the `checks` records are stale after any later commit, so rerun them before
@@ -388,3 +426,30 @@ handoff.
 A summary comment on the GitHub issue is text only (no screenshots, no login,
 no password, no local path) and is posted only when the recorded authorization
 allows routine issue updates; otherwise keep it in the handoff as pending.
+
+## Prints kept for the progress summary
+
+The DEPOIS pass of a watched run is also the cheapest moment to take the prints the "Resumo para a
+diretoria" will need (`progress-report.md` step 6 offers them). Taking them costs one extra capture per
+visible case and nothing leaves the project.
+
+- **Which.** In DEPOIS only, never ANTES, one print per case of the `Fluxo:` that shows something a
+  person would recognise (a screen, a message, a list), taken right after the case passes.
+- **Clean.** Without the ANTES/DEPOIS strip, without the browser chrome, with no login, no person's name or
+  data and no local path: crop, or choose another view of the same result, or take no print for that case. Test
+  data only. JPEG or PNG, at most 1 MB and about 1920 px wide. Look at every image yourself and retake the
+  blurry, empty or error ones.
+- **Where.** `.frontlights/issues/<n>/browser/resumo/` (the lead issue's folder) of the project's **main
+  worktree** (the first one `git worktree list` shows), never of a linked one:
+  the cleanup of the delivered worktrees takes their `.frontlights` records with them, and the summary comes
+  days later. A `candidates.json` lists each print:
+  `[{"file": "<image in this folder>", "caption": "<one plain sentence in Portuguese>", "issue": <slice>,
+  "cover": <delivery>, "repository": "<OWNER/REPOSITORY>", "takenAt": "<ISO 8601 instant with its offset>", "head": "<DEPOIS head>",
+  "visibleFiles": {"<visible file>": "<git blob id>"}}]`.
+  `issue` is the slice the print shows; `cover` is the top-level issue of its family (the issue itself when it
+  has no parent), the one the summary lists as the delivery; `visibleFiles` maps each visible file of the
+  slice (the `by_root` of `browser-gate`) to its Git blob id as served in DEPOIS, so the summary can tell
+  whether the code the print shows is still the code that was delivered. Write `candidates.json` from
+  scratch on each run of the watched test and keep only what DEPOIS just produced.
+- **Never sent from here.** These files stay in the project's `.frontlights` folder, which is never
+  committed. They go to the synced summary folder only when the user chooses them in the summary step.
