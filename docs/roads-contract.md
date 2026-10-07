@@ -209,6 +209,14 @@ página não se aplica a eles, mas o que o plugin faz com cada um está na refer
   `status:blocker`, ou com cartão em Blocker no fim do período), só como evidência para quem escreve: não vão ao
   e-mail nem ao conteúdo montado. Se o RoadS cortar a leitura da árvore, `ignored.cut` conta quantas issues ficaram
   sem leitura completa e a entrada traz a linha de evidência dizendo isso: o plugin repassa o aviso ao usuário.
+- `sprint` (bloco) e `delivered`: as capas da sprint são os itens do Project em Development (épicos incluídos) e **não
+  são entregas**. `sprint.epics[]` traz, por capa, `issue`, `title`, `issues` (`total`, `done`), `parts` (`total`, `done`,
+  `remaining`, contadas pelas folhas da árvore) e `open` (as issues que faltam); `delivered` traz `issues` (as
+  entregas concluídas no período, esteja ou não na sprint) e `parts` (a soma das partes prontas, em que uma entrega sem
+  filhas conta 1). Os dois vão ao conteúdo montado: o e-mail e a visão semanal mostram **"Concluído: N sub-issues em M
+  issues"** (tudo o que foi entregue na janela) e **"Em andamento: N sub-issues em K issues"** (o que resta das capas
+  da sprint), sem o chip "Em validação". Decisão de 07/10/2026; vale para todo resumo. O texto do plugin não repete esses
+  números, e os próximos passos saem do que resta em cada capa.
 - **Atividade da família.** PR mesclado ou aberto, commit e fechamento de qualquer descendente dentro do período contam
   como atividade da entrega. Uma entrega com partes entregues no período nunca fica em `proximo` (que dispensa o print).
   O `status` continua vindo do coletor e só dele.

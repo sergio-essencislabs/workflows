@@ -151,7 +151,10 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     themselves (no issue number either), takes what changed
     from `slices.closed`, turns each `slices.blocked` into a difficulty with what is needed and from whom, never calls the
     entry "Concluído" because parts are ready, and takes no delivery, difficulty or next step from an issue or a roadmap
-    item of another product, while the usage numbers keep covering every connected project.
+    item of another product, while the usage numbers keep covering every connected project. With a facts file that carries `sprint` and `delivered`, the e-mail
+    shows "Concluído: N sub-issues em M issues" for everything delivered in the period (in the sprint or not) and "Em andamento: N
+    sub-issues em K issues" for what is left of the sprint's covers, with no "Em validação" chip, and the draft's next steps
+    come from what is left in each cover.
 
 Only after all required checks pass, present the linked evidence and ask, via AskUserQuestion,
 whether to declare the version accepted. Items the environment cannot enforce (an exact

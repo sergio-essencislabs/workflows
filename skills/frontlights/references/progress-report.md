@@ -128,6 +128,16 @@ operation runs in, because the collectors, the draft guide and the approval all 
      is that product. Records and items of any other project are never a source, even when that project is the
      `operationsRoot` or the one the session opened. The Claude usage numbers are the one exception: they
      cover every connected project and are not edited here.
+   - **Sprint block and chips.** The facts file carries `sprint` (the covers of the sprint: the items of the Project
+     in Development, epics included; `epics[]` with `issue`, `title`, `issues` {total, done}, `parts` {total, done,
+     remaining} and `open`) and `delivered` ({issues, parts}). RoadS draws from them, by itself, the two chips of
+     the e-mail and of the weekly view: "Concluído: N sub-issues em M issues" (everything delivered in the period,
+     in the sprint or not) and "Em andamento: N sub-issues em K issues" (what is left of the sprint's covers). There
+     is no "Em validação" chip. The text never repeats those numbers. The covers are not deliveries: they need no
+     entry and no print. "Próximos passos" come from what is left in each cover (`open`), in the order of the
+     sprint, in plain words; the sprint file of the week is only the fallback when the facts have no `sprint`, and a
+     sprint file that disagrees with `sprint` (an older reading, other items) is said to the user in one line. When
+     the draft guide allows it, a cover may get one sentence in the `sprint` field of the texts file.
    - **Families.** An entry stands for a whole family: the issue and every sub-issue under it, however deep.
      When the entry carries `subIssues` (`total` parts, `done` ready), the e-mail and the weekly view show
      "X de Y partes prontas" under the sentence by themselves: do not repeat the count in the text. Use the

@@ -1,4 +1,4 @@
-# Evidências de aceitação — candidata à 1.0 (0.24.1, 07/10/2026)
+# Evidências de aceitação — candidata à 1.0 (0.25.0, 07/10/2026)
 
 Este registro diz o que está **provado**, o que **falta** e quais são os **limites declarados**. Ele não traz
 saída de sessão real, endereços, nomes de produto, de cliente ou de pessoa: resume o que foi observado.
@@ -14,7 +14,7 @@ sistema fora do Windows e o uso do `authorize` como barreira (ele é consultivo)
 
 ## Verificação automatizada
 
-- `python -m unittest discover -s tests -v`: **1438 testes em 29 módulos, nenhum falhando** (alguns pulados por dependências ausentes no ambiente, como o Playwright; contagem da 0.24.1).
+- `python -m unittest discover -s tests -v`: **1439 testes em 29 módulos, nenhum falhando** (alguns pulados por dependências ausentes no ambiente, como o Playwright; contagem da 0.25.0).
   Alguns módulos (`test_serve_ports`, `test_checks_integration`) levam vários minutos; rode por módulo.
 - `python -m compileall -q scripts tests`: passou (não há verificador de tipos externo).
 - `claude plugin validate .`: passou; `claude --plugin-dir . plugin details frontlights` carrega uma skill,

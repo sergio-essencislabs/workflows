@@ -262,6 +262,18 @@ class TextTests(unittest.TestCase):
                 self.assertIn(phrase, text)
         self.assertIn('ignored.cut', self.flat('docs', 'roads-contract.md'))
 
+    def test_the_sprint_block_and_the_chips_are_documented_for_every_summary(self):
+        text = self.flat('skills', 'frontlights', 'references', 'progress-report.md')
+        for phrase in ('Sprint block and chips', '`delivered`', '"Concluído: N sub-issues em M issues"',
+                       '"Em andamento: N sub-issues em K issues"', 'There is no "Em validação" chip',
+                       'The covers are not deliveries', 'only the fallback when the facts have no `sprint`'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+        contract = self.flat('docs', 'roads-contract.md')
+        for phrase in ('`sprint.epics[]`', 'sem o chip "Em validação"', 'Decisão de 07/10/2026'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, contract)
+
     def test_the_watched_test_keeps_clean_prints_for_the_summary(self):
         text = self.flat('skills', 'frontlights', 'references', 'browser-testing.md')
         for phrase in ('Prints kept for the progress summary', 'candidates.json', 'DEPOIS only, never ANTES', 'visibleFiles',
