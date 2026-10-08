@@ -229,6 +229,14 @@ When the user will watch:
   context or profile, never the user's personal one. If the session cannot open
   one, the watched run did not happen: report the reason and ask; never fall back to
   a hidden window silently.
+- **The whole screen, always.** The user must see the whole page and the strip without
+  scrolling or resizing anything. Size the window to the screen's available area (start
+  maximized, or read the screen size and open the window at it) and let the page
+  viewport follow the window (`viewport: null` in Playwright), never a fixed viewport
+  larger than the screen: a page that overflows the window hides its edges and the
+  strip. Before the first case of each pass, take a screenshot and check that the strip and
+  every edge of the page are inside it; when something is cut off, resize and check
+  again, and never go on with a cut-off window.
 - **Two passes, same scenario and same account.** ANTES runs the `Fluxo:` on the
   approved base of the batch (`main`, or the default branch); a slice stacked on a
   parent that is not part of the batch uses that parent's branch, the base of its PR.
@@ -247,8 +255,9 @@ When the user will watch:
   of it (`serve status` and the owning pid of `Get-NetTCPConnection -LocalPort
   <port>`), or DEPOIS could be answered by the base. Stop the ANTES record in every
   case before reporting.
-- **A strip on every page.** The test injects a fixed strip into the page (an init
-  script or a DOM node, visible in the screenshots): "ANTES: <base>" ("ANTES: main"
+- **A strip on every page.** The test injects a fixed strip into the page, pinned to the
+  top edge across the full width, thin, above every other element and never
+  covered by a popup, toast or dialog (an init script or a DOM node, visible in the screenshots): "ANTES: <base>" ("ANTES: main"
   on the main, the base's own name otherwise) in the first pass and
   "DEPOIS: branch <name>" in the second, with the branch name as Git has it. No
   login, password or local path ever goes into the strip.

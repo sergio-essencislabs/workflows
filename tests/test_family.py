@@ -248,7 +248,7 @@ class WatchedRunTextTests(unittest.TestCase):
                 self.assertIn(phrase, self.body)
 
     def test_the_run_shows_the_base_then_the_branch_in_a_visible_window(self):
-        for phrase in ('never headless', '"ANTES: <base>"', '"DEPOIS: branch <name>"',
+        for phrase in ('never headless', 'The whole screen, always', '`viewport: null`', 'never go on with a cut-off window', 'across the full width', '"ANTES: <base>"', '"DEPOIS: branch <name>"',
                        'disposable browser context or profile', 'ends ANTES before DEPOIS starts',
                        'one issue at a time',
                        'Each case runs twice in each pass', 'about 5 minutes', 'the wait never blocks the agent', 'asked while the window is still open',
