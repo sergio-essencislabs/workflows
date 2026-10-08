@@ -635,7 +635,8 @@ lê as filhas no GitHub e leva todas na mesma execução (entrevista, plano e im
 nunca só o pai. A fatia vertical é a issue mais as filhas, e juntas elas cobrem todas as
 camadas que o requisito pede (tela, API, banco e migração, testes, integração, documentação e
 as do projeto); a seção `## Camadas da fatia` de cada issue registra as camadas analisadas e,
-para as que não serão tocadas, o motivo. Uma filha com `needs-decision`, ou sem abordagem
+para as que não serão tocadas, o motivo com a evidência do rastreio de cada campo de tela até o
+consumidor no back e a coluna no banco (um rastreio inconclusivo bloqueia a aprovação do plano até ser provado). Uma filha com `needs-decision`, ou sem abordagem
 definida, entra na entrevista da mesma sessão. Na etapa 6, quando uma filha depende do pai, a
 pergunta de autorização oferece **branches empilhadas** (recomendada): a filha sai da branch do
 pai assim que ele está verificado nela, o PR dela tem como base a branch do pai e, depois que

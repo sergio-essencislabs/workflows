@@ -50,6 +50,35 @@ corrected by an update of stage 5, never by a silent rewrite. A finding from rev
 or tests (Follow-ups below) is narrow by nature and is exempt: it lists only the
 layers it touches.
 
+**Define the slice only after reading every layer.** The layers table is a
+conclusion from reading, never a guess. Before proposing the slice, read everything it
+can touch: in the front end the components, services, models, routes and specs; in
+the back end the controllers, services, contracts and DTOs, repositories, mappings and
+validators; the migrations and the database schema; the tests; the documentation; and
+the project's own layers. The slice is defined only when you are certain nothing is
+left loose, and a slice that changes only the front while the back or the database goes
+unchecked is not a vertical slice.
+
+For every field, button or action the slice touches on a screen, trace it down by
+search: the consumer in the back (`file:line`) and the column in the database, and
+record the trace in the layers section (`templates/issue.md`). Then:
+
+- A layer is "not touched" only with the evidence of that trace (`file:line`, column,
+  consumer, test). A reason without evidence is not accepted, "the API already
+  validates" included.
+- A field nothing in the back consumes, or a back capability with no action on the
+  screen, is a finding: it becomes an acceptance criterion of the slice or a
+  sub-issue, never "not touched".
+- An inconclusive trace (dynamic consumption, reflection, a column name built in a
+  string) is an explicit task of the slice, "prove the consumption by a test or by
+  reading the execution", and it blocks the approval of the plan until it is closed
+  with evidence. It is never only a note, and a declared gap is not a state in which a
+  plan can be approved. When it cannot be proven by reading, ask with `AskUserQuestion`
+  how to prove it.
+- The PRD (stage 4) and the plan (stage 5) show the complete trace table before the
+  approval. The slice counts as defined only when no row lacks evidence; a plan with
+  such a row goes back for correction before it is shown for approval.
+
 A parent/child link is membership, not a dependency. A child that needs its
 parent's code lists the parent in `Depends on` as well; one that only belongs to
 the same outcome has `Parent` alone and is free to start with the parent. A

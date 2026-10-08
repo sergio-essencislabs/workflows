@@ -150,6 +150,37 @@ class FamilyRulesTextTests(unittest.TestCase):
                 self.assertRegex(template, rf'(?m)^\| {layer} \|')
         self.assertIn('lacuna do plano', template)
 
+    def test_the_slice_is_defined_only_after_tracing_every_screen_field_to_the_back_and_the_database(self):
+        issues = flat(section(read('skills', 'frontlights', 'references', 'issues.md'),
+                              'The slice: an issue with its sub-issues, across every layer') or '')
+        for phrase in ('Define the slice only after reading every layer',
+                       'the consumer in the back (`file:line`) and the column in the database',
+                       'only with the evidence of that trace', 'A reason without evidence is not accepted',
+                       'never "not touched"', 'prove the consumption by a test or by reading the execution',
+                       'blocks the approval of the plan', 'a declared gap is not a state in which a plan can be approved',
+                       'no row lacks evidence'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, issues)
+        skill = read('skills', 'frontlights', 'SKILL.md')
+        self.assertIn('field-by-field trace', flat(section(skill, '4. PRD approval') or ''))
+        self.assertIn('only after reading every layer', flat(section(skill, '5. Issue-plan approval and publication') or ''))
+        self.assertIn('trace table', flat(read('skills', 'frontlights', 'references', 'prd.md')))
+        self.assertIn('effect in the back and the database', flat(read('skills', 'frontlights', 'references', 'browser-testing.md')))
+
+    def test_issue_template_asks_for_evidence_and_the_field_trace(self):
+        template = section(read('templates', 'issue.md'), 'Camadas da fatia') or ''
+        self.assertRegex(template, r'(?m)^\| Camada \| Situação \| Onde ou motivo \| Evidência \|')
+        self.assertRegex(template, r'(?m)^\| Campo ou ação \| Consumidor no back \(arquivo:linha\) \| Coluna no banco \| Teste \|')
+        flat_template = flat(template)
+        for phrase in ('motivo sem evidência não é aceito', 'bloqueia a aprovação do plano',
+                       'provar o consumo por teste ou por leitura da execução'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, flat_template)
+        self.assertIn('o efeito no back e no banco depois de salvar', read('templates', 'issue.md'))
+        evals = flat(read('evals', 'vertical-slices.md'))
+        self.assertIn('Trace case (manual)', evals)
+        self.assertIn('a layer "not touched" with a reason but no evidence', evals)
+
     def test_grilling_takes_sub_issues_into_the_same_session(self):
         body = flat(section(read('skills', 'frontlights', 'references', 'grilling.md'),
                             'Sub-issues of the issue (same session)') or '')

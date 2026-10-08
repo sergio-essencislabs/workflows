@@ -40,20 +40,38 @@ do projeto, como permissões, configuração, tradução, observabilidade, taref
 segundo plano). Uma camada que ninguém analisou é lacuna do plano, não "não tocada".
 Uma sub-issue copia só as linhas que ela cobre.
 
-| Camada | Situação | Onde ou motivo |
-| --- | --- | --- |
-| Tela | tratada / não tocada | esta issue, #<filha>, ou o motivo |
-| API | | |
-| Banco e migração | | |
-| Testes | | |
-| Integração | | |
-| Documentação | | |
+A fatia só é definida depois da leitura de todas as camadas (front: componentes, serviços,
+modelos, rotas e specs; back: controllers, services, contratos e DTOs, repositories,
+mapeamentos e validadores; migrations e schema; testes; documentação), com certeza de que
+não sobra ponta solta. "Não tocada" só vale com a evidência do rastreio abaixo; motivo sem
+evidência não é aceito, e linha sem evidência impede aprovar o plano.
+
+| Camada | Situação | Onde ou motivo | Evidência |
+| --- | --- | --- | --- |
+| Tela | tratada / não tocada | esta issue, #<filha>, ou o motivo | arquivo:linha, coluna, consumidor ou teste |
+| API | | | |
+| Banco e migração | | | |
+| Testes | | | |
+| Integração | | | |
+| Documentação | | | |
+
+Rastreio dos campos, botões e ações que a fatia toca na tela, feito por busca no código:
+
+| Campo ou ação | Consumidor no back (arquivo:linha) | Coluna no banco | Teste |
+| --- | --- | --- | --- |
+| <campo> | | | |
+
+Campo sem consumidor no back, ou capacidade do back sem ação na tela, é achado: vira
+critério de aceitação desta issue ou sub-issue, nunca "não tocada". Rastreio inconclusivo
+(consumo dinâmico, reflexão, nome de coluna montado em texto) vira a tarefa "provar o
+consumo por teste ou por leitura da execução" e bloqueia a aprovação do plano até ser
+resolvida com evidência; nunca fica só como nota.
 
 ## Navegador e testes ligados
 
 - Toca o frontend: <sim | não>
 - Conta: <conta 1 | contas 1 e 2>
-- Fluxo: <telas e ações a exercitar, com o resultado esperado; se mover um usuário de teste de perfil pelo endpoint do produto, diga qual e que será desfeito>
+- Fluxo: <telas e ações a exercitar, com o resultado esperado e o efeito no back e no banco depois de salvar; se mover um usuário de teste de perfil pelo endpoint do produto, diga qual e que será desfeito>
 - Testes ligados: <navegador, integração, regressão, permissões entre contas, smoke>; casos extras: <nenhum>
 
 Contas e processos vêm de `browserTest` no `.frontlights/config.json` do projeto,

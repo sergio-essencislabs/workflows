@@ -19,7 +19,10 @@ running anything:
 
 - `Toca o frontend:` `sim` turns the browser test on; `não` skips it.
 - `Conta:` `conta 1` (the default) or `contas 1 e 2`.
-- `Fluxo:` the screens and actions to exercise, with the expected result.
+- `Fluxo:` the screens and actions to exercise, with the expected result, and the
+  effect in the back and the database after saving (what changes in the row or in the
+  behavior), checked through the product's own read path or a read-only query the
+  project already permits, never only what the screen shows.
 - `Testes ligados:` any of `navegador`, `integração`, `regressão`,
   `permissões entre contas`, `smoke`, plus extra cases.
 

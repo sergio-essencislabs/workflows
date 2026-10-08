@@ -155,6 +155,11 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     shows "Concluído: N sub-issues em M issues" for everything delivered in the period (in the sprint or not) and "Em andamento: N
     sub-issues em K issues" for what is left of the sprint's covers, with no "Em validação" chip, and the draft's next steps
     come from what is left in each cover.
+22. Trace of every screen field to the back and the database (`evals/vertical-slices.md`, trace case). On a disposable issue
+    that changes a form, confirm the slice is defined only after reading front end, back end, migrations and schema, tests and
+    documentation; every field has its consumer (`file:line`) and column in the layers section; a field with no consumer or a
+    back capability with no action becomes a criterion or sub-issue; an inconclusive trace becomes the explicit task and the
+    plan is not offered for approval until it is closed; and the `Fluxo:` checks the effect in the back or the database.
 
 Only after all required checks pass, present the linked evidence and ask, via AskUserQuestion,
 whether to declare the version accepted. Items the environment cannot enforce (an exact

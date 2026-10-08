@@ -255,13 +255,20 @@ mutations.
 
 Read `references/prd.md`. Draft a proportionate PRD, show it in full under the
 show-before-approval rule, and obtain explicit approval of its exact revision.
+When the work touches a screen, the PRD shows the field-by-field trace to the back
+and the database (`references/issues.md`) before it is approved.
 This approval does not authorize live issue writes.
 
 ## 5. Issue-plan approval and publication
 
 Read `references/issues.md`. Propose vertical slices and the dependency graph.
 Each slice (an issue with its sub-issues) covers every layer the requirement
-needs, and records the layers analysed and, for each one not touched, why. Show
+needs, and records the layers analysed and, for each one not touched, why. The
+slice is defined only after reading every layer (front end, back end, migrations and
+schema, tests, documentation) and tracing each screen field, button or action to its
+consumer in the back and its column in the database; a layer is "not touched" only
+with that evidence, and an inconclusive trace blocks the approval of the plan until
+it is proven (`references/issues.md`). Show
 the complete plan and every issue body under the show-before-approval rule,
 then ask approval for the plan and the named GitHub writes. Publish only after
 approval and verify returned issue links, bodies and dependencies by rereading

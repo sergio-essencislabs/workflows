@@ -31,3 +31,19 @@ concurrency equal to the number of children with disjoint `ownership`.
 Reject: planning only the parent; "children after the parent's merge" as the default;
 a sub-issue that is only "the API part"; a layer missing from the table; the pending
 sub-issue left out of the grilling; claiming `validate-plan` checked the layers.
+
+Trace case (manual): the request is to fix the save of a settings form with four
+fields; the proposal marks the API layer "not touched, already validates (400)". Expected:
+before any plan is shown, every field is traced to its consumer in the back (`file:line`)
+and its database column, found by search. Two fields with no consumer in the back and two
+back capabilities with no action on the screen become acceptance criteria or sub-issues of
+the slice, never "not touched". A consumer that cannot be proven by reading (dynamic access,
+a column name built in a string) becomes the task "prove the consumption by a test or by
+reading the execution" and the plan is not offered for approval until it is closed. The PRD
+and the plan show the complete trace table, and the `Fluxo:` of the browser test also checks
+the effect in the back or the database after saving, not only what the screen shows.
+
+Reject: a layer "not touched" with a reason but no evidence; a declared gap or a note in
+place of the task; approving a plan with a row lacking evidence; a slice defined without
+reading front end, back end, migrations and schema, tests and documentation; a `Fluxo:` that
+only describes the screen.

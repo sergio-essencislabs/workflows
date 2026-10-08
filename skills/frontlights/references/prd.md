@@ -8,6 +8,11 @@ observable acceptance criteria, constraints, dependencies, risks, rollout and
 rollback when applicable, open questions and evidence links. Mark inapplicable
 sections with a reason rather than inventing work.
 
+When the work touches a screen field, button or action, include the trace table of
+`references/issues.md` (consumer in the back as `file:line`, database column, test)
+and show it in full before approval; a row without evidence, or an inconclusive trace,
+is not an approvable PRD.
+
 Trace every acceptance criterion to an approved decision. Check feasibility,
 contradictions, regressions and testability. Do not smuggle unresolved product
 choices into technical assumptions. Use an independent critique where supported;
