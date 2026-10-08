@@ -251,7 +251,7 @@ class WatchedRunTextTests(unittest.TestCase):
         for phrase in ('never headless', '"ANTES: <base>"', '"DEPOIS: branch <name>"',
                        'disposable browser context or profile', 'ends ANTES before DEPOIS starts',
                        'one issue at a time',
-                       'Each case runs twice in each pass', 'about 45 s',
+                       'Each case runs twice in each pass', 'about 5 minutes', 'the wait never blocks the agent', 'asked while the window is still open',
                        'never fall back to a hidden window silently',
                        'serve start --root <base-checkout> --issue <n>'):
             with self.subTest(phrase=phrase):
@@ -280,7 +280,7 @@ class WatchedRunTextTests(unittest.TestCase):
                        'new window', 'no new "pronto para assistir?"', 'Start ANTES again',
                        '`aprovacao: "aprovado"`', '`aprovacao: "prosseguir"`', '`aprovacao: "alteracao"`',
                        'not approved by the user', 'in their own words', 'destination ladder',
-                       'Never pick an answer for the user', 'never read the 45 s or a silence as an answer',
+                       'Never pick an answer for the user', 'never read the 5 minutes or a silence as an answer',
                        'the failure question comes first and replaces this one',
                        'asked only when the user watched'):
             with self.subTest(phrase=phrase):

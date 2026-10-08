@@ -519,7 +519,7 @@ pronto para assistir. Com o sim, o teste roda em um Chrome de janela visível, n
 perfil descartável, em duas passagens do mesmo cenário, com a mesma conta: primeiro a base (faixa
 na página "ANTES: main") e depois a branch entregue ("DEPOIS: branch X"). Cada caso roda duas
 vezes, os avisos ficam na tela o tempo necessário para serem lidos e a janela permanece aberta
-cerca de 45 s no fim. Prefere-se o back real e, quando o assunto é permissão, um perfil restrito
+cerca de 5 minutos no fim, sem impedir a pergunta de fechamento, feita com a janela ainda aberta. Prefere-se o back real e, quando o assunto é permissão, um perfil restrito
 real: o usuário de teste muda de perfil pelo endpoint do próprio produto, depois de você confirmar
 que o banco por trás é descartável, e volta no fim. O valor original fica salvo em disco antes da
 mudança (só o campo de perfil, nunca a linha inteira) e é conferido depois de desfazer. Resposta
@@ -527,7 +527,7 @@ forçada por interceptação de rede só complementa e é declarada no relatóri
 usa porta própria e o Frontlights encerra só o que ele mesmo subiu. Se a sua resposta for "rodar
 sem assistir", o registro traz `assistido: false`.
 
-Quando a janela fecha, o Frontlights pergunta o que fazer com o que você viu: "Assistir de novo"
+Com os resultados no texto e a janela ainda aberta, o Frontlights pergunta o que fazer com o que você viu: "Assistir de novo"
 (repete as duas passagens numa janela nova, sem repetir a pergunta de pronto), "Aprovado" (você
 confirma que a DEPOIS fez o esperado), "Precisa de alteração" (você diz o que mudar e a issue volta
 para o ajuste, sem seguir para as próximas etapas) ou "Pode prosseguir" (segue sem aprovar, e o

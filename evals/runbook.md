@@ -69,10 +69,10 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     para assistir?" question comes before any window opens, the window is a visible
     Chrome, the strip reads "ANTES: main" and then "DEPOIS: branch <name>", each case
     runs twice, popups stay long enough to read, and the window stays open about
-    45 s at the end. Move a test user to a restricted profile through the product's
+    5 minutes at the end without blocking the closing question. Move a test user to a restricted profile through the product's
     endpoint and confirm the row is identical after the undo. Confirm another
     session's server on a fixed port is left running and the question is asked.
-    When the window closes, confirm the closing question offers "Assistir de novo",
+    With the window still open, confirm the closing question offers "Assistir de novo",
     "Aprovado", "Precisa de alteração" and "Pode prosseguir" and that nothing runs
     after it until it is answered. "Assistir de novo" opens a new window and a second
     round (ANTES again, the profile moved and undone again) with no second "pronto para

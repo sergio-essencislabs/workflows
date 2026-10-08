@@ -210,7 +210,7 @@ first window (the servers may already be up), with `AskUserQuestion`: "Pronto pa
 assistir ao teste de navegador da issue #<n>?" (for a batch, "das issues #<n>, #<m> e #<k>",
 each one named in the text). The text says what comes: first the
 base (ANTES), then the delivered state (DEPOIS), each case twice, and the window stays open
-for about 45 s at the end; that the run creates the test data the `Fluxo:` needs (users, accounts and
+for about 5 minutes at the end; that the run creates the test data the `Fluxo:` needs (users, accounts and
 the like) and removes it afterwards; and, when the `Fluxo:` moves a test user to a restricted
 profile, that this changes data of the test database through the product's endpoint
 and that it will be undone. Options: "Sim, pode rodar" first and recommended;
@@ -254,7 +254,11 @@ When the user will watch:
   login, password or local path ever goes into the strip.
 - **Pace.** Each case runs twice in each pass. Hold every popup, toast and dialog
   on screen long enough to be read (a few seconds), not the instant the assertion
-  passes. After the last step leave the window open for about 45 s before closing it.
+  passes. After the last step leave the window open for about 5 minutes, held by a
+  background process or timer so that the wait never blocks the agent. The closing
+  question below is asked while the window is still open, as soon as the results are
+  in the text and any restricted profile is already restored; the window closes when
+  the user answers or when the 5 minutes end, whichever comes first.
 - **Faithful ANTES.** The base must run against the data it expects. When the issue
   has a migration, run ANTES before applying it, or against an isolated database;
   otherwise say in the report that ANTES is not a faithful baseline.
@@ -265,34 +269,35 @@ failure.
 
 **After the watched run: ask what comes next.** Asked only when the user watched
 (`assistido: true`); a run with "Rodar sem assistir" has no one to answer it. Once the
-last window is closed and the result of each case is in the text (ANTES and DEPOIS side
-by side, with the evidence folder), ask with `AskUserQuestion`: "O que fazer depois do
+last step of DEPOIS has run and the result of each case is in the text (ANTES and DEPOIS side
+by side, with the evidence folder), with the window still open for its 5 minutes and the
+original profile already restored and read back, ask with `AskUserQuestion`: "O que fazer depois do
 teste assistido da issue #<n>?" (for a batch, "das issues #<n>, #<m> e #<k>", as in the first question)
 Options, in this order: "Assistir de novo", "Aprovado",
 "Precisa de alteração" and "Pode prosseguir", each saying what it does:
 
-- "Assistir de novo": runs both passes again as above, in a new window, with no new
+- "Assistir de novo": closes the open window, runs both passes again as above, in a new window, with no new
   "pronto para assistir?" (the batch already answered it). Start ANTES again and, when
   the `Fluxo:` moves a profile, save the original value again, move and undo it again (the
   previous round's undo was already read back). Ask this question again at the end;
   each round adds one to `rodadas`.
-- "Aprovado": the user confirms that DEPOIS did what the `Fluxo:` expects. Record
+- "Aprovado": close the window. The user confirms that DEPOIS did what the `Fluxo:` expects. Record
   `aprovacao: "aprovado"`, `situacao: "aprovado"`, the `lote` of the gate output and the answer
   verbatim, then go on with the order
   (`checks smoke`, `serve stop`, review).
 - "Precisa de alteração": the user wants something changed. Ask what with
   `AskUserQuestion` and record it in their own words, record `aprovacao: "alteracao"` (and `situacao: "alteracao"`) and
-  run no further step of the order; stop what this test started, with the profile already
+  run no further step of the order; close the window and stop what this test started, with the profile already
   restored. A change inside the issue's acceptance criteria goes back to the TDD loop on
   the same branch and the watched run is repeated with no new "pronto para assistir?"; a
   change that widens the scope follows the destination ladder of the Follow-ups section
   in `issues.md`, decided as one batch, never as silent work on this branch.
-- "Pode prosseguir": the user saw the run and lets the stage go on without approving it.
+- "Pode prosseguir": close the window. The user saw the run and lets the stage go on without approving it.
   Record
   `aprovacao: "prosseguir"` and `situacao: "prosseguir"`; the handoff and the report say the run was watched
   but not approved by the user, never "aprovado".
 
-Never pick an answer for the user, never read the 45 s or a silence as an answer and
+Never pick an answer for the user, never read the 5 minutes or a silence as an answer and
 never write `aprovacao: "aprovado"` on your own. When a case of DEPOIS failed, the
 failure question comes first and replaces this one ("Corrigir e testar de novo" already
 covers a change and a new run); this one is asked only when the user watched and no
