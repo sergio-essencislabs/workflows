@@ -263,11 +263,25 @@ When the user will watch:
   login, password or local path ever goes into the strip.
 - **Pace.** Each case runs twice in each pass. Hold every popup, toast and dialog
   on screen long enough to be read (a few seconds), not the instant the assertion
-  passes. After the last step leave the window open for about 5 minutes, held by a
-  background process or timer so that the wait never blocks the agent. The closing
-  question below is asked while the window is still open, as soon as the results are
-  in the text and any restricted profile is already restored; the window closes when
-  the user answers or when the 5 minutes end, whichever comes first.
+  passes. After the last step of each pass (ANTES and DEPOIS) leave the window open for
+  about 5 minutes, held by a background process so that the wait never blocks the agent.
+  The holder is started with `run_in_background` by whoever drives the pass, and it
+  exits when the user closes the window (the browser's `disconnected` event) or when the 5
+  minutes end, whichever comes first; at the 5 minutes it closes the window itself before
+  exiting, and it prints which of the two ended it. Its exit is the
+  notice: the harness wakes the one who started it, so nobody polls and nobody waits for
+  a report that never comes. A bare timer or `sleep` is not a holder, because nothing
+  wakes the driver when the user closes the window early.
+- **Window closed, next step.** The notice is the same whether the user closed the window
+  or the 5 minutes ended it: the session goes on without waiting for anyone. When the ANTES holder exits, stop the ANTES server and
+  only then start DEPOIS; never start DEPOIS before that notice. When the DEPOIS holder
+  exits, the pass is over and the driver reports at once. When a subagent drives the
+  passes, it does not return its report before the DEPOIS holder exits, so that the
+  session waiting for the report is woken by the window closing. The closing question
+  below is asked while the DEPOIS window is still open, as soon as the results are in the
+  text and any restricted profile is already restored, when the session itself drives the
+  passes; with a subagent it is asked once the report arrives, with the window already
+  closed. Closing the window or the 5 minutes ending is never an answer to that question.
 - **Faithful ANTES.** The base must run against the data it expects. When the issue
   has a migration, run ANTES before applying it, or against an isolated database;
   otherwise say in the report that ANTES is not a faithful baseline.
@@ -279,7 +293,8 @@ failure.
 **After the watched run: ask what comes next.** Asked only when the user watched
 (`assistido: true`); a run with "Rodar sem assistir" has no one to answer it. Once the
 last step of DEPOIS has run and the result of each case is in the text (ANTES and DEPOIS side
-by side, with the evidence folder), with the window still open for its 5 minutes and the
+by side, with the evidence folder), with the window still open for its 5 minutes (or already closed,
+when a subagent drove the passes) and the
 original profile already restored and read back, ask with `AskUserQuestion`: "O que fazer depois do
 teste assistido da issue #<n>?" (for a batch, "das issues #<n>, #<m> e #<k>", as in the first question)
 Options, in this order: "Assistir de novo", "Aprovado",

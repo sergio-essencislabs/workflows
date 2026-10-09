@@ -138,8 +138,9 @@ O `frontlights.py browser-gate --config <config> --base <base> --root <worktree>
 `context --pending teste_assistido` (com `ask_before_continuing` em `handoff` e `stop`).
 O passo do navegador começa com a pergunta "pronto para assistir?"; com o sim, roda em janela
 visível em duas passagens do mesmo cenário e da mesma conta, a base ("ANTES") e depois a branch
-("DEPOIS"), com cada caso duas vezes e a janela aberta cerca de 5 minutos no fim, sem bloquear a pergunta. Com os resultados no texto e a janela
-ainda aberta, o
+("DEPOIS"), com cada caso duas vezes e a janela de cada passagem aberta cerca de 5 minutos no fim, presa por um processo em segundo plano
+cujo término avisa quem conduz o teste: o usuário fechar a janela (ou os 5 minutos acabarem) é o aviso para iniciar a DEPOIS e,
+depois dela, para entregar o relatório. Com os resultados no texto, o
 usuário decide por `AskUserQuestion`: "Assistir de novo" (nova rodada das duas passagens, sem repetir
 "pronto para assistir?"), "Aprovado", "Precisa de alteração" (nenhuma etapa seguinte roda; a mudança
 volta ao laço de testes, ou segue a escada de destinos se ampliar o escopo) ou "Pode prosseguir" (sem

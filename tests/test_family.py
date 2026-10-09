@@ -251,7 +251,11 @@ class WatchedRunTextTests(unittest.TestCase):
         for phrase in ('never headless', 'The whole screen, always', '`viewport: null`', 'never go on with a cut-off window', 'across the full width', '"ANTES: <base>"', '"DEPOIS: branch <name>"',
                        'disposable browser context or profile', 'ends ANTES before DEPOIS starts',
                        'one issue at a time',
-                       'Each case runs twice in each pass', 'about 5 minutes', 'the wait never blocks the agent', 'asked while the window is still open',
+                       'Each case runs twice in each pass', 'about 5 minutes', 'the wait never blocks the agent', 'asked while the DEPOIS window is still open',
+                       '`run_in_background`', "the browser's `disconnected` event", 'Its exit is the notice',
+                       'A bare timer or `sleep` is not a holder', 'never start DEPOIS before that notice',
+                       'does not return its report before the DEPOIS holder exits',
+                       'is never an answer to that question',
                        'never fall back to a hidden window silently',
                        'serve start --root <base-checkout> --issue <n>'):
             with self.subTest(phrase=phrase):

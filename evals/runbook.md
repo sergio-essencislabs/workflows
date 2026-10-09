@@ -68,11 +68,13 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
 13. Watched browser run. On an issue that touches the frontend, confirm the "pronto
     para assistir?" question comes before any window opens, the window is a visible
     Chrome, the strip reads "ANTES: main" and then "DEPOIS: branch <name>", each case
-    runs twice, popups stay long enough to read, and the window stays open about
-    5 minutes at the end without blocking the closing question. Move a test user to a restricted profile through the product's
+    runs twice, popups stay long enough to read, and the window of each pass stays open about
+    5 minutes at the end. Close the ANTES window early and confirm DEPOIS starts at once;
+    close the DEPOIS window early and confirm the session is woken with the report (never
+    by polling), and that neither the closing nor the 5 minutes ending counts as the answer. Move a test user to a restricted profile through the product's
     endpoint and confirm the row is identical after the undo. Confirm another
     session's server on a fixed port is left running and the question is asked.
-    With the window still open, confirm the closing question offers "Assistir de novo",
+    Confirm the closing question offers "Assistir de novo",
     "Aprovado", "Precisa de alteração" and "Pode prosseguir" and that nothing runs
     after it until it is answered. "Assistir de novo" opens a new window and a second
     round (ANTES again, the profile moved and undone again) with no second "pronto para
