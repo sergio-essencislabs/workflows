@@ -83,13 +83,26 @@ operation runs in, because the collectors, the draft guide and the approval all 
    on this computer, and that a cloned repository could carry such a file, so the user should read them.
    For `changed`, say that something in the block changed since the last approval. Only after an
    explicit yes run `approve`. On no, stop; make no other call.
-3. **Window.** Run `window`. Tell the user the period (`from` to `to`, dates as DD/MM/AAAA, in the
-   project's time zone) and, when `lastSentPeriod` is not null, the last period already sent. When
-   `draftExists` is true, say that a draft already exists for this period in RoadS (with
+3. **Window.** Run `window`. A summary covers everything done from the exact instant the previous one
+   ended (the moment its numbers were collected) up to now: never from a midnight, a weekday or a date
+   you choose. Tell the user the period from `start` to `end` (DD/MM/AAAA HH:MM, in the project's time
+   zone) and, when `lastSentPeriod` is not null, the last period already sent. When `draftExists` is
+   true and `draftOtherPeriod` is false, say that a draft already exists for this period in RoadS (with
    `draftPushedAt` when present) and that pushing again refreshes the collected content and keeps the
    edits the user made in RoadS. A failure (route down, credential rejected, unexpected answer): report
    its cause and stop; for a rejected credential, say to check the variable and restart Claude.
-4. **Collect.** Run `collect --from <from> --to <to>` with the dates `window` printed. Every collector
+   - **A draft of another period** (`draftOtherPeriod` true) is most often the previous summary not
+     marked as sent yet. RoadS keeps one draft per product, so pushing this one would replace it, and the
+     period `window` printed starts too early. Stop and ask with `AskUserQuestion`, naming `draftPeriod`:
+     "O resumo de <período do rascunho> ainda está como rascunho no RoadS. Ele já foi enviado?", with
+     "Marquei como enviado agora" first (run `window` again and use only its new answer) and "Parar
+     aqui" second. Never collect or push while it is true.
+   - **The period is `window`'s, never yours.** Never pass dates or instants you worked out, from memory,
+     a file or the user's description. When the user says the period is wrong, or anything was marked
+     as sent or changed in RoadS, run `window` again and use its new answer; if it still disagrees with
+     the user, show both and ask, and stop.
+4. **Collect.** Run `collect --start <start> --end <end>` with the instants `window` printed (a collector
+   configured with the older `{from}`/`{to}` gets the days of that same period). Every collector
    prints a conference table (sessions with start and end, first and last request, message totals,
    coverage gaps). Show each collector's `stdoutTail` to the user as it is, in a code block, as the
    table they must check. Ask with `AskUserQuestion` whether the numbers are right (options: the numbers

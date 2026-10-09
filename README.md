@@ -420,12 +420,22 @@ Revisar, editar, conferir os números, copiar para o e-mail e marcar como enviad
 RoadS. O Frontlights não envia e-mail. Reenviar o rascunho atualiza o conteúdo coletado e mantém as
 edições feitas no RoadS.
 
+**Período de cada resumo.** Cada resumo cobre tudo o que foi feito, em todas as issues e sub-issues e
+no uso do Claude, desde o instante exato em que os números do anterior foram coletados até agora: o de
+quarta começa onde o de sexta terminou, e o de sexta onde o de quarta terminou. O período vem só do
+RoadS (`window`), com hora, e chega aos coletores por `--start`/`--end`; a skill nunca escolhe datas.
+Se o RoadS ainda guarda o resumo anterior como rascunho (esqueceram de marcá-lo como enviado), o
+Frontlights para e pergunta antes de coletar, porque o envio substituiria esse rascunho; com ele
+marcado, lê o período de novo. Depois do envio do resumo de sexta, a apresentação da semana soma os
+dois, e a lista do RoadS mostra os dois resumos e a apresentação.
+
 O bloco fica dentro de `roadmapSync` (veja `examples/config.json`) e reaproveita `endpoint` e
 `secretEnvVar`:
 
 - `enabled` liga o passo; `path` é a rota sob o `endpoint` (só segmentos simples, nunca `..`);
 - `collectors` é a lista de comandos, cada um com `name`, `command` (lista de argumentos, nunca uma
-  linha de shell; `{from}` e `{to}` viram `AAAA-MM-DD`) e `timeoutSeconds` (padrão 300);
+  linha de shell; `{start}` e `{end}` viram os instantes exatos do período, com fuso, e `{from}` e `{to}`
+  viram os dias `AAAA-MM-DD` desse mesmo período) e `timeoutSeconds` (padrão 300);
 - `pushCommand` é o comando de envio (lista de argumentos; `{draft}` vira o caminho do rascunho),
   com `pushTimeoutSeconds` opcional;
 - `factsFile` e `usageFile` são opcionais: apontam os arquivos que os coletores gravam, para a

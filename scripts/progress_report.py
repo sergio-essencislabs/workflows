@@ -33,9 +33,13 @@ Operations (each prints one JSON object on stdout):
             in the Sao Paulo calendar, whatever offset the answer uses), the presentation Monday
             (`weekMeeting`, the route's own when it sent one for this window, else computed) and
             `summaryFolder` (`dd_MM` of the last day), whether a draft already exists and the last
-            period sent.
-  collect   run every configured collector, in order, from the project root, with --from and --to
-            substituted into `{from}` and `{to}`. Stops at the first failure.
+            period sent. `start`/`end` are the exact instants of the period: a summary starts at the
+            instant the last one sent ended, never at a midnight. A draft of another period (the
+            previous summary not marked as sent yet) sets `draftOtherPeriod`: pushing would replace it.
+  collect   run every configured collector, in order, from the project root. With --start and --end
+            (the instants `window` printed) they go into `{start}` and `{end}`, and the days of the
+            period into `{from}` and `{to}`; --from and --to alone are the older, day-only form, refused
+            when a collector asks for `{start}` or `{end}`. Stops at the first failure.
   shots     with `weekShots`: resolve the folder of this summary's prints (`--to` is the last day of
             the period; the folder is `<week of the next Monday>/<weekShots>/<dd_MM of --to>` under
             scrumRoot, one per summary; `--meeting` only for the window of the last `window` answer)
@@ -564,6 +568,14 @@ def parse_instant(value, field):
     return instant
 
 
+def period_days(start, end):
+    """First and last calendar day (Sao Paulo) of the half-open period [start, end)."""
+    first_local, local_end = start.astimezone(SAO_PAULO), end.astimezone(SAO_PAULO)
+    midnight = local_end.time() == dt.time(0, 0)
+    last_day = local_end.date() - dt.timedelta(days=1) if midnight else local_end.date()
+    return first_local.date(), last_day
+
+
 def scalars(source, prefix):
     return {key: value[:200] if isinstance(value, str) else value for key, value in source.items()
             if key.startswith(prefix) and isinstance(value, (str, int, float, bool)) or key.startswith(prefix) and value is None}
@@ -583,10 +595,8 @@ def op_window(root, transport):
     start = parse_instant(body['window'].get('start'), 'window.start')
     end = parse_instant(body['window'].get('end'), 'window.end')
     require(end > start, 'the progress route sent an empty or inverted window')
-    first_local, local_end = start.astimezone(SAO_PAULO), end.astimezone(SAO_PAULO)
-    midnight = local_end.time() == dt.time(0, 0)
-    last_day = local_end.date() - dt.timedelta(days=1) if midnight else local_end.date()
-    require(last_day >= first_local.date(), 'the progress route sent a window shorter than one calendar day')
+    first_day, last_day = period_days(start, end)
+    require(last_day >= first_day, 'the progress route sent a window shorter than one calendar day')
     draft, last_sent = body.get('draft'), body.get('lastSent')
     require(draft is None or isinstance(draft, dict), 'the progress route sent an unexpected draft')
     require(last_sent is None or isinstance(last_sent, dict), 'the progress route sent an unexpected lastSent')
@@ -594,6 +604,15 @@ def op_window(root, transport):
     if last_sent:
         period = last_sent.get('period') if isinstance(last_sent.get('period'), (str, dict)) else (scalars(last_sent, 'period') or None)
     pushed_at = draft.get('pushed_at') if draft else None
+    # A draft whose period starts elsewhere is another summary, most often the previous one not marked as sent:
+    # the route keeps one draft per product and a push replaces it, so the session must stop and ask.
+    draft_period, draft_other = None, False
+    if draft and draft.get('period_start') is not None:
+        draft_start = parse_instant(draft.get('period_start'), 'draft.period_start')
+        draft_period = {'start': draft_start.isoformat(), 'end': None}
+        if draft.get('period_end') is not None:
+            draft_period['end'] = parse_instant(draft.get('period_end'), 'draft.period_end').isoformat()
+        draft_other = draft_start != start
     # `weekMeeting` describes only the window of this answer. The plugin computes the same day itself and, when
     # the service sent one, it wins for this window; a difference is reported, never hidden.
     local_meeting, meeting, warnings = presentation_monday(last_day), None, []
@@ -605,25 +624,57 @@ def op_window(root, transport):
                             'the Monday after the week of the last day; the route value is used for this window. '
                             'Tell the user before saving the prints.')
     meeting = meeting or local_meeting
+    if draft_other:
+        warnings.append('RoadS holds a draft of another period (draftPeriod), most often the previous summary not marked '
+                        'as sent yet. Pushing this one would replace it: ask the user to mark it as sent in RoadS, then '
+                        'run window again.')
     result = {'ok': True, 'exitCode': 0, 'start': start.isoformat(), 'end': end.isoformat(),
-              'from': first_local.date().isoformat(), 'to': last_day.isoformat(), 'draftExists': draft is not None,
-              'draftPushedAt': pushed_at[:64] if isinstance(pushed_at, str) else None, 'lastSentPeriod': period,
+              'from': first_day.isoformat(), 'to': last_day.isoformat(), 'draftExists': draft is not None,
+              'draftPushedAt': pushed_at[:64] if isinstance(pushed_at, str) else None,
+              'draftPeriod': draft_period, 'draftOtherPeriod': draft_other, 'lastSentPeriod': period,
               'weekMeeting': meeting.isoformat(), 'weekMeetingLocal': local_meeting.isoformat(),
               'summaryFolder': f'{last_day.day:02d}_{last_day.month:02d}',
-              'message': f'Collect {first_local.date().isoformat()} to {last_day.isoformat()}.'}
+              'message': f'Collect {start.isoformat()} to {end.isoformat()} (days {first_day.isoformat()} to '
+                         f'{last_day.isoformat()}).'}
     if warnings:
         result['warnings'] = warnings
     return result
 
 
-def op_collect(root, date_from, date_to):
+def given_instant(value, flag):
+    """An instant passed on the command line: ISO-8601 with an explicit offset, as `window` prints it."""
+    require(isinstance(value, str) and 0 < len(value) <= 64, f'{flag} is required: pass the {flag[2:]} that window printed')
+    try:
+        instant = dt.datetime.fromisoformat(value.replace('Z', '+00:00') if value.endswith('Z') else value)
+    except ValueError:
+        raise Refusal(f'{flag} must be an ISO-8601 instant with its offset, as window prints it')
+    require(instant.tzinfo is not None, f'{flag} must carry its UTC offset, as window prints it')
+    return instant
+
+
+def op_collect(root, date_from, date_to, start=None, end=None):
     progress = Progress(root)
     assert_approved(progress)
     register_secret(progress)
-    first, last = parse_date(date_from, '--from'), parse_date(date_to, '--to')
-    require(first <= last, '--from must not be after --to')
     require(progress.collectors, 'no collectors are configured in roadmapSync.progress.collectors')
-    values = {'from': first.isoformat(), 'to': last.isoformat()}
+    if start is not None or end is not None:
+        # The exact period: a summary starts at the instant the previous one ended, so a day boundary would
+        # either drop the evening of a send day or count it twice.
+        require(date_from is None and date_to is None, 'use either --start/--end or --from/--to, not both')
+        first_instant, last_instant = given_instant(start, '--start'), given_instant(end, '--end')
+        require(last_instant > first_instant, '--end must come after --start')
+        first, last = period_days(first_instant, last_instant)
+        values = {'from': first.isoformat(), 'to': last.isoformat(),
+                  'start': first_instant.astimezone(SAO_PAULO).isoformat(),
+                  'end': last_instant.astimezone(SAO_PAULO).isoformat()}
+    else:
+        first, last = parse_date(date_from, '--from'), parse_date(date_to, '--to')
+        require(first <= last, '--from must not be after --to')
+        asks = sorted({name for collector in progress.collectors for item in collector['command']
+                       for name in ('start', 'end') if '{' + name + '}' in item})
+        require(not asks, f"a collector takes {', '.join('{' + n + '}' for n in asks)}: pass --start and --end, the "
+                          'instants window printed')
+        values = {'from': first.isoformat(), 'to': last.isoformat()}
     reports = []
     for collector in progress.collectors:
         outcome = execute(substitute(collector['command'], values), str(progress.root), collector['timeoutSeconds'],
@@ -639,8 +690,11 @@ def op_collect(root, date_from, date_to):
                 why = f"exited with {outcome['exitCode']}"
             return {'ok': False, 'exitCode': 1, 'failed': collector['name'], 'collectors': reports,
                     'message': f"Collector {collector['name']!r} {why}; nothing was collected or updated."}
-    return {'ok': True, 'exitCode': 0, 'collectors': reports, 'from': values['from'], 'to': values['to'],
-            'message': f'{len(reports)} collector(s) finished.'}
+    result = {'ok': True, 'exitCode': 0, 'collectors': reports, 'from': values['from'], 'to': values['to'],
+              'message': f'{len(reports)} collector(s) finished.'}
+    if 'start' in values:
+        result.update(start=values['start'], end=values['end'])
+    return result
 
 
 def read_json_file(path, what):
@@ -941,7 +995,7 @@ def op_push(root, draft, shots, captions, date_to=None, date_from=None, meeting=
 
 
 def run(operation, root='.', transport=None, date_from=None, date_to=None, draft=None, shots=(), captions=(), meeting=None,
-        home_set=None, home_clear=False, ref=None, repository=None):
+        home_set=None, home_clear=False, ref=None, repository=None, start=None, end=None):
     transport = transport or rs.http_default
     try:
         if operation not in ('status', 'home', 'candidates'):
@@ -955,7 +1009,7 @@ def run(operation, root='.', transport=None, date_from=None, date_to=None, draft
         elif operation == 'window':
             result = op_window(root, transport)
         elif operation == 'collect':
-            result = op_collect(root, date_from, date_to)
+            result = op_collect(root, date_from, date_to, start, end)
         elif operation == 'shots':
             result = op_shots(root, date_to, date_from, meeting)
         elif operation == 'candidates':
@@ -982,7 +1036,9 @@ def main():
                                                      'else the registered home (the other operations take the operationsRoot that status reports)')
     parser.add_argument('--set', dest='home_set', help='project that declares the block, to register as its home (home)')
     parser.add_argument('--clear', dest='home_clear', action='store_true', help='remove the registered home (home)')
-    parser.add_argument('--from', dest='date_from', help='first day to collect, YYYY-MM-DD (collect)')
+    parser.add_argument('--start', help='first instant of the period, as window printed it (collect)')
+    parser.add_argument('--end', help='instant the period ends, exclusive, as window printed it (collect)')
+    parser.add_argument('--from', dest='date_from', help='first day to collect, YYYY-MM-DD (collect, older day-only form)')
     parser.add_argument('--to', dest='date_to', help='last day of the period, inclusive, YYYY-MM-DD (collect; shots and push with weekShots)')
     parser.add_argument('--meeting', help='the presentation Monday the route sent as weekMeeting, YYYY-MM-DD; only when the period is the window of the last window answer (shots, push)')
     parser.add_argument('--ref', help='branch, tag or commit whose files the kept prints are compared with; default HEAD (candidates)')
@@ -993,7 +1049,7 @@ def main():
     args = parser.parse_args()
     result = run(args.operation, args.root, date_from=args.date_from, date_to=args.date_to, draft=args.draft,
                  shots=args.shot, captions=args.caption, meeting=args.meeting, home_set=args.home_set,
-                 home_clear=args.home_clear, ref=args.ref, repository=args.repository)
+                 home_clear=args.home_clear, ref=args.ref, repository=args.repository, start=args.start, end=args.end)
     print(render(result))
     return int(result['exitCode'])
 

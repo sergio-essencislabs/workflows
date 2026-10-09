@@ -170,6 +170,11 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     (docs/security.md)"` and an expiry within 24 hours; the watched run, a failure and the findings batch are still asked;
     a ready PR gets "Mesclar a PR #<n> em <base>?" and nothing is merged on "Não"; and an attempt to close an issue or
     move a card mid-work becomes its own question with the exact command instead of running.
+24. Summary period by instant. With the Wednesday summary pushed but not marked as sent, start the Friday summary: `window`
+    reports `draftOtherPeriod` and the session asks before collecting; mark it as sent in RoadS, answer "Marquei como enviado
+    agora", and confirm the new `start` is the exact instant the Wednesday numbers were collected (not a midnight), that the
+    collectors received `--start`/`--end`, that work done on Wednesday after that instant appears in the Friday numbers, and
+    that after the Friday summary is sent the RoadS list shows both summaries and the week's presentation.
 
 Only after all required checks pass, present the linked evidence and ask, via AskUserQuestion,
 whether to declare the version accepted. Items the environment cannot enforce (an exact

@@ -222,7 +222,11 @@ aprovação do bloco, `window`, `collect`, conferência dos números pelo usuár
 por entrega visível fora de `proximo`), rascunho mostrado na íntegra, aprovação e `push --draft` (com
 `--to` quando há `weekShots`). A pasta é a da segunda-feira seguinte à semana do último dia do período,
 com uma subpasta `<dd_MM>` por resumo; o contrato com o RoadS está em `docs/roads-contract.md`.
-Nada é enviado sem a aprovação do rascunho completo.
+Nada é enviado sem a aprovação do rascunho completo. O período é só o do `window`, com hora: começa no
+instante exato em que os números do resumo anterior foram coletados e chega aos coletores por
+`collect --start <start> --end <end>`; a sessão nunca escolhe datas, e depois de qualquer correção roda
+`window` de novo. Com `draftOtherPeriod` (o resumo anterior ainda como rascunho no RoadS), a sessão para e
+pergunta antes de coletar, porque o envio substituiria esse rascunho.
 
 A unidade de trabalho é a issue do GitHub, identificada pelo número, para que o
 quadro e os registros locais coincidam. O plugin não cria identificadores

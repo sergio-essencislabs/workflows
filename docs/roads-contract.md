@@ -139,6 +139,22 @@ Devolve a janela a resumir, o rascunho atual e o último envio:
 
 - `window.end` é exclusivo; o último dia do período é o dia do **último instante** da janela, não o do `window.end`:
   uma janela que termina na quinta 00:00 tem a quarta como último dia.
+- **Corte por instante.** `window.start` é o `period_end` exato do último resumo marcado como enviado, e o
+  `period_end` de um resumo é o instante em que os números dele foram coletados (o `window.end` que o
+  plugin passou aos coletores com `--start`/`--end`), nunca arredondado para a meia-noite. Assim o resumo
+  de quarta cobre desde o fim do de sexta, o de sexta desde o fim do de quarta, e nada fica entre dois
+  e-mails nem conta duas vezes. A apresentação da semana soma os resumos enviados cujo período termina
+  nela, e a lista do RoadS mostra os dois resumos e a apresentação.
+- `draft`, quando existe, traz `period_start` e `period_end`. Um rascunho cujo `period_start` difere de
+  `window.start` é outro resumo, quase sempre o anterior ainda não marcado como enviado: o plugin o
+  informa em `draftOtherPeriod` e a skill para e pergunta. O RoadS guarda um rascunho por produto, e o
+  `POST progress-report` de outro período responde `409` com `other_draft_pending` e não grava nada
+  (mudança aditiva: um código de erro novo, sem campo removido); o mesmo `period_start` atualiza o
+  rascunho, como antes. O corpo é `{ "schemaVersion": 1, "error": "other_draft_pending", "draft": {
+  "period_start", "period_end" } }`, e `period_already_sent` continua sendo conferido antes.
+- Os coletores do projeto recebem `--start <instante> --end <instante>` (com fuso; o início entra, o fim
+  não) e gravam essa mesma janela nos arquivos de fatos e de uso; `--from`/`--to` por dias continuam
+  aceitos. O plugin passa os mesmos valores a todos os coletores de uma coleta.
 - `weekMeeting` (opcional para o plugin; ausente ou `null` valem como ausente): sempre uma segunda-feira, no calendário de São Paulo, e descreve
   **apenas a janela devolvida na mesma resposta**. É a segunda-feira seguinte à semana (segunda a domingo)
   do último instante da janela. Se o plugin enviar um período diferente do da janela, ele calcula o dia

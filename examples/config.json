@@ -19,7 +19,7 @@
       "enabled": false,
       "path": "progress-report",
       "collectors": [
-        {"name": "usage", "command": ["node", "COLLECTOR_SCRIPT", "--from", "{from}", "--to", "{to}"], "timeoutSeconds": 300}
+        {"name": "usage", "command": ["node", "COLLECTOR_SCRIPT", "--start", "{start}", "--end", "{end}"], "timeoutSeconds": 300}
       ],
       "pushCommand": ["node", "PUSH_SCRIPT", "--draft", "{draft}"],
       "factsFile": null,

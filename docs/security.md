@@ -205,7 +205,8 @@ O resumo para a diretoria (`scripts/progress_report.py`) executa comandos lidos 
   próprio nunca usa o registro, e um arquivo de configuração de repositório não consegue apontar para
   outra pasta (o ponteiro só existe no diretório pessoal). As demais operações rodam na raiz do registro.
 - **Comandos sem shell:** cada comando é uma lista de argumentos executada diretamente, a partir da
-  raiz do projeto, com prazo; `{from}`, `{to}` e `{draft}` entram como argumentos inteiros.
+  raiz do projeto, com prazo; `{start}`, `{end}`, `{from}`, `{to}` e `{draft}` entram como argumentos
+  inteiros, e os instantes só chegam validados (ISO-8601 com fuso, fim depois do início).
 - **Segredo:** só o comando de envio o recebe, pela variável de ambiente configurada; os coletores
   não o recebem. Um comando que o traga nos argumentos é recusado, e o valor é ocultado em toda saída.
 - **Rota:** o endereço da rota precisa ficar dentro do endpoint aprovado; um `path` que escape dele

@@ -357,6 +357,25 @@ class WindowTests(ProgressTestCase):
         self.assertEqual(result['draftPushedAt'], '2026-09-29T10:00:00-03:00')
         self.assertEqual(result['lastSentPeriod'], {'period_start': '2026-09-21', 'period_end': '2026-09-27'})
 
+    def test_the_period_starts_at_the_instant_the_last_summary_ended(self):
+        result = self.window(state(start='2026-10-07T20:05:12-03:00', end='2026-10-09T19:40:00-03:00'))
+        self.assertEqual((result['start'], result['end']), ('2026-10-07T20:05:12-03:00', '2026-10-09T19:40:00-03:00'))
+        self.assertEqual((result['from'], result['to']), ('2026-10-07', '2026-10-09'))
+
+    def test_a_draft_of_another_period_is_flagged_and_its_own_is_not(self):
+        other = {'id': 'd1', 'pushed_at': '2026-10-07T20:05:00-03:00', 'rev': 1,
+                 'period_start': '2026-10-03T00:00:00-03:00', 'period_end': '2026-10-07T20:05:00-03:00'}
+        result = self.window(state(start='2026-10-07T20:05:00-03:00', end='2026-10-09T19:40:00-03:00', draft=other))
+        self.assertTrue(result['draftOtherPeriod'])
+        self.assertEqual(result['draftPeriod'], {'start': '2026-10-03T00:00:00-03:00', 'end': '2026-10-07T20:05:00-03:00'})
+        self.assertTrue(any('replace it' in warning for warning in result['warnings']))
+        same = dict(other, period_start='2026-10-07T23:05:00Z')
+        result = self.window(state(start='2026-10-07T20:05:00-03:00', end='2026-10-09T19:40:00-03:00', draft=same))
+        self.assertFalse(result['draftOtherPeriod'])
+        self.assertNotIn('warnings', result)
+        result = self.window(state(draft={'id': 'd1', 'pushed_at': '2026-09-29T10:00:00-03:00', 'rev': 2}))
+        self.assertEqual((result['draftOtherPeriod'], result['draftPeriod']), (False, None))
+
     def test_a_bad_secret_is_reported_and_the_body_is_never_echoed(self):
         result = self.window(LEAK, status=401)
         self.assertFalse(result['ok'])
@@ -478,6 +497,38 @@ class CollectTests(ProgressTestCase):
         self.approved()
         for span in ({'date_from': '28/09/2026', 'date_to': '2026-09-30'}, {'date_from': '2026-09-30', 'date_to': '2026-09-28'},
                      {'date_from': None, 'date_to': '2026-09-30'}, {'date_from': '2026-09-28; rm', 'date_to': '2026-09-30'}):
+            with self.subTest(span=span):
+                result = self.run_op('collect', **span)
+                self.assertFalse(result['ok'])
+        self.assertEqual(self.logged(), [])
+
+    def instant_collector(self, name='usage'):
+        return {'name': name, 'command': [sys.executable, str(self.tools / 'collector.py'), str(self.log), name,
+                                          '--start', '{start}', '--end', '{end}', '--dias', '{from}..{to}']}
+
+    def test_the_exact_instants_reach_the_collectors(self):
+        result = self.collect([self.instant_collector()], start='2026-10-07T23:05:12Z', end='2026-10-09T19:40:00-03:00')
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(self.logged()[0]['argv'], ['--start', '2026-10-07T20:05:12-03:00', '--end',
+                                                    '2026-10-09T19:40:00-03:00', '--dias', '2026-10-07..2026-10-09'])
+        self.assertEqual((result['start'], result['end']), ('2026-10-07T20:05:12-03:00', '2026-10-09T19:40:00-03:00'))
+        self.assertEqual((result['from'], result['to']), ('2026-10-07', '2026-10-09'))
+
+    def test_a_collector_that_asks_for_instants_is_never_run_with_days_only(self):
+        result = self.collect([self.collector('um'), self.instant_collector('dois')])
+        self.assertFalse(result['ok'])
+        self.assertIn('--start and --end', result['message'])
+        self.assertEqual(self.logged(), [])
+
+    def test_the_instants_are_validated(self):
+        self.write_config(progress=self.block(collectors=[self.instant_collector()]))
+        self.approved()
+        for span in ({'start': '2026-10-07T20:05:00', 'end': '2026-10-09T19:40:00-03:00'},
+                     {'start': '2026-10-09T19:40:00-03:00', 'end': '2026-10-07T20:05:00-03:00'},
+                     {'start': '2026-10-07T20:05:00-03:00', 'end': None},
+                     {'start': 'ontem; rm', 'end': '2026-10-09T19:40:00-03:00'},
+                     {'start': '2026-10-07T20:05:00-03:00', 'end': '2026-10-09T19:40:00-03:00',
+                      'date_from': '2026-10-07', 'date_to': '2026-10-09'}):
             with self.subTest(span=span):
                 result = self.run_op('collect', **span)
                 self.assertFalse(result['ok'])
@@ -637,7 +688,7 @@ class PluginContractTests(unittest.TestCase):
         progress = config['roadmapSync']['progress']
         self.assertFalse(progress['enabled'])
         self.assertEqual(progress['path'], 'progress-report')
-        self.assertEqual(progress['collectors'][0]['command'][1:], ['COLLECTOR_SCRIPT', '--from', '{from}', '--to', '{to}'])
+        self.assertEqual(progress['collectors'][0]['command'][1:], ['COLLECTOR_SCRIPT', '--start', '{start}', '--end', '{end}'])
         self.assertEqual(progress['pushCommand'][1:], ['PUSH_SCRIPT', '--draft', '{draft}'])
         self.assertEqual(progress['draftGuide'], 'docs/progress-draft.md')
         self.assertEqual(progress['shotsDir'], '.frontlights/progress/shots')
