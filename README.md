@@ -454,7 +454,8 @@ O bloco fica dentro de `roadmapSync` (veja `examples/config.json`) e reaproveita
     precisa ser um caminho completo.
   - **Exige `factsFile`:** antes do envio, o `push` confere o `captions.json` e as imagens. Também
     recusa quando uma entrega visível do `factsFile`, com status diferente de `proximo`, não tem
-    print com a issue dela. O `hidden` booleano do arquivo de textos prevalece sobre o do coletor.
+    print com a issue dela, e também quando uma entrega tem mais de um: o resumo leva um único print por
+    entrega. O `hidden` booleano do arquivo de textos prevalece sobre o do coletor.
   - **Aprovação:** `scrumRoot`, `weekFolderPattern` e `weekShots` entram no bloco aprovado.
     Ativar o `weekShots` pede nova aprovação.
   - **Mesmas travas da sincronização do roadmap:** nada fora do `scrumRoot`, sem junção nem link no
@@ -508,7 +509,9 @@ produção nem com dado de pessoa ou cliente real. Os ids criados ficam em `dado
 ou senha), a remoção é conferida item a item, e o que o produto não apaga (excluir um usuário só o
 anonimiza) é listado com o `DELETE` exato, só dos ids criados, para você aprovar.
 
-**Prints para o resumo.** Na passada DEPOIS o teste assistido também guarda, para cada caso visível, um
+**Prints para o resumo.** O teste assistido guarda só um print da ANTES e um da DEPOIS por issue (a tela que
+melhor mostra o que mudou, no mesmo ponto nas duas), nunca um por passo ou por repetição; um caso que falha pode guardar
+a sua imagem de falha. Na passada DEPOIS ele também guarda, para cada entrega, um único
 print limpo (sem a faixa, sem a barra do navegador, sem identidade nem dado de pessoa) em
 `.frontlights/issues/<n>/browser/resumo/` da worktree principal (a limpeza das worktrees entregues leva o
 `.frontlights` delas), com um `candidates.json` que diz a parte, a entrega (`cover`), o repositório, o instante e os arquivos visíveis com o id Git que tinham. Nada sai do projeto nessa hora: o resumo só copia o

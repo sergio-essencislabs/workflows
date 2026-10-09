@@ -711,6 +711,15 @@ def deliveries_without_prints(facts, texts, captions):
     return missing
 
 
+def deliveries_with_many_prints(captions):
+    """The issues that carry more than one print in captions.json: the summary shows a single print per delivery."""
+    counts = {}
+    for item in captions:
+        if item.get('issue') is not None:
+            counts[item['issue']] = counts.get(item['issue'], 0) + 1
+    return [number for number, total in counts.items() if total > 1]
+
+
 CANDIDATE_FIELDS = {'file', 'caption', 'issue', 'cover', 'repository', 'takenAt', 'head', 'visibleFiles'}
 MAX_VISIBLE_FILES = 200
 REPOSITORY = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*')
@@ -897,8 +906,11 @@ def op_push(root, draft, shots, captions, date_to=None, date_from=None, meeting=
         listed = validated_captions(folder)
         missing = deliveries_without_prints(read_json_file(progress.facts_path(), 'the facts file (factsFile)'),
                                             read_json_file(draft_path, 'the draft'), listed)
-        require(not missing, 'these visible deliveries need at least one print with their issue in captions.json: '
+        require(not missing, 'these visible deliveries need a print with their issue in captions.json: '
                              + ', '.join(f'#{number}' for number in missing))
+        many = deliveries_with_many_prints(listed)
+        require(not many, 'the summary takes a single print per delivery; captions.json has more than one for: '
+                          + ', '.join(f'#{number}' for number in many))
         values['shotsDir'] = folder
     require(len(captions) <= len(shots), 'every --caption needs a --shot before it')
     extra = []

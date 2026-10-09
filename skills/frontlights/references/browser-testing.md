@@ -282,6 +282,13 @@ When the user will watch:
   text and any restricted profile is already restored, when the session itself drives the
   passes; with a subagent it is asked once the report arrives, with the window already
   closed. Closing the window or the 5 minutes ending is never an answer to that question.
+- **One print per pass.** The watched run keeps exactly one print of ANTES and one of DEPOIS
+  per issue (for a batch, per issue of the batch), never one per step or per repetition: the
+  single screen that shows best what the `Fluxo:` changes, taken at the same place in both passes so the
+  two can be compared. The step results, console errors and failed requests go to the text
+  and to `result.json`, not to images. The check that the strip and every edge of the page are inside the
+  window is only a look: do not keep that image. A case that fails may keep its one failure image, named
+  `falha-<caso>`, beside the two; a passing case never does.
 - **Faithful ANTES.** The base must run against the data it expects. When the issue
   has a migration, run ANTES before applying it, or against an isolated database;
   otherwise say in the report that ANTES is not a faithful baseline.
@@ -448,7 +455,8 @@ per pass (`ANTES`/`DEPOIS`, with the branch and `head` served and `repeticoes: 2
 source of each response (`back real` or `interceptada`) and,
 when a profile was moved, only the profile field before and after the undo (never
 the whole row, which can hold a login or a password hash); its screenshots are
-named `antes-<caso>-<n>` and `depois-<caso>-<n>`. Screenshots stay in the same folder, and so do `perfil-original.json` and `dados-de-teste.json`. The
+exactly one per pass and issue, named `antes-<n>` and `depois-<n>` (`<n>` is the issue), plus `falha-<caso>` for a failed
+case. Screenshots stay in the same folder, and so do `perfil-original.json` and `dados-de-teste.json`. The
 records of `.frontlights/issues/<n>/checks/` sit beside it. The records are
 tied to the `head` they ran on: for the watched run `browser-gate` says whether the record still covers the
 code (`stale` asks again), and the `checks` records are stale after any later commit, so rerun them before
@@ -462,11 +470,13 @@ allows routine issue updates; otherwise keep it in the handoff as pending.
 ## Prints kept for the progress summary
 
 The DEPOIS pass of a watched run is also the cheapest moment to take the prints the "Resumo para a
-diretoria" will need (`progress-report.md` step 6 offers them). Taking them costs one extra capture per
-visible case and nothing leaves the project.
+diretoria" will need (`progress-report.md` step 6 offers them). The summary shows a single print per
+delivery, so this costs at most one extra capture per delivery and nothing leaves the project.
 
-- **Which.** In DEPOIS only, never ANTES, one print per case of the `Fluxo:` that shows something a
-  person would recognise (a screen, a message, a list), taken right after the case passes.
+- **Which.** In DEPOIS only, never ANTES, a single print per delivery (the top-level issue of the
+  family): the one screen, message or list a person would recognise as what changed, taken right after
+  the case passes. It is normally the `depois-<n>` print of the watched run, cleaned as below; take a
+  second one only when that print cannot be cleaned.
 - **Clean.** Without the ANTES/DEPOIS strip, without the browser chrome, with no login, no person's name or
   data and no local path: crop, or choose another view of the same result, or take no print for that case. Test
   data only. JPEG or PNG, at most 1 MB and about 1920 px wide. Look at every image yourself and retake the

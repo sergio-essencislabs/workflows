@@ -146,7 +146,9 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     case for a missing login and never carrying "não crie usuário" in a brief. The DEPOIS pass keeps clean prints in
     `browser/resumo/`; at the summary's prints step `candidates` lists them, the user picks "Usar os do teste assistido",
     "Capturar novos" or "Misturar" per delivery, the chosen print is copied with the cover's number, and a print whose
-    visible code changed is not offered.
+    visible code changed is not offered. Count the images the run left in `browser/`: one `antes-<n>` and one
+    `depois-<n>` per issue (plus a `falha-<caso>` only for a failed case), never one per step. Try a `captions.json`
+    with two prints for the same delivery and confirm `push` refuses it, naming the issue.
 
 21. Progress of the whole family in the summary. With a facts file whose entry carries `subIssues` over the whole tree and
     `slices`, confirm the draft sentence does not repeat the "X de Y partes prontas" count the e-mail and the weekly view show by

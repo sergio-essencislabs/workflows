@@ -525,6 +525,25 @@ class OnePrintPerDeliveryTests(WeekShotsTestCase):
         self.assertIn('#9', result['message'])
         self.assertNotIn('#10', result['message'])
 
+    def test_a_delivery_takes_a_single_print_and_the_second_is_refused(self):
+        self.write_facts([self.fact(101), self.fact(102)])
+        self.prints([{'file': 'a.png', 'caption': 'x', 'issue': 101}, {'file': 'b.png', 'caption': 'y', 'issue': 101},
+                     {'file': 'c.png', 'caption': 'z', 'issue': 102}])
+        result = self.push()
+        self.assertFalse(result['ok'])
+        self.assertIn('single print per delivery', result['message'])
+        self.assertIn('#101', result['message'])
+        self.assertNotIn('#102', result['message'])
+        self.assertFalse((self.out / 'push.json').exists())
+        self.prints([{'file': 'a.png', 'caption': 'x', 'issue': 101}, {'file': 'c.png', 'caption': 'z', 'issue': 102}])
+        self.assertTrue(self.push()['ok'])
+
+    def test_prints_without_an_issue_are_not_counted_as_repeats(self):
+        self.write_facts([self.fact(101)])
+        self.prints([{'file': 'a.png', 'caption': 'x', 'issue': 101}, {'file': 'b.png', 'caption': 'y'},
+                     {'file': 'c.png', 'caption': 'z'}])
+        self.assertTrue(self.push()['ok'])
+
     def test_a_print_without_issue_does_not_count_for_a_delivery(self):
         self.write_facts([self.fact(5)])
         self.prints([{'file': 'a.png', 'caption': 'x'}])

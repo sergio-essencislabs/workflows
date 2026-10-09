@@ -174,7 +174,10 @@ operation runs in, because the collectors, the draft guide and the approval all 
 
    With `weekShots`, prints are required: every delivery of the facts file that stays visible (its
    `hidden` in the texts file when that is `true` or `false`, otherwise the collector's) and whose
-   status is not `proximo` needs at least one print with its issue number. Tell the user which
+   status is not `proximo` needs exactly one print with its issue number: the summary is read at a glance
+   by the CEO, so it carries a single print per delivery, never two, and `push` refuses a second one. When a
+   delivery has several candidates or several screens to show, pick the one print that shows best what changed
+   for the user (the DEPOIS one) and drop the rest. Tell the user which
    deliveries need one, then ask with `AskUserQuestion` how to get each (below). Without
    `weekShots`, ask whether the summary should carry screenshots and, if so, for which deliveries.
    - **Prints the watched tests kept.** Before asking, run `python
@@ -203,8 +206,9 @@ operation runs in, because the collectors, the draft guide and the approval all 
      folder of this summary only. It is a JSON list in the order wanted,
      `[{"file": "101-tela.png", "caption": "one plain sentence", "issue": 101}]`: `file` is a plain
      name in that folder, `caption` plain Portuguese, `issue` the integer number of the delivery's
-     issue (leave `issue` out for a print that belongs to no delivery; it goes at the end of the
-     e-mail). Images not listed are ignored, so old ones never go out by accident.
+     issue, once per delivery (leave `issue` out for a print that belongs to no delivery; it goes at the
+     end of the e-mail, and the user must ask for it). Images not listed are ignored, so old ones never go
+     out by accident.
    - Look at every image yourself before showing it. Retake the blurry, empty or error ones. Each
      image is shown to the user with its caption in the next step, as part of the complete draft.
    - When no print is needed and the user declines them, write `captions.json` as an empty list (`[]`).

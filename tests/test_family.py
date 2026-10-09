@@ -256,6 +256,7 @@ class WatchedRunTextTests(unittest.TestCase):
                        'A bare timer or `sleep` is not a holder', 'never start DEPOIS before that notice',
                        'does not return its report before the DEPOIS holder exits',
                        'is never an answer to that question',
+                       'One print per pass', 'never one per step or per repetition', 'do not keep that image',
                        'never fall back to a hidden window silently',
                        'serve start --root <base-checkout> --issue <n>'):
             with self.subTest(phrase=phrase):
@@ -317,7 +318,7 @@ class WatchedRunTextTests(unittest.TestCase):
         self.assertIn('A watched run adds `assistido`', evidence)
         self.assertIn('`rodadas`', evidence)
         self.assertIn('`aprovacao` (`aprovado`, `prosseguir` or `alteracao`)', evidence)
-        self.assertIn('antes-<caso>-<n>', evidence)
+        self.assertIn('exactly one per pass and issue, named `antes-<n>` and `depois-<n>`', evidence)
         self.assertIn('only the profile field before and after the undo', evidence)
         self.assertIn('the watched-run question below', flat(self.text))
         self.assertIn('"pronto para assistir?"', flat(read('skills', 'frontlights', 'references', 'development.md')))

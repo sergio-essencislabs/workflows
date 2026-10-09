@@ -277,7 +277,7 @@ class TextTests(unittest.TestCase):
     def test_the_watched_test_keeps_clean_prints_for_the_summary(self):
         text = self.flat('skills', 'frontlights', 'references', 'browser-testing.md')
         for phrase in ('Prints kept for the progress summary', 'candidates.json', 'DEPOIS only, never ANTES', 'visibleFiles',
-                       'Without the ANTES/DEPOIS strip'):
+                       'Without the ANTES/DEPOIS strip', 'a single print per delivery'):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
 
