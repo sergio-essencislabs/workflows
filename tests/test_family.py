@@ -252,7 +252,7 @@ class WatchedRunTextTests(unittest.TestCase):
                        'disposable browser context or profile', 'ends ANTES before DEPOIS starts',
                        'one issue at a time',
                        'Each case runs twice in each pass', 'about 5 minutes', 'the wait never blocks the agent', 'asked while the DEPOIS window is still open',
-                       '`run_in_background`', "the browser's `disconnected` event", 'Its exit is the notice',
+                       'run_in_background option', "the browser's `disconnected` event", 'Its exit is the notice',
                        'A bare timer or `sleep` is not a holder', 'never start DEPOIS before that notice',
                        'does not return its report before the DEPOIS holder exits',
                        'is never an answer to that question',

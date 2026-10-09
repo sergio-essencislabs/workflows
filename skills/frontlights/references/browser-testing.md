@@ -265,7 +265,7 @@ When the user will watch:
   on screen long enough to be read (a few seconds), not the instant the assertion
   passes. After the last step of each pass (ANTES and DEPOIS) leave the window open for
   about 5 minutes, held by a background process so that the wait never blocks the agent.
-  The holder is started with `run_in_background` by whoever drives the pass, and it
+  The holder is started in the background (the shell tool's run_in_background option) by whoever drives the pass, and it
   exits when the user closes the window (the browser's `disconnected` event) or when the 5
   minutes end, whichever comes first; at the 5 minutes it closes the window itself before
   exiting, and it prints which of the two ended it. Its exit is the
