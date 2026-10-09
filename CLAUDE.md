@@ -12,8 +12,11 @@ respostas e documentos em português. Preserve comandos e identificadores técni
 O GitHub é a fonte oficial de escopo, critérios de aceitação, dependências e situação
 das issues. Registros locais são evidências e cópias de referência, nunca tickets
 duplicados. Informe divergências. Faça todas as perguntas por `AskUserQuestion`;
-não invente aprovação. Descoberta, PRD, publicação de issues e implementação
-delimitada têm aprovações separadas.
+não invente aprovação. Descoberta, PRD e publicação de issues têm aprovações
+separadas. A implementação (etapa 6) roda sob a autorização permanente, decisão do
+mantenedor para todo projeto: abre sem pergunta, e cada operação negada (merge,
+fechar issue, quadro, produção, migration registrada, branch base ou protegida) só
+roda depois do "Sim" de uma pergunta própria (`docs/security.md`).
 
 Este repositório é público. Nunca versione endpoint real, segredo, token, nome de
 organização, produto, cliente ou pessoa, caminho local de máquina, nem saída
@@ -35,7 +38,8 @@ marketplace, que um marketplace de terceiros só renova com
 ligada nele); só depois disso o botão Atualizar aparece.
 
 Use worktrees isoladas. A autorização comum de implementação não permite escrever
-em branches protegidas, fazer merge, implantar ou publicar versões. Preserve o
+em branches protegidas, fazer merge, implantar ou publicar versões sem o "Sim" da
+pergunta própria de cada operação. Preserve o
 GuardianS e os dados do usuário. Leia `docs/protocol.md` para execução e retomada,
 e `docs/security.md` para os limites de aplicação das permissões. Execute
 `python -m unittest discover -s tests -v` e `python -m compileall -q scripts tests`.

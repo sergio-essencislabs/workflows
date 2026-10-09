@@ -297,23 +297,48 @@ with the "pronto para assistir?" question and ends by asking the user to watch a
 for a change or go on. The run creates and later removes the test users, accounts and data its flow needs, so a
 missing login is never a reason to skip a case and no brief to a subagent forbids creating them. Test-only or API-only slices never hold it back. The scope is the whole family: the issue and its open sub-issues. Inventory hooks,
 permission settings, confirmation requirements and integration access without
-exposing secrets. Do not disable hooks or request bypass mode. Then recommend the
-highest safe parallelism and ask the concurrency question and one bounded
-implementation authorization, batched when practical. When a sub-issue depends
-on its parent (or on another issue of the family), the same call carries the
-stacking question and offers branches stacked on the dependency's branch,
-recommended first, with the concurrency set to the number of independent children
-whose files do not overlap (`references/development.md`). A batch of independent issues watched together gets the same local integration, and the authorization
-names that merge. A family is integrated locally
+exposing secrets. Do not disable hooks or request bypass mode.
+
+**Standing authorization.** The user decided, permanently and for every project, that stage 6
+opens without a question: there is no concurrency question, no stacking question and no
+implementation authorization question. Choose the highest safe parallelism; when a sub-issue
+depends on its parent (or on another issue of the family), stack it on the dependency's branch,
+with the concurrency set to the number of independent children whose files do not overlap
+(`references/development.md`). Then announce in one short block, in the user's language, what
+this run does: the issue IDs, repository, concurrency, stacking, worktree base and branch prefix,
+the verification argv and the stop conditions; the user may change any of it at any time, and a
+change goes back through `AskUserQuestion`. It covers, for the issues of that family or batch
+only: editing, testing, committing, pushing the work branches, opening draft PRs (stacked ones
+included) and retargeting them, the merges the stacking authorization names, running migrations
+on the local development database, creating and removing test data through the product's own
+endpoints, commenting on the issues and ticking acceptance criteria with evidence. A batch of
+independent issues watched together gets the same local integration, and the authorization names
+that merge. Record the charter in `.frontlights/authorization.json` with the user in
+`approved_by` and `confirmed_by`, `"autorização permanente (docs/security.md)"` in
+`approval_reference` and an `expires_at` at most 24 hours ahead. It never covers the questions of
+the work itself (the watched run, failures, the findings batch, a new product decision): those
+are still asked.
+
+**Denied operations are asked one at a time.** Merging a pull request, closing an issue,
+changing the board (adding an item, moving a card, editing a field), deploying or publishing to
+production, editing a migration already registered (on the base branch or applied anywhere but
+the local development database), writing the base branch or a protected branch, turning on a
+setting, key or flag in production, and deleting anything but the test data the run created
+are never covered by the standing authorization. When one of them is the next step, ask with
+`AskUserQuestion` naming the exact operation and the exact command, with "Sim" first and "Não"
+second; run it only after "Sim", record the answer verbatim in the handoff, and never extend a
+"Sim" to another operation, another PR or a later moment. "Não", silence or any other answer
+leaves it undone. The approvals that have their own stage (PRD, issue plan and publication,
+closeout, cleanup, roadmap and summary) keep them.
+
+A family is integrated locally
 and its full suite is green before any of its PRs opens, and a review that the code has
-outgrown (`review-gate`, exit code 2) is redone before anything is reported as reviewed. Identify exact issue IDs,
-repository, worktree base and branch prefix, verification argv, draft PR
-permission, routine issue updates, expiry and stop conditions. The authorization's
-`monitoring` block is `mode: "local"` with the approver in `confirmed_by`;
+outgrown (`review-gate`, exit code 2) is redone before anything is reported as reviewed. The
+authorization's `monitoring` block is `mode: "local"`;
 `phone_connected: true` only when the user states, unprompted in this session,
-that the phone received and answered. Record the answer
-verbatim with a reference; do not self-sign. Local files record consent but
-cannot enforce it.
+that the phone received and answered. Local files record consent but
+cannot enforce it, and the host's own permission prompts still apply: the plugin never
+changes them.
 
 Start all ready, non-conflicting approved issues up to that limit. Refill slots
 as work completes. Dependency completion requires verified integration into the
@@ -324,9 +349,12 @@ blocked work, continue independent work, and route worker questions to this
 session's tool. Do not merge pull requests, write the base branch, deploy, release,
 close issues or expand scope under this charter; the only merges allowed are the ones the stacking authorization names: of a base into an issue's own
 branch, and of a family's or batch's verified branches into a local integration branch that is never pushed.
+Anything else on that list waits for the user's "Sim" to its own question (above).
 
 After a PR is opened, wait for the user's merge by default (`references/development.md`, "After the pull
-request"): say so in one line, record it in the handoff, open no PR with a closing keyword and never merge. A
+request"): say so in one line, record it in the handoff, open no PR with a closing keyword and never merge
+without the user's "Sim". Once the PR is ready (review current, suite green, watched run answered), offer the
+merge with its own question; on "Não" the wait goes on. A
 merge into the approved base, confirmed by `closeout.py merge-status`, takes the session to stage 7 for the issues
 of that PR; a PR merged into another branch or closed unmerged closes nothing.
 

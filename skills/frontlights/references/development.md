@@ -1,11 +1,35 @@
 # Bounded implementation
 
 Read the recorded authorization, current GitHub issues and `docs/security.md`.
-Without exact issue IDs, concurrency, permitted worktree/repository operations,
-verification commands, monitoring arrangement and stop conditions, return the
-missing decision to the coordinator's `AskUserQuestion`. Never infer permission
-for external writes from local shell access. Run structured authorization checks
+Stage 6 runs under the standing authorization (`SKILL.md`, stage 6): the session
+fills the issue IDs, concurrency, stacking, worktree base, verification commands,
+monitoring arrangement and stop conditions itself, announces them in one block and
+records the charter without asking. A decision the standing authorization does not
+cover (a new product decision, an operation on its denied list, a scope change)
+goes back to the coordinator's `AskUserQuestion`. Never infer permission for any
+other external write from local shell access. Run structured authorization checks
 where applicable; they are advisory preflight, not sandbox enforcement.
+
+## Standing authorization and the denied operations
+
+The user decided, permanently and for every project, that the opening question of
+stage 6 (concurrency, stacking and the bounded implementation authorization) is not
+asked. Covered, for the issues of the family or batch at hand: editing, testing,
+committing, pushing the work branches, opening and retargeting draft PRs (stacked ones
+included), the merges the stacking authorization names, running migrations on the
+local development database, creating and removing test data through the product's own
+endpoints, commenting on the issues and ticking acceptance criteria with evidence.
+
+Never covered, and asked one operation at a time with `AskUserQuestion` ("Sim" first,
+"Não" second, the exact operation and command in the question): merging a pull
+request, closing an issue, changing the board, deploying or publishing to production,
+editing a migration already registered (on the base branch or applied anywhere but the
+local development database), writing the base branch or a protected branch, turning on
+a setting, key or flag in production, and deleting anything but the test data the run
+created. Run it only after "Sim" and record the answer verbatim in the handoff. A
+"Sim" covers that one operation, never another one, another PR or a later moment; "Não",
+silence or another answer leaves it undone and the work goes on without it. The host's
+own permission prompts are not this plugin's to remove and still apply.
 
 ## Dispatch and ownership
 
@@ -20,11 +44,11 @@ editing. Never reuse a dirty shared checkout, discard changes or write a protect
 branch. Recheck branch/worktree identity before each mutation boundary.
 
 Branches use the charter's `branch_prefix` (default `claude/`). Choose the
-worktree base before asking the authorization: when `inspect` reports
-`path_risk` other than `ok`, propose a short base such as `C:/wt/<project>` in
-the authorization question itself instead of discovering a
+worktree base before recording the charter: when `inspect` reports
+`path_risk` other than `ok`, use a short base such as `C:/wt/<project>` and name
+it in the announcement instead of discovering a
 `'$GIT_DIR' too big` failure afterwards. Any other change of base after
-approval goes back to the user through `AskUserQuestion`.
+the announcement goes back to the user through `AskUserQuestion`.
 
 Refresh the plan from GitHub and run `frontlights.py schedule --plan <file> --limit
 <approved-limit>`. The result is a recommendation, not proof of authority. Start
@@ -50,20 +74,20 @@ issues), so give the command a longer timeout.
 
 Making children wait for the parent's merge serializes the family behind a human
 step. So, whenever an issue of the family depends on another one (a child that
-lists its parent in `Depends on`, or a sibling chain), stage 6 offers to **stack**
-the dependent on its dependency's branch, in the same `AskUserQuestion` call as
-the concurrency and the authorization. The question is "Como as filhas se apoiam
-no pai?", with "Empilhadas no pai (Recomendada)" first (each child branches from the
+lists its parent in `Depends on`, or a sibling chain), stage 6 **stacks** the
+dependent on its dependency's branch. Under the standing authorization this is not
+asked: the announcement says it. The choice "Como as filhas se apoiam no pai?" comes
+back as a question only when the user asks to change it, with "Empilhadas no pai (Recomendada)" first (each child branches from the
 parent's branch and its PR targets that branch) and "Esperar o merge do pai" second
-(each child starts from the approved base once the parent is merged). Its text warns
+(each child starts from the approved base once the parent is merged). The announcement warns
 that a squash-merge of the parent makes the later merge of the base conflict on the
 hunks the child shares with it, and that merging the parent PR with a merge commit
-avoids that; how to merge stays with the human. Record the answer verbatim in the
+avoids that. Record the stacking in the
 authorization, with the repository operations it needs: branch from a branch that is
 not the base, push it (and the dependency's branch), open a draft PR whose base is the
 dependency's branch, retarget that PR, `git merge` of a base into the issue's own branch, and `git merge` of a family's or batch's verified
 branches into a local integration branch that is never pushed. Those are the only merges it allows: it never covers merging a PR, writing
-the base branch, deploying or releasing. Without the stacking answer, a dependent
+the base branch, deploying or releasing. When the user chose to wait, a dependent
 stays parked until its dependency is in the approved base.
 
 **Concurrency.** Recommend as ceiling the number of independent children whose
@@ -292,10 +316,12 @@ evidence; tick an acceptance criterion in the issue body only with evidence for 
 (a test, a measured result, a reviewed diff), because the closeout of stage 7 trusts
 the ticks; a criterion born from a finding is ticked the same way, once the work it
 names is done and its evidence exists. Closing an issue and moving its card are never part of this: they have
-their own approval (`references/closeout.md`). Draft PRs also require charter permission and native approval. Never
+their own approval (`references/closeout.md`). Draft PRs are covered by the standing authorization and still go through
+the host's native approval. Never
 merge a pull request, write the base branch, deploy, release, delete data or close
 issues as routine AFK work; the only merges allowed are the ones the stacking authorization names: of a base into an issue's own
-branch, and of a family's or batch's verified branches into a local integration branch that is never pushed. Park
+branch, and of a family's or batch's verified branches into a local integration branch that is never pushed. Anything
+else on the denied list runs only after the user's "Sim" to its own question (above). Park
 blocked issues with the precise pending question and continue independent ones.
 Report each issue's state, branch/PR, exact tests/results, review evidence,
 the findings left unfixed with the destination of each, remaining risk and next
@@ -313,6 +339,14 @@ By default, as soon as a PR of the family is open, the session waits for the use
 - **No closing keyword.** A PR opened by this plugin never carries `Closes`, `Fixes`, `Resolves` or a variant of
   them, in its body or in its commits: closing an issue has its own approval, and a merge that closed it would skip
   that approval and ignore the criteria still unticked. Cite the issue by number instead.
+- **Offer the merge when the PR is ready.** A PR is ready when its review is current (`review-gate` exit code 0),
+  the family's integration suite is green, `browser-gate` says `answered` (or `not_needed`) and no finding lacks a
+  destination. Then ask, under the denied-operations rule, "Mesclar a PR #<n> em <base>?" with "Sim, mesclar" first
+  and "Não, aguardar o merge" second; one question per PR, up to four in one call, a stacked parent before its
+  children. The question names the commands: `gh pr ready <n>` and `gh pr merge <n> --merge` (a merge commit, so the
+  stacked children merge cleanly; never `--admin`, `--auto` or `--delete-branch`, since the cleanup has its own
+  approval). On "Sim", run them, then `merge-status` as below; a child PR is offered only once it has been
+  retargeted to the base its parent merged into. On "Não", the wait goes on unchanged.
 - **What wakes the session.** Whatever the host offers: a subscription to the PR's activity, or a background
   monitor that runs `python "${CLAUDE_PLUGIN_ROOT}/scripts/closeout.py" merge-status --config <config> --prs 12,13
   --base <approved base>` every few minutes. Either is only a trigger. On every wake run `merge-status` and act only

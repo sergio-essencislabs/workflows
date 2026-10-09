@@ -597,7 +597,10 @@ substitui essa aprovação. Os utilitários são
 
 Depois de abrir uma PR, o Frontlights **aguarda o seu merge por padrão** (você pode dizer "não aguardar" a qualquer
 momento): ele avisa em uma linha o que espera, registra "Aguardando o merge" no handoff e segue com o trabalho
-independente. A PR nunca leva palavra de fechamento (`Closes`, `Fixes`, `Resolves`) no corpo nem nos commits, porque
+independente. Quando a PR fica pronta (revisão em dia, suíte da família verde, teste assistido respondido e
+nenhum achado sem destino), ele pergunta "Mesclar a PR #<n> em <base>?", com "Sim, mesclar" e "Não, aguardar o
+merge"; só com o "Sim" roda `gh pr ready` e `gh pr merge --merge` (merge com commit, nunca `--admin`, `--auto` nem
+`--delete-branch`), e com o "Não" a espera continua. A PR nunca leva palavra de fechamento (`Closes`, `Fixes`, `Resolves`) no corpo nem nos commits, porque
 fechar uma issue tem aprovação própria. O aviso do ambiente (uma inscrição na PR ou um monitor em segundo plano) é só o
 gatilho: a cada despertar roda `closeout.py merge-status`, e só vale o merge **na branch base aprovada**. Merge de uma
 filha na branch do pai, PR fechada sem merge ou PR não encontrada não fecham nada. Se o ambiente não oferece gatilho, ou
@@ -630,9 +633,22 @@ Verificação de atualização do plugin (sem pergunta; mostra os dois comandos 
 quando há versão nova no GitHub) →
 pedido e dimensionamento → inspeção → entrevista de decisões → PRD mostrado na
 íntegra e aprovado →
-plano de issues verticais aprovado e publicado → autorização delimitada de
-implementação → desenvolvimento orientado a testes (TDD), revisão e evidências →
-espera do seu merge e, com ele confirmado, fechamento, marcação no pai e limpeza das worktrees (cada um com aprovação própria).
+plano de issues verticais aprovado e publicado → autorização permanente de
+implementação, anunciada sem pergunta → desenvolvimento orientado a testes (TDD), revisão e evidências →
+oferta do merge e espera dele e, com ele confirmado, fechamento, marcação no pai e limpeza das worktrees (cada um com aprovação própria).
+
+**Autorização permanente.** A etapa 6 não pergunta concorrência, empilhamento nem autorização: o
+Frontlights anuncia num bloco curto as issues, a concorrência, o empilhamento, a base das worktrees e
+os testes, e começa. Ficam autorizados, só para as issues da família ou do lote: editar, testar,
+commitar, enviar as branches, abrir PRs rascunho empilhadas, rodar a migration no banco de
+desenvolvimento local, criar e remover dados de teste pelos endpoints do produto e comentar ou
+marcar critérios nas issues. Merge de PR, fechar issue, mexer no quadro, publicar em produção, editar
+migration já registrada, escrever na branch base ou protegida, ligar configuração, chave ou flag em
+produção e apagar o que não for dado de teste viram, cada um, uma pergunta própria com "Sim" e
+"Não" e o comando exato; só o "Sim" libera aquela operação. As perguntas do próprio trabalho (teste
+assistido, falhas, achados, decisão nova) continuam, assim como as aprovações do PRD, do plano de
+issues, do fechamento, da limpeza, do roadmap e do resumo. Os pedidos de permissão do próprio Claude
+Code não são do plugin e continuam valendo.
 Uma issue vertical entrega um resultado observável de ponta a ponta, incluindo as
 camadas necessárias, em vez de separar tickets apenas por banco de dados, API ou tela.
 Uma issue e as sub-issues abertas dela andam juntas: ao agir sobre uma issue, o Frontlights
@@ -643,11 +659,11 @@ as do projeto); a seção `## Camadas da fatia` de cada issue registra as camada
 para as que não serão tocadas, o motivo com a evidência do rastreio de cada campo de tela até o
 consumidor no back e a coluna no banco (um rastreio inconclusivo bloqueia a aprovação do plano até ser provado). Uma filha com `needs-decision`, ou sem abordagem
 definida, entra na entrevista da mesma sessão. Na etapa 6, quando uma filha depende do pai, a
-pergunta de autorização oferece **branches empilhadas** (recomendada): a filha sai da branch do
+autorização permanente usa **branches empilhadas** (você pode pedir para esperar o merge do pai): a filha sai da branch do
 pai assim que ele está verificado nela, o PR dela tem como base a branch do pai e, depois que
 uma pessoa faz o merge do pai, o PR é redirecionado para a base em que o pai entrou, trazendo-a
 por merge (nunca rebase nem push forçado; com squash no pai, conflitos nos trechos que a filha
-divide com ele são esperados e resolvidos nesse merge). A concorrência recomendada é o número de filhas independentes
+divide com ele são esperados e resolvidos nesse merge). A concorrência usada é o número de filhas independentes
 cujos arquivos não se sobrepõem. Sem a empilhada, a filha espera o pai estar na base aprovada.
 Na entrevista, depois de confirmar o problema (numa só pergunta quando a issue já
 o define), a skill levanta as convenções do código afetado e propõe ao menos três

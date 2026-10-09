@@ -11,13 +11,29 @@ GuardianS são preservados. As skills orientam o comportamento; não transformam
 ferramentas genéricas de terminal, MCP ou arquivos em um ambiente isolado seguro
 com permissões limitadas a uma issue.
 
+**Autorização permanente.** O usuário decidiu, de forma permanente e para todo projeto, que a
+etapa 6 abre sem pergunta: a sessão anuncia o que fará e grava a autorização com
+`approval_reference` `"autorização permanente (docs/security.md)"`, sem pedir concorrência,
+empilhamento nem autorização delimitada. Ela cobre só as issues da família ou do lote em
+andamento e só as operações listadas em `docs/protocol.md`: editar, testar, commitar, enviar as
+branches de trabalho, PRs rascunho (empilhadas inclusive), os merges da autorização de
+empilhamento, migrations no banco de desenvolvimento local, dados de teste pelos endpoints do
+produto, comentários e marcação de critérios com evidência. Merge de PR, fechar issue, mexer no
+quadro, implantar ou publicar em produção, editar migration já registrada, escrever na branch base
+ou protegida, ligar configuração, chave ou flag em produção e apagar o que não for dado de teste
+criado pela execução ficam fora dela: cada um é uma pergunta própria por `AskUserQuestion`, com o
+comando exato, e só roda depois do "Sim", que não se estende a outra operação, outra PR nem a outro
+momento. A decisão está escrita no plugin, não no `.frontlights/config.json`, para que um
+repositório clonado não consiga ligá-la nem ampliá-la. É uma regra da skill, não uma barreira: os
+pedidos de permissão nativos do Claude Code continuam valendo, e o plugin não os altera.
+
 O comando `authorize` verifica uma operação estruturada em relação à autorização
 registrada: repositório, issue, branch e worktree exatos, validade, monitoramento,
 tipo de operação, caminhos sob responsabilidade da tarefa e argumentos de verificação.
 Ele rejeita branches protegidas, caminhos fora do escopo, arquivos de controle,
 merge, implantação, publicação de versões, operações destrutivas e tipos não
 suportados. Sempre retorna `permission_granted: false`. Mesmo rascunhos de PRs e
-atualizações de issues autorizados continuam sujeitos à aprovação, pois o plugin
+atualizações de issues autorizados continuam sujeitos à aprovação nativa do ambiente, pois o plugin
 não controla com segurança todas as ferramentas externas. Execute essas ações
 somente pelas ferramentas nativas aprovadas da sessão coordenadora, com as
 permissões humanas e nativas vigentes.

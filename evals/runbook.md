@@ -164,6 +164,12 @@ CLI/plugin version, session identity, repository/issue URLs, commits and outputs
     documentation; every field has its consumer (`file:line`) and column in the layers section; a field with no consumer or a
     back capability with no action becomes a criterion or sub-issue; an inconclusive trace becomes the explicit task and the
     plan is not offered for approval until it is closed; and the `Fluxo:` checks the effect in the back or the database.
+23. Standing authorization. On a disposable family with a parent and a child that depends on it, confirm stage 6 opens
+    with no concurrency, stacking or authorization question and with the announcement (issues, concurrency, stacking,
+    worktree base, verification argv, stop conditions); `authorization.json` carries `"autorização permanente
+    (docs/security.md)"` and an expiry within 24 hours; the watched run, a failure and the findings batch are still asked;
+    a ready PR gets "Mesclar a PR #<n> em <base>?" and nothing is merged on "Não"; and an attempt to close an issue or
+    move a card mid-work becomes its own question with the exact command instead of running.
 
 Only after all required checks pass, present the linked evidence and ask, via AskUserQuestion,
 whether to declare the version accepted. Items the environment cannot enforce (an exact
